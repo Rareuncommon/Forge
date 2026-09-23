@@ -1,5 +1,58 @@
 # Progress
 
+## Session 2 — 2026-09-23 — Milestone 1 (sketcher) + first sketch-to-solid
+
+### CI status
+- GitHub Actions `linux-headless`: **green** on the pushed M0 commits (run #1 and #2).
+- `macos-app`: run #1 failed because the `macos-26` runner has no Xcode 27. The workflow now
+  selects the newest installed Xcode and the package's minimum deployment target is macOS 26
+  (the app bundle still declares macOS 27). Run #2 got past Xcode selection and was building
+  OCCT 8.0.1 when this entry was written — see the next session entry for its outcome. This is
+  the path to verifying the Metal/SwiftUI code, which has still never been compiled.
+
+### Done this session (all verified on Linux, OCCT 7.6.3 and 8.0.1)
+- **ForgeSketch** (new module): sketch model (points, lines, circles, arcs, ellipses,
+  construction geometry, standard planes with offset), constraint solver per ADR 0003 with
+  implementation notes (forward-mode AD Jacobians, minimum-norm Levenberg–Marquardt,
+  creation-ordered rank analysis → DOF, per-entity fully/under/over-defined, redundant vs
+  conflicting vs failed), dragging, relation inference from exact coordinates, rectangles
+  (corner/center/3-point/parallelogram), slots (straight/center), polygons, sketch fillet
+  with a virtual sharp that preserves dimensions, and profile analysis (closed loops,
+  nesting, exact areas incl. arc segments, open ends, branches, crossings).
+- **21 sketch commands** (`sketch.*`) with generated schemas; conflicts and redundancies are
+  refused with executable fixes; sketches participate in undo/redo, transactions, dry-run,
+  document state (incl. the sketch being edited), selection, render_view/pick (curves coloured
+  by constraint state) and compare_to_spec (status, DOF, point positions, loops, area).
+- **MCP:** `create_sketch`, `get_sketch`, `edit_dimension`, `check_sketch` (32 tools).
+- **Sketch → solid:** kernel faces from profile regions (holes and islands), extrude, revolve;
+  `body.extrude` (normal / reverse / mid-plane) and `body.revolve` (about a sketch line).
+- **Tests:** 105 test functions incl. 40 seeded property tests of the solver; golden suite is
+  now 22 models (16 body, 6 sketch), each regenerated twice for bit-identical results.
+
+### Findings
+- Distance-form tangency is only second-order when the curves also share the tangent point,
+  so the Jacobian lost rank and a legitimate slot was flagged over-defined. Fixed with a
+  first-order endpoint-tangency form (recorded in ADR 0003).
+- Tests caught an inverted orientation test in the three-point arc and a wrong assumption in
+  one of my own tests (symmetry axis not anchored); both fixed.
+
+### Not done / known gaps
+- Sketch UI in the app (click-to-draw, dimension editing on canvas, DOF colouring in the
+  Metal viewport) is not written; M1's "sketch UI" exit criterion is open. The command
+  palette can already drive every sketch command.
+- Not started in 7.1: splines, partial ellipse, parabola, conic, text, sketch chamfer, trim /
+  extend / offset / mirror / patterns and the other sketch tools, arc slots, 3D sketches,
+  arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
+- The planegcs oracle harness (ADR 0003) is not built.
+- `body.extrude`/`body.revolve` are kernel-level (no feature tree yet), so nothing in §7 is
+  "done": save/load does not exist until the file format (M2).
+
+### Next steps
+1. Read macOS CI results; fix whatever the first real compile of ForgeApp/Metal reports.
+2. Sketch UI on macOS (drawing tools through the command bus, canvas dimension editing).
+3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002) + file format v1
+   (ADR 0004), turning extrude/revolve/fillet into parametric features.
+
 ## Session 1 — 2026-09-23 — Milestone 0 (foundations)
 
 Environment: cloud Linux container (Ubuntu 24.04, x86_64, 4 cores). **No macOS machine was
