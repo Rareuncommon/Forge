@@ -42,6 +42,10 @@ extension Sketch {
                     let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
                     return .ellipse(center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
                                     majorRadius: params[e.params[0]], minorRadius: params[e.params[1]])
+                case .spline:
+                    // Clamped uniform knots are symmetric, so reversing the poles reverses the curve.
+                    let poles = e.points.map(P)
+                    return .bspline(poles: fwd ? poles : poles.reversed(), degree: e.degree ?? 3)
                 case .point:
                     preconditionFailure("points are not profile curves")
                 }

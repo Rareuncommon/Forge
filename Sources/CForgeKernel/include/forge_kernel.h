@@ -152,6 +152,7 @@ typedef enum FKSegmentKind {
     FK_SEG_ARC = 1,      /* p[0..2] start, p[3..5] a point on the arc, p[6..8] end */
     FK_SEG_CIRCLE = 2,   /* p[0..2] centre, p[3..5] normal, p[9] radius */
     FK_SEG_ELLIPSE = 3,  /* p[0..2] centre, p[3..5] normal, p[6..8] major direction, p[9] major r, p[10] minor r */
+    FK_SEG_BSPLINE = 4,  /* p[0] first pole index into `poles`, p[1] pole count, p[2] degree; clamped uniform knots */
 } FKSegmentKind;
 
 typedef struct FKSegment {
@@ -161,8 +162,11 @@ typedef struct FKSegment {
 
 /* Planar face(s) from loops. Segments of loop i are segments[loopStart[i] .. loopStart[i+1]).
  * regionOf[i] groups loops into faces; within a region the first loop is the outer boundary
- * and the rest are holes. Returns a face, or a compound of faces for several regions. */
-FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount, FKError *err);
+ * and the rest are holes. B-spline segments read their poles (3 doubles each) from `poles`
+ * (poleCount poles in total; may be NULL when there are none). Returns a face, or a compound
+ * of faces for several regions. */
+FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount,
+                       const double *poles, size_t poleCount, FKError *err);
 /* Linear sweep of a face (or faces) by vector v. */
 FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err);
 /* Revolution about an axis through origin with direction axis, by angle (radians, ≤ 2π). */

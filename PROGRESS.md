@@ -59,6 +59,12 @@
 - **Split:** `sketch.split` — a line or arc at one point, a circle at two points (into two
   concentric arcs). The solver's rank analysis now considers internal (structural) rows last,
   so relations that imply an arc's own radius equality are not reported redundant (ADR 0003).
+- **Splines:** `sketch.add_spline` (through points or control points, degree 1–5) — solver,
+  profiles (exact Green's-theorem areas), rendering, mirror/patterns/move, save/open, and a
+  B-spline segment in the kernel bridge (`FK_SEG_BSPLINE`) so splines extrude and revolve.
+  Golden model 020: spline profile extruded (area 360 mm², centroid ȳ = 45/7 derived with
+  exact fractions). Point-on-spline, spline trim/split/offset/end tangency are explicit
+  `not_implemented` errors.
 
 ### Findings
 - Relation choice matters for rank: after a split the pieces share a point, which makes
@@ -86,7 +92,7 @@
   not yet dimensions that drive them; dynamic mirror is not implemented.
 - Ellipses cannot be trimmed/extended (no partial ellipse yet); trim is one pick per call.
 - Offset: ellipses and arc-joined corners/arc caps are not implemented.
-- Not started in 7.1: splines, partial ellipse, parabola, conic, text,
+- Not started in 7.1: spline tools (tangency/curvature handles, fit, simplify), partial ellipse, parabola, conic, text,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
@@ -96,7 +102,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1 tools: splines, stretch, partial ellipse; planegcs oracle harness.
+2. Remaining M1: spline end tangency + point-on-spline, partial ellipse, stretch; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

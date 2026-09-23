@@ -128,6 +128,8 @@ public enum ProfileSegment: Sendable, Hashable {
     case arc(Vec3, Vec3, Vec3)
     case circle(center: Vec3, normal: Vec3, radius: Double)
     case ellipse(center: Vec3, normal: Vec3, majorDirection: Vec3, majorRadius: Double, minorRadius: Double)
+    /// Clamped uniform B-spline through its end poles.
+    case bspline(poles: [Vec3], degree: Int)
 
     var c: FKSegment {
         var s = FKSegment()
@@ -159,6 +161,8 @@ public enum ProfileSegment: Sendable, Hashable {
             put(d, 6)
             p[9] = a
             p[10] = b
+        case .bspline:
+            s.kind = Int32(FK_SEG_BSPLINE.rawValue)  // pole block filled in by Kernel.faces
         }
         withUnsafeMutableBytes(of: &s.p) { raw in
             p.withUnsafeBytes { raw.copyMemory(from: $0) }
@@ -175,16 +179,31 @@ extension Kernel {
         guard !loops.isEmpty else { throw ForgeError(.invalidParams, "no profile loops") }
         var segs: [FKSegment] = []
         var starts: [Int32] = []
+        var poles: [Double] = []
         for l in loops {
             starts.append(Int32(segs.count))
-            segs += l.map(\.c)
+            for seg in l {
+                var c = seg.c
+                if case .bspline(let ps, let degree) = seg {
+                    c.p.0 = Double(poles.count / 3)
+                    c.p.1 = Double(ps.count)
+                    c.p.2 = Double(degree)
+                    for q in ps { poles += [q.x, q.y, q.z] }
+                }
+                segs.append(c)
+            }
         }
         starts.append(Int32(segs.count))
         let reg = regions.map { Int32($0) }
+        let poleCount = poles.count / 3
         return try call { err in
             segs.withUnsafeBufferPointer { sp in
                 starts.withUnsafeBufferPointer { st in
-                    reg.withUnsafeBufferPointer { rg in fk_make_faces(sp.baseAddress, st.baseAddress, rg.baseAddress, loops.count, err) }
+                    reg.withUnsafeBufferPointer { rg in
+                        poles.withUnsafeBufferPointer { pp in
+                            fk_make_faces(sp.baseAddress, st.baseAddress, rg.baseAddress, loops.count, pp.baseAddress, poleCount, err)
+                        }
+                    }
                 }
             }
         }

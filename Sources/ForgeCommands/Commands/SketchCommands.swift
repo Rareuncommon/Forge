@@ -75,9 +75,10 @@ public struct SketchEntityView: Codable, Sendable, Hashable {
     public var majorRadius: Double?
     public var minorRadius: Double?
     public var rotationDeg: Double?
+    public var degree: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, type, construction, state, owner, points, at, start, end, center, radius
+        case id, type, construction, state, owner, points, at, start, end, center, radius, degree
         case lengthMM = "length_mm"
         case majorRadius = "major_radius"
         case minorRadius = "minor_radius"
@@ -115,6 +116,11 @@ public struct SketchEntityView: Codable, Sendable, Hashable {
             majorRadius = s.params[e.params[0]]
             minorRadius = s.params[e.params[1]]
             rotationDeg = s.params[e.params[2]] * 180 / .pi
+        case .spline:
+            points = e.points  // control points; the first and last are the ends
+            start = p(e.points.first!)
+            end = p(e.points.last!)
+            degree = e.degree
         }
     }
 }
@@ -1007,5 +1013,51 @@ public enum SketchChamfer: Command {
         let created = try s.chamferCorner(ids[0], ids[1], distance: p.distance.millimeters, distance2: p.distance2?.millimeters, angle: p.angle?.radians)
         let added = s.constraints.map(\.id).filter { !before.contains($0) && !$0.contains("#") }
         return finish(&ctx, doc, &s, created: created, constraints: added, infer: false)
+    }
+}
+
+public enum SketchAddSpline: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var through: [Point2]?
+        public var poles: [Point2]?
+        public var degree: Int?
+        public var construction: Bool?
+        public var infer: Bool?
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "through": "Points the spline passes through, in order (interpolated with chord-length parameters)",
+            "poles": "Control points instead of through points; the curve starts at the first and ends at the last",
+            "degree": FieldDoc("Polynomial degree 1…5 (reduced to points − 1 when there are fewer points)", default: 3),
+            "construction": constructionDoc, "infer": inferDoc,
+        ]
+        public func validate() throws {
+            guard (through == nil) != (poles == nil) else { throw ForgeError(.invalidParams, "give either 'through' or 'poles'") }
+            guard (through ?? poles ?? []).count >= 2 else { throw ForgeError(.invalidParams, "a spline needs at least 2 points") }
+            if let d = degree, !(1...Sketch.maxSplineDegree).contains(d) {
+                throw ForgeError(.invalidParams, "degree must be 1…\(Sketch.maxSplineDegree)")
+            }
+        }
+    }
+    public typealias Output = SketchEditResult
+
+    public static let name = "sketch.add_spline"
+    public static let summary = "Add a spline through points (or by control points); its control points are sketch points you can relate and dimension"
+    public static let discussion = "Clamped uniform B-spline, identical in the sketch and in the solid. 'through' points are interpolated once; afterwards the spline is edited through its control points (listed in 'points'; interior ones are construction handles). Point-on-spline relations, spline trim/split/offset and curvature tools are not implemented yet."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.invalidParams]
+    public static let examples: [JSONValue] = [
+        ["through": [[0, 0], [10, 5], [20, -5], [30, 0]]],
+        ["poles": [[0, 0], [0, 20], [30, 20], [30, 0]], "degree": 3],
+    ]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let degree = p.degree ?? 3
+        let id = p.through != nil
+            ? try s.addSpline(through: p.through!.map(\.tuple), degree: degree, construction: p.construction ?? false)
+            : try s.addSpline(poles: p.poles!.map(\.tuple), degree: degree, construction: p.construction ?? false)
+        return finish(&ctx, doc, &s, created: [id], infer: p.infer ?? true)
     }
 }

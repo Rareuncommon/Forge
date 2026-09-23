@@ -902,3 +902,72 @@ struct SplitTests {
         #expect(near(abs(t.profiles().loops[0].signedAreaMM2), 25 * .pi, 1e-9))
     }
 }
+
+@Suite("Sketch splines")
+struct SplineTests {
+    @Test func interpolationPassesThroughItsPoints() throws {
+        var s = newSketch()
+        let q: [(Double, Double)] = [(0, 0), (10, 5), (20, -5), (30, 0), (40, 8)]
+        let sp = try s.addSpline(through: q, degree: 3)
+        let e = s.entities[sp]!
+        #expect(e.points.count == 5 && e.degree == 3)
+        #expect(near(s.point(e.points.first!), q[0]) && near(s.point(e.points.last!), q[4]))
+        // Chord-length parameters, as used for the interpolation.
+        var chord = [0.0]
+        for i in 1..<q.count { chord.append(chord[i - 1] + hypot(q[i].0 - q[i - 1].0, q[i].1 - q[i - 1].1)) }
+        for (i, c) in chord.enumerated() {
+            #expect(near(s.splinePoint(sp, at: c / chord.last!), q[i], 1e-9))
+        }
+        #expect(s.resolve().dof == 10)  // two coordinates per control point
+    }
+
+    @Test func splineLoopAreaIsExactAndItSurvivesTheSolver() throws {
+        var s = newSketch()
+        let sp = try s.addSpline(poles: [(30, 0), (30, 20), (0, 20), (0, 0)], degree: 3)
+        let l = s.addLine(from: (0, 0), to: (30, 0))
+        let e = s.entities[sp]!
+        try s.addConstraint(.coincident, [e.points.last!, ends(s, l).0])
+        try s.addConstraint(.coincident, [ends(s, l).1, e.points.first!])
+        let rep = s.profiles()
+        #expect(rep.valid && rep.loops.count == 1)
+        // Exact polynomial integration of the Bézier (derived separately): 360 mm².
+        #expect(near(abs(rep.regionAreaMM2), 360, 1e-9))
+        // Dimension a control point; the loop follows.
+        try s.addConstraint(.verticalDistance, [ends(s, l).0, e.points[2]], value: 30)
+        #expect(s.resolve().conflicting.isEmpty)
+    }
+
+    @Test func mirroredSplineFollowsItsOriginal() throws {
+        var s = newSketch()
+        let axis = s.addLine(from: (0, -10), to: (0, 30), construction: true)
+        try s.addConstraint(.vertical, [axis])
+        let sp = try s.addSpline(poles: [(2, 0), (8, 10), (4, 20)], degree: 2)
+        let dof = s.resolve().dof
+        let (created, _) = try s.mirror([sp], about: axis)
+        let r = s.resolve()
+        #expect(r.dof == dof && r.redundant.isEmpty && r.conflicting.isEmpty)
+        let m = s.entities[created[0]]!
+        #expect(near(s.point(m.points[1]), (-8, 10)))
+        #expect(near(s.splinePoint(created[0], at: 0.5).0, -s.splinePoint(sp, at: 0.5).0, 1e-9))
+    }
+
+    @Test func unsupportedOperationsSayNotImplemented() throws {
+        var s = newSketch()
+        let sp = try s.addSpline(poles: [(0, 0), (5, 5), (10, 0)], degree: 2)
+        let p = s.addPoint(5, 2)
+        for op in [
+            { (s: inout Sketch) throws in _ = try s.addConstraint(.onEntity, [p, sp]) },
+            { (s: inout Sketch) throws in _ = try s.trim(sp, at: (5, 2)) },
+            { (s: inout Sketch) throws in _ = try s.split(sp, at: [(5, 2)]) },
+            { (s: inout Sketch) throws in _ = try s.offset([sp], distance: 1) },
+        ] {
+            var t = s
+            do {
+                try op(&t)
+                Issue.record("expected not_implemented")
+            } catch let err as ForgeError {
+                #expect(err.code == .notImplemented)
+            }
+        }
+    }
+}

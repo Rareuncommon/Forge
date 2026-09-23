@@ -320,7 +320,7 @@ func transformCenter(_ center: Point2?, _ about: String?, in s: Sketch) throws -
     switch e.kind {
     case .point: return s.point(e.id)
     case .circle, .arc, .ellipse: return s.point(e.points[0])
-    case .line: throw ForgeError(.invalidParams, "'about' must be a point, circle, arc or ellipse", entities: ["\(s.id)/\(e.id)"])
+    case .line, .spline: throw ForgeError(.invalidParams, "'about' must be a point, circle, arc or ellipse", entities: ["\(s.id)/\(e.id)"])
     }
 }
 

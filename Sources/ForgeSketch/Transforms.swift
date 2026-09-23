@@ -82,6 +82,8 @@ extension Sketch {
                 n = addEllipse(
                     center: map.apply(pts[0]), major: params[e.params[0]] * map.k, minor: params[e.params[1]] * map.k,
                     rotation: map.apply(angle: params[e.params[2]]), construction: e.construction)
+            case .spline:
+                n = insertSpline(poles: pts.map(map.apply), degree: e.degree ?? 3, construction: e.construction)
             }
             m[id] = n
             let ne = entities[n]!
@@ -135,7 +137,7 @@ extension Sketch {
             switch e.kind {
             case .circle, .arc:
                 if let c = try s.addUnlessImplied(.symmetric, [id, m[id]!, axis]) { added.append(c) } else { free += e.points }
-            case .line: free += e.points
+            case .line, .spline: free += e.points
             case .point: free.append(id)
             case .ellipse: break  // copied without a relation (symmetric does not cover ellipses yet)
             }

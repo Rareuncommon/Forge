@@ -41,6 +41,10 @@ extension Sketch {
                 throw bad("a point and a curve")
             }
             guard k.contains(where: Self.isCurve) else { throw bad("a point and a curve (use coincident for two points)") }
+            if k.contains(.spline) {
+                // NOT IMPLEMENTED: point on spline needs a curve-parameter unknown per point.
+                throw ForgeError(.notImplemented, "point on spline is not implemented yet; relate the spline's control points instead", entities: ids.map { "\(id)/\($0)" })
+            }
             return k[0] == .point ? ids : [ids[1], ids[0]]
         case .horizontal, .vertical:
             if k == [.line] || k == [.point, .point] { return ids }
@@ -182,7 +186,7 @@ extension Sketch {
                 let u = d.x * cr + d.y * sr, w = -(d.x * sr) + d.y * cr
                 // Approximate distance: (normalised radius - 1) · geometric mean axis.
                 return [(D.sqrt((u / a) * (u / a) + (w / b) * (w / b)) - D(constant: 1)) * D.sqrt(a * b)]
-            case .point: return []
+            case .point, .spline: return []  // point-on-spline is refused in normalize
             }
         case .horizontal:
             if ids.count == 1 {

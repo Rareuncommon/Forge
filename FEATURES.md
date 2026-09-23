@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 875 · in progress: 98 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 873 · in progress: 100 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -100,8 +100,8 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/partial-ellipse` | Entities: partial ellipse | not started | ForgeSketch | — | — |  |
 | `7.1/entities/parabola` | Entities: parabola | not started | ForgeSketch | — | — |  |
 | `7.1/entities/conic` | Entities: conic | not started | ForgeSketch | — | — |  |
-| `7.1/entities/spline` | Entities: spline | not started | ForgeSketch | — | — |  |
-| `7.1/entities/spline/point-control-vertex` | ↳ point/control-vertex | not started | ForgeSketch | — | — |  |
+| `7.1/entities/spline` | Entities: spline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline | clamped uniform B-spline (degree 1–5), same curve in sketch and solid; point-on-spline, spline trim/split/offset, end tangency NOT IMPLEMENTED |
+| `7.1/entities/spline/point-control-vertex` | ↳ point/control-vertex | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline(through | poles) |
 | `7.1/entities/spline/style-spline` | ↳ style spline | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/equation-driven-curve` | ↳ equation-driven curve | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/fit-spline` | ↳ fit spline | not started | ForgeSketch | — | — |  |

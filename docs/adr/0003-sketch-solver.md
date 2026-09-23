@@ -92,6 +92,12 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
   relation being reported redundant. DOF is unchanged (rank is order-independent); the
   trade-off is that a user relation that merely restates an arc's own radius equality is not
   flagged.
+- **Splines:** clamped uniform B-splines whose control points are ordinary sketch points (no
+  new unknowns; the end poles are the curve's ends). The kernel builds the identical
+  `Geom_BSplineCurve` (same knots), so sketch and solid agree exactly. "Through points"
+  interpolates once with chord-length parameters; afterwards the poles are what is edited.
+  Loop areas use Green's theorem per span with p-point Gauss–Legendre (exact for the
+  degree-2p−1 integrand). Point-on-spline needs a parameter unknown per point and is not done.
 - **Tests:** unit tests with analytic answers, 40 seeded property tests (random closed
   polygons + circle, dimensions measured from a known configuration, parameters perturbed,
   re-solved), and golden sketch models. The planegcs oracle harness is still to do.

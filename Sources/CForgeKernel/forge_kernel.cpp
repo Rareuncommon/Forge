@@ -59,6 +59,10 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <ShapeFix_Face.hxx>
 #include <ShapeFix_Shape.hxx>
@@ -397,7 +401,8 @@ FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_
 
 // ---- profiles → solids ----------------------------------------------------------
 
-FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount, FKError *err) {
+FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount,
+                       const double *poles, size_t poleCount, FKError *err) {
     clearError(err);
     if (!segments || !loopStart || !regionOf || loopCount == 0) {
         setError(err, FK_ERR_INVALID_ARGUMENT, "no profile loops");
@@ -432,6 +437,26 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
             case FK_SEG_ELLIPSE: {
                 gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
                 e = BRepBuilderAPI_MakeEdge(gp_Elips(ax, sg.p[9], sg.p[10]));
+                break;
+            }
+            case FK_SEG_BSPLINE: {
+                const int first = (int)sg.p[0], count = (int)sg.p[1], degree = (int)sg.p[2];
+                if (!poles || first < 0 || count < 2 || degree < 1 || degree >= count || (size_t)(first + count) > poleCount) {
+                    setError(err, FK_ERR_INVALID_ARGUMENT, "invalid B-spline segment");
+                    return nullptr;
+                }
+                // Clamped uniform knots: end multiplicity degree+1, interior knots simple.
+                const int spans = count - degree;
+                TColgp_Array1OfPnt P(1, count);
+                for (int i = 0; i < count; ++i) P.SetValue(i + 1, pnt(poles + 3 * (first + i)));
+                TColStd_Array1OfReal K(1, spans + 1);
+                TColStd_Array1OfInteger M(1, spans + 1);
+                for (int i = 0; i <= spans; ++i) {
+                    K.SetValue(i + 1, (double)i / spans);
+                    M.SetValue(i + 1, (i == 0 || i == spans) ? degree + 1 : 1);
+                }
+                Handle(Geom_BSplineCurve) c = new Geom_BSplineCurve(P, K, M, degree);
+                e = BRepBuilderAPI_MakeEdge(c);
                 break;
             }
             default:

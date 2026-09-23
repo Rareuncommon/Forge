@@ -74,6 +74,10 @@ extension Sketch {
                 let u = a * cos(t), v = b * sin(t)
                 return (cx + u * cos(rot) - v * sin(rot), cy + u * sin(rot) + v * cos(rot))
             }
+        case .spline:
+            let spans = max(1, e.points.count - (e.degree ?? 3))
+            let n = max(segments / 2, 16) * spans
+            return (0...n).map { splinePoint(id, at: Double($0) / Double(n)) }
         }
     }
 
@@ -111,6 +115,7 @@ extension Sketch {
             switch c.kind {
             case .line: edges.append(Edge(id: c.id, a: node(c.points[0]), b: node(c.points[1])))
             case .arc: edges.append(Edge(id: c.id, a: node(c.points[1]), b: node(c.points[2])))
+            case .spline: edges.append(Edge(id: c.id, a: node(c.points.first!), b: node(c.points.last!)))
             case .circle, .ellipse:
                 loops.append(ProfileLoop(entities: [c.id], forward: [true], signedAreaMM2: closedCurveArea(c)!, parent: nil, depth: 0))
             case .point: break
@@ -187,12 +192,19 @@ extension Sketch {
             valid: !loops.isEmpty && openEnds.isEmpty && branches.isEmpty && crossings.isEmpty, issues: issues)
     }
 
-    /// Exact signed area of a loop of lines and arcs: shoelace over the curve endpoints plus
-    /// the circular segment of each arc (added when traversed counter-clockwise).
+    /// Exact signed area of a loop of lines, arcs and splines: shoelace over the curve endpoints
+    /// plus the circular segment of each arc (added when traversed counter-clockwise); splines
+    /// contribute their own Green's-theorem integral.
     func exactArea(_ chain: [(String, Bool)]) -> Double {
         var area = 0.0
         for (id, forward) in chain {
             let e = entities[id]!
+            if e.kind == .spline {
+                // Green's theorem along the spline itself (exact, see BSpline.greenArea).
+                let g = BSpline.greenArea(splinePoles(id), degree: e.degree ?? 3)
+                area += forward ? g : -g
+                continue
+            }
             let (a, b): (String, String) = e.kind == .arc ? (e.points[1], e.points[2]) : (e.points[0], e.points[1])
             let (p, q) = forward ? (point(a), point(b)) : (point(b), point(a))
             area += (p.0 * q.1 - q.0 * p.1) / 2

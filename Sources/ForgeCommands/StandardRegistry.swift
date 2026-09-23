@@ -34,6 +34,7 @@ extension CommandRegistry {
         r.register(SketchAddCircle.self)
         r.register(SketchAddArc.self)
         r.register(SketchAddEllipse.self)
+        r.register(SketchAddSpline.self)
         r.register(SketchAddRectangle.self)
         r.register(SketchAddSlot.self)
         r.register(SketchAddPolygon.self)

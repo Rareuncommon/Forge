@@ -35,7 +35,7 @@ public struct SketchPlane: Codable, Sendable, Hashable {
 }
 
 public enum SketchEntityKind: String, Codable, Sendable, CaseIterable, SchemaEnum {
-    case point, line, circle, arc, ellipse
+    case point, line, circle, arc, ellipse, spline
 }
 
 /// A sketch entity. Curves reference their defining points (which are entities too, owned
@@ -47,10 +47,12 @@ public struct SketchEntity: Codable, Sendable, Hashable {
     /// For points created by a curve (line endpoints, arc centre/ends...): the curve's id.
     public var owner: String?
     /// line: [start, end]; circle: [center]; arc: [center, start, end] (CCW start→end);
-    /// ellipse: [center]; point: [].
+    /// ellipse: [center]; spline: control points; point: [].
     public var points: [String]
-    /// point: [x, y]; circle: [radius]; ellipse: [major, minor, rotation]; line/arc: [].
+    /// point: [x, y]; circle: [radius]; ellipse: [major, minor, rotation]; line/arc/spline: [].
     public var params: [Int]
+    /// Spline degree (spline: points are its control points, first and last are its ends).
+    public var degree: Int? = nil
 }
 
 public enum ConstraintKind: String, Codable, Sendable, CaseIterable, SchemaEnum {

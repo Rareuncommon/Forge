@@ -133,7 +133,7 @@ extension Sketch {
         let e = entities[id]!
         var out: [Crossing] = []
         for other in entityOrder where other != id {
-            guard let o = entities[other], o.kind != .point, o.kind != .ellipse else { continue }
+            guard let o = entities[other], o.kind != .point, o.kind != .ellipse, o.kind != .spline else { continue }
             for q in carrierIntersections(id, other) where withinExtent(other, q, tol: tol) && withinExtent(id, q, tol: tol) {
                 let t = curveParam(id, q)
                 switch e.kind {
@@ -227,9 +227,10 @@ extension Sketch {
     public mutating func trim(_ id: String, at pick: (Double, Double)) throws -> TrimResult {
         let e = try entity(id)
         guard e.kind != .point else { throw ForgeError(.invalidParams, "trim needs a curve", entities: [id]) }
-        guard e.kind != .ellipse else {
-            // NOT IMPLEMENTED: ellipse trimming (needs partial ellipses, SPEC 7.1 entities).
-            throw ForgeError(.notImplemented, "trimming ellipses is not implemented yet", entities: [id])
+        guard e.kind != .ellipse, e.kind != .spline else {
+            // NOT IMPLEMENTED: ellipse trimming (needs partial ellipses) and spline trimming (needs
+            // curve–curve intersection and knot insertion).
+            throw ForgeError(.notImplemented, "trimming \(e.kind.rawValue)s is not implemented yet", entities: [id])
         }
         var s = self
         var result = TrimResult()
@@ -382,7 +383,8 @@ extension Sketch {
             result.created = [a1, a2]
         default:
             // NOT IMPLEMENTED: splitting points is meaningless; ellipses need partial ellipses.
-            throw ForgeError(e.kind == .ellipse ? .notImplemented : .invalidParams, "\(e.kind.rawValue)s cannot be split\(e.kind == .ellipse ? " yet" : "")", entities: [id])
+            let later = e.kind == .ellipse || e.kind == .spline
+            throw ForgeError(later ? .notImplemented : .invalidParams, "\(e.kind.rawValue)s cannot be split\(later ? " yet" : "")", entities: [id])
         }
         try s.commitTrim(id)
         self = s
@@ -422,7 +424,7 @@ extension Sketch {
         // Candidates: carrier intersections beyond the chosen end, within the other curve.
         var best: (d: Double, q: (Double, Double), cutter: String)?
         for other in s.entityOrder where other != id {
-            guard let o = s.entities[other], o.kind != .point, o.kind != .ellipse else { continue }
+            guard let o = s.entities[other], o.kind != .point, o.kind != .ellipse, o.kind != .spline else { continue }
             for q in s.carrierIntersections(id, other) where s.withinExtent(other, q, tol: tol) {
                 let d: Double
                 if e.kind == .line {
