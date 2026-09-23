@@ -1,26 +1,46 @@
-// Forge macOS application shell (SwiftUI). The UI is a client of the command bus: every action
-// below goes through Engine.execute — there is no UI-only functionality (SPEC §1.2, §3).
+// Forge macOS application (SwiftUI). The UI is a client of the command bus: every action goes
+// through Engine.execute — there is no UI-only functionality (SPEC §1.2, §3).
 //
-// STATUS: M0 skeleton. Written for macOS 27 / Xcode 27 but NOT yet compiled or run — the M0
-// session ran on Linux. See PROGRESS.md.
+// Layout (SolidWorks-style): command ribbon on top, feature tree on the left, viewport with a
+// heads-up view toolbar in the middle, property panel on the right, status bar at the bottom.
 
+import AppKit
 import ForgeCommands
 import ForgeCore
 import ForgeKernel
 import ForgeRender
+import ForgeSketch
 import SwiftUI
 
 @main
 struct ForgeApp: App {
     @State private var model = AppModel()
 
+    init() {
+        // `swift run` launches a bare executable, not an .app bundle: without this it gets no
+        // Dock icon or menu bar and does not come to the front.
+        NSApplication.shared.setActivationPolicy(.regular)
+    }
+
     var body: some Scene {
         WindowGroup("Forge") {
             ContentView()
                 .environment(model)
-                .task { await model.bootstrap() }
+                .frame(minWidth: 1000, minHeight: 640)
+                .task {
+                    NSApplication.shared.activate()
+                    await model.bootstrap()
+                }
         }
         .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Part") { Task { await model.run("document.new", ["name": "Part1"]) } }.keyboardShortcut("n")
+                Button("Open…") { model.openDocument() }.keyboardShortcut("o")
+            }
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") { model.saveDocument(as: false) }.keyboardShortcut("s")
+                Button("Save As…") { model.saveDocument(as: true) }.keyboardShortcut("s", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") { Task { await model.run("edit.undo") } }.keyboardShortcut("z")
                 Button("Redo") { Task { await model.run("edit.redo") } }.keyboardShortcut("z", modifiers: [.command, .shift])
@@ -31,6 +51,7 @@ struct ForgeApp: App {
                 }
                 Divider()
                 Button("Zoom to Fit") { model.zoomToFit() }.keyboardShortcut("f", modifiers: [])
+                Button("Normal To Sketch") { model.normalToSketch() }.disabled(model.activeSketch == nil)
             }
             CommandGroup(after: .textEditing) {
                 Button("Command Palette…") { model.showPalette = true }.keyboardShortcut("k")
@@ -39,17 +60,68 @@ struct ForgeApp: App {
     }
 }
 
+enum RibbonTab: String, CaseIterable, Identifiable {
+    case features = "Features", sketch = "Sketch", evaluate = "Evaluate"
+    var id: String { rawValue }
+}
+
+/// The operation whose options are shown in the property panel (with OK / Cancel).
+enum Operation: Equatable {
+    case extrude, revolve, fillet, combine, massProperties
+    case primitive(Primitive)
+
+    var title: String {
+        switch self {
+        case .extrude: "Extruded Boss/Base"
+        case .revolve: "Revolved Boss/Base"
+        case .fillet: "Fillet"
+        case .combine: "Combine"
+        case .massProperties: "Mass Properties"
+        case .primitive(let p): p.title
+        }
+    }
+}
+
+enum Primitive: String, CaseIterable, Identifiable {
+    case box, cylinder, sphere
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var systemImage: String {
+        switch self {
+        case .box: "cube"
+        case .cylinder: "cylinder"
+        case .sphere: "circle.circle"
+        }
+    }
+}
+
+struct SketchRow: Identifiable, Equatable {
+    var id: String
+    var name: String
+    var plane: String
+    var status: SolveStatus?
+    var dof: Int
+}
+
 /// App state. Main-actor bound; talks to the Engine actor asynchronously so the UI never blocks.
 @MainActor @Observable
 final class AppModel {
     let engine = Engine()
+    var documentName = "Part1"
+    var documentPath: String?
     var bodies: [BodySummary] = []
+    var sketches: [SketchRow] = []
     var selection: [String] = []
     var inspector: JSONValue?
     var lastError: ForgeError?
     var log: [String] = []
     var showPalette = false
     var paletteQuery = ""
+    var ribbonTab: RibbonTab = .features
+    var operation: Operation?
+    /// The sketch an extrude/revolve uses, and the values being edited in the property panel.
+    var operationSketch: String?
+    var form = OperationForm()
     /// Bumped whenever the scene must be re-uploaded to the GPU.
     var sceneVersion = 0
     var scene = DocumentSceneBox()
@@ -80,9 +152,16 @@ final class AppModel {
 
     func refresh() async {
         guard let doc = await engine.activeDocument else { return }
+        documentName = doc.name
         bodies = (try? doc.orderedBodies.map(BodySummary.init)) ?? []
+        sketches = doc.orderedSketches.map {
+            SketchRow(id: $0.id, name: $0.name, plane: $0.plane.name, status: $0.report?.status, dof: $0.report?.dof ?? 0)
+        }
         selection = doc.selection
-        if let ds = try? DocumentScene(document: doc, highlight: doc.selection) {
+        if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
+            let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)
+            let editing = doc.activeSketch.flatMap { doc.sketches[$0] }
+            ds.scene.items += ReferenceGeometry.items(size: size, sketch: editing, allSketches: doc.orderedSketches)
             scene = DocumentSceneBox(value: ds)
             sceneVersion += 1
         }
@@ -104,6 +183,72 @@ final class AppModel {
 
     func setOrientation(_ o: ViewOrientation) { viewportCommands.send(.orient(o)) }
     func zoomToFit() { viewportCommands.send(.fit) }
+    func setStyle(_ s: RenderStyle) { viewportCommands.send(.style(s)) }
+
+    func normalToSketch() {
+        switch sketchState.plane?.name {
+        case "Front": setOrientation(.front)
+        case "Top": setOrientation(.top)
+        case "Right": setOrientation(.right)
+        default: break
+        }
+    }
+
+    /// Bodies in the selection (a face/edge selection counts for its body).
+    var selectedBodies: [String] {
+        var out: [String] = []
+        for ref in selection {
+            let b = String(ref.split(separator: "/").first ?? "")
+            if b.hasPrefix("body-"), !out.contains(b) { out.append(b) }
+        }
+        return out
+    }
+
+    var selectedEdges: [String] { selection.filter { $0.contains("/edge-") } }
+
+    /// One-line guidance for the status bar.
+    var hint: String {
+        if let op = operation { return "\(op.title): set the options on the right, then press OK." }
+        if activeSketch != nil {
+            if let t = sketchState.tool { return t.hint }
+            return "Pick a sketch tool, or select curves and use Smart Dimension. Esc cancels."
+        }
+        if bodies.isEmpty && sketches.isEmpty {
+            return "Start a sketch on a plane (Sketch tab or right-click a plane), or add a primitive."
+        }
+        return "Drag to rotate · right-drag or ⌥-drag to pan · scroll to zoom · F to fit."
+    }
+
+    // MARK: files
+
+    func saveDocument(as saveAs: Bool) {
+        if !saveAs, let path = documentPath {
+            Task { await run("document.save", ["path": .string(path), "overwrite": true]) }
+            return
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(documentName).forgepart"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var path = url.path
+        if !path.hasSuffix(".forgepart") { path += ".forgepart" }
+        Task {
+            if await run("document.save", ["path": .string(path), "overwrite": true]) != nil { documentPath = path }
+        }
+    }
+
+    func openDocument() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true  // a .forgepart is a package directory
+        panel.canChooseFiles = true
+        panel.treatsFilePackagesAsDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            if await run("document.open", ["path": .string(url.path)]) != nil {
+                documentPath = url.path
+                zoomToFit()
+            }
+        }
+    }
 }
 
 /// Non-observable wrapper so large scene data doesn't participate in SwiftUI diffing.
@@ -114,7 +259,7 @@ struct DocumentSceneBox {
 /// Commands from menus to the viewport, consumed in order by the viewport coordinator
 /// (which remembers how many it has applied, so SwiftUI updates never mutate model state).
 struct ViewportCommandQueue {
-    enum Command { case orient(ViewOrientation), fit }
+    enum Command { case orient(ViewOrientation), fit, style(RenderStyle) }
     private(set) var log: [Command] = []
     mutating func send(_ c: Command) { log.append(c) }
 }
@@ -124,110 +269,109 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
-            FeatureTreeView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-        } detail: {
+        VStack(spacing: 0) {
+            RibbonView()
+            Divider()
             HSplitView {
-                VStack(spacing: 0) {
-                    SketchToolbar()
-                    Divider()
+                FeatureTreeView()
+                    .frame(minWidth: 190, idealWidth: 230, maxWidth: 360)
+                ZStack(alignment: .top) {
                     ViewportView()
+                    HeadsUpToolbar()
+                        .padding(.top, 8)
                 }
-                .frame(minWidth: 400, minHeight: 300)
-                InspectorView()
-                    .frame(minWidth: 220, idealWidth: 280, maxWidth: 400)
+                .frame(minWidth: 420, minHeight: 320)
+                PropertyManagerView()
+                    .frame(minWidth: 230, idealWidth: 270, maxWidth: 380)
             }
+            Divider()
+            StatusBar()
         }
-        .toolbar {
-            ToolbarItemGroup {
-                Button("Box", systemImage: "cube") {
-                    Task { await model.run("body.create_box", ["width": 50, "height": 30, "depth": 20]) }
-                }
-                Button("Cylinder", systemImage: "cylinder") {
-                    Task { await model.run("body.create_cylinder", ["radius": 10, "height": 40]) }
-                }
-                Button("Commands", systemImage: "command") { model.showPalette = true }
-            }
-        }
+        .navigationTitle(model.documentName)
         .sheet(isPresented: $model.showPalette) { CommandPaletteView() }
-        .overlay(alignment: .bottom) {
+    }
+}
+
+/// Floating view controls over the viewport (SolidWorks' heads-up view toolbar).
+struct HeadsUpToolbar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { model.zoomToFit() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                .help("Zoom to fit (F)")
+            Menu {
+                ForEach(ViewOrientation.allCases, id: \.self) { o in
+                    Button(o.rawValue.capitalized) { model.setOrientation(o) }
+                }
+            } label: { Image(systemName: "cube.transparent") }
+                .help("View orientation")
+            if model.activeSketch != nil {
+                Button { model.normalToSketch() } label: { Image(systemName: "square.dashed") }
+                    .help("Normal to the sketch plane")
+            }
+            Menu {
+                Button("Shaded with Edges") { model.setStyle(.shadedWithEdges) }
+                Button("Shaded") { model.setStyle(.shaded) }
+                Button("Hidden Lines Removed") { model.setStyle(.hiddenLinesRemoved) }
+                Button("Wireframe") { model.setStyle(.wireframe) }
+            } label: { Image(systemName: "circle.lefthalf.filled") }
+                .help("Display style")
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.separator))
+    }
+}
+
+struct StatusBar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
             if let e = model.lastError {
-                ErrorBanner(error: e)
-                    .padding()
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(e.message).lineLimit(1).truncationMode(.tail)
+                    .help(([e.message] + e.suggestions.map { "Suggestion: \($0.description)" }).joined(separator: "\n"))
+                Button("Dismiss") { model.lastError = nil }.buttonStyle(.link)
+            } else {
+                Text(model.hint).foregroundStyle(.secondary).lineLimit(1)
             }
+            Spacer()
+            if let row = model.sketches.first(where: { $0.id == model.activeSketch }) {
+                SketchStatusBadge(row: row)
+            }
+            Text("MMGS").foregroundStyle(.secondary).help("Units: millimetre, gram, second")
         }
+        .font(.callout)
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .background(.bar)
     }
 }
 
-struct FeatureTreeView: View {
-    @Environment(AppModel.self) private var model
+struct SketchStatusBadge: View {
+    let row: SketchRow
 
     var body: some View {
-        List(model.bodies, id: \.id) { b in
-            Button {
-                Task { await model.select(b.id, extend: NSEvent.modifierFlags.contains(.shift)) }
-            } label: {
-                VStack(alignment: .leading) {
-                    Text(b.name).font(.body)
-                    Text("\(b.id) · \(b.topology.faces) faces · \(String(format: "%.1f", b.volumeMM3)) mm³")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .listRowBackground(model.selection.contains(b.id) ? Color.accentColor.opacity(0.2) : Color.clear)
-            .accessibilityLabel("\(b.name), \(b.topology.faces) faces")
+        let (text, color): (String, Color) = switch row.status {
+        case .fullyDefined: ("Fully Defined", .primary)
+        case .underDefined: ("Under Defined · \(row.dof) DOF", .blue)
+        case .redundant, .conflicting: ("Over Defined", .red)
+        case .failed: ("Cannot Solve", .red)
+        case nil: ("—", .secondary)
         }
-        .navigationTitle("Bodies")
-    }
-}
-
-struct InspectorView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Selection").font(.headline)
-                if model.selection.isEmpty {
-                    Text("Nothing selected").foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.selection, id: \.self) { Text($0).font(.system(.body, design: .monospaced)) }
-                }
-                if let info = model.inspector {
-                    Divider()
-                    Text(JSONCoding.string(info, pretty: true))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                Divider()
-                Text("Log").font(.headline)
-                ForEach(Array(model.log.suffix(20).enumerated()), id: \.offset) { _, line in
-                    Text(line).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-        }
-    }
-}
-
-struct ErrorBanner: View {
-    let error: ForgeError
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(error.message).font(.callout.bold())
-            ForEach(error.suggestions, id: \.self) { s in
-                Text("Suggestion: \(s.description) (\(s.command))").font(.caption)
-            }
-        }
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        return Text("\(row.name): \(text)").foregroundStyle(color)
     }
 }
 
 /// ⌘K palette: searches every command; parameters are entered as JSON and executed through
-/// the bus. (Inline typed parameter entry replaces the JSON field in M1.)
+/// the bus.
 struct CommandPaletteView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss

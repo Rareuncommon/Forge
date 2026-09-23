@@ -1,7 +1,5 @@
-// Sketch editing UI (M1). Every action is a command on the bus; the UI only turns clicks into
-// sketch coordinates and chooses which command to run.
-//
-// STATUS: written without a Mac; first compile happens in the macos-app CI job.
+// Sketch editing (M1). Every action is a command on the bus; the UI only turns clicks into
+// sketch coordinates (and, for trim, the curve under the cursor) and chooses the command.
 
 import ForgeCommands
 import ForgeCore
@@ -10,26 +8,42 @@ import ForgeSketch
 import SwiftUI
 
 enum SketchTool: String, CaseIterable, Identifiable {
-    case line, rectangle, circle, point, fillet
+    case line, rectangle, circle, arc, point, fillet, trim
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .line: "Line"
+        case .rectangle: "Rectangle"
+        case .circle: "Circle"
+        case .arc: "3 Point\nArc"
+        case .point: "Point"
+        case .fillet: "Sketch\nFillet"
+        case .trim: "Trim"
+        }
+    }
 
     var systemImage: String {
         switch self {
         case .line: "line.diagonal"
         case .rectangle: "rectangle"
         case .circle: "circle"
+        case .arc: "circle.bottomhalf.filled"
         case .point: "smallcircle.filled.circle"
         case .fillet: "arrow.turn.down.right"
+        case .trim: "scissors"
         }
     }
 
     var hint: String {
         switch self {
-        case .line: "Click points to draw connected lines; Esc ends the chain"
-        case .rectangle: "Click two opposite corners"
-        case .circle: "Click the centre, then a point on the circle"
-        case .point: "Click to place a point"
-        case .fillet: "Click a corner point to round it (radius from the field)"
+        case .line: "Line: click points to draw connected lines; Esc ends the chain."
+        case .rectangle: "Rectangle: click two opposite corners."
+        case .circle: "Circle: click the centre, then a point on the circle."
+        case .arc: "3 Point Arc: click the start, the end, then a point the arc passes through."
+        case .point: "Point: click to place a point."
+        case .fillet: "Sketch Fillet: click a corner where two lines meet (radius in the panel on the right)."
+        case .trim: "Trim: click the piece of a curve to remove (up to the curves crossing it)."
         }
     }
 }
@@ -47,9 +61,16 @@ struct SketchUIState {
 
 extension AppModel {
     func newSketch(on plane: StandardPlane) async {
+        operation = nil
         if await run("sketch.create", ["plane": .string(plane.rawValue)]) != nil {
             setOrientation(plane == .front ? .front : plane == .top ? .top : .right)
+            chooseTool(.line)
         }
+    }
+
+    func editSketch(_ id: String) async {
+        operation = nil
+        if await run("sketch.edit", ["sketch": .string(id)]) != nil { normalToSketch() }
     }
 
     func exitSketch() async {
@@ -58,12 +79,18 @@ extension AppModel {
         await run("sketch.exit")
     }
 
+    func chooseTool(_ tool: SketchTool?) {
+        sketchState.tool = tool
+        sketchState.pending = []
+    }
+
     func refreshSketchState() async {
         guard let doc = await engine.activeDocument, let id = doc.activeSketch, let sk = doc.sketches[id] else {
             activeSketch = nil
             sketchState.plane = nil
             sketchState.points = []
             sketchState.status = ""
+            sketchState.tool = nil
             return
         }
         activeSketch = id
@@ -87,7 +114,9 @@ extension AppModel {
         return best?.0 ?? p
     }
 
-    func sketchClick(_ raw: Point2, tolerance: Double) async {
+    /// A click on the sketch plane with a tool active. `curve` is the sketch curve under the
+    /// cursor, if any (used by trim).
+    func sketchClick(_ raw: Point2, tolerance: Double, curve: String?) async {
         guard let tool = sketchState.tool else { return }
         let p = snap(raw, tolerance: tolerance)
         func pt(_ q: Point2) -> JSONValue { [.number(q.u), .number(q.v)] }
@@ -115,24 +144,44 @@ extension AppModel {
             } else {
                 sketchState.pending = [p]
             }
+        case .arc:
+            sketchState.pending.append(p)
+            if sketchState.pending.count == 3 {
+                let (s, e, through) = (sketchState.pending[0], sketchState.pending[1], sketchState.pending[2])
+                sketchState.pending = []
+                await run("sketch.add_arc", ["mode": "three_point", "start": pt(s), "end": pt(e), "through": pt(through)])
+            }
         case .fillet:
             if let corner = sketchState.points.first(where: { $0.u == p.u && $0.v == p.v }) {
                 await run("sketch.fillet", ["corner": .string(corner.id), "radius": .number(sketchState.filletRadius)])
+            } else {
+                lastError = ForgeError(.invalidParams, "click exactly on a corner point to fillet it")
             }
+        case .trim:
+            guard let curve, let local = curve.split(separator: "/").last else {
+                lastError = ForgeError(.invalidParams, "click on the curve piece to remove")
+                return
+            }
+            await run("sketch.trim", ["entity": .string(String(local)), "at": pt(raw)])
         }
         await refreshSketchState()
     }
 
     func cancelSketchOperation() {
+        if sketchState.pending.isEmpty { sketchState.tool = nil }
         sketchState.pending = []
     }
 
-    /// Smart dimension from the current selection (SPEC 7.1): one line → length, one circle/arc
-    /// → diameter/radius, two points → distance, two lines → angle, point + line → distance.
+    /// Smart dimension from the current selection (SPEC 7.1): one line → length, one circle →
+    /// diameter, one arc → radius, two lines → angle, otherwise distance.
     func smartDimension(value: String) async {
         guard let id = activeSketch, let doc = await engine.activeDocument, let sk = doc.sketches[id] else { return }
         let local = selection.compactMap { ref -> String? in
             ref.hasPrefix(id + "/") ? String(ref.dropFirst(id.count + 1)) : nil
+        }
+        guard !local.isEmpty else {
+            lastError = ForgeError(.invalidParams, "select the sketch curves to dimension first (click them with no tool active; ⇧-click adds)")
+            return
         }
         let kinds = local.compactMap { sk.entities[$0]?.kind }
         let type: String
@@ -150,53 +199,5 @@ extension AppModel {
         }
         await run("sketch.add_dimension", params)
         await refreshSketchState()
-    }
-}
-
-/// Sketch toolbar shown above the viewport.
-struct SketchToolbar: View {
-    @Environment(AppModel.self) private var model
-    @State private var dimensionValue = ""
-
-    var body: some View {
-        @Bindable var model = model
-        HStack(spacing: 8) {
-            if model.activeSketch == nil {
-                Menu("New Sketch", systemImage: "pencil.and.ruler") {
-                    ForEach(StandardPlane.allCases, id: \.self) { p in
-                        Button("On \(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
-                    }
-                }
-            } else {
-                ForEach(SketchTool.allCases) { tool in
-                    Toggle(isOn: Binding(
-                        get: { model.sketchState.tool == tool },
-                        set: { model.sketchState.tool = $0 ? tool : nil; model.sketchState.pending = [] })
-                    ) {
-                        Label(tool.rawValue.capitalized, systemImage: tool.systemImage)
-                    }
-                    .toggleStyle(.button)
-                    .help(tool.hint)
-                }
-                if model.sketchState.tool == .fillet {
-                    TextField("Radius", value: $model.sketchState.filletRadius, format: .number)
-                        .frame(width: 60)
-                }
-                Divider().frame(height: 18)
-                TextField("Dimension (e.g. 25 mm)", text: $dimensionValue)
-                    .frame(width: 150)
-                    .onSubmit { Task { await model.smartDimension(value: dimensionValue); dimensionValue = "" } }
-                Button("Dimension", systemImage: "ruler") {
-                    Task { await model.smartDimension(value: dimensionValue); dimensionValue = "" }
-                }
-                .help("Dimension the selected sketch entities (line → length, circle → diameter, arc → radius, two lines → angle)")
-                Spacer()
-                Text(model.sketchState.status).font(.caption).foregroundStyle(.secondary)
-                Button("Extrude…", systemImage: "square.3.layers.3d") { Task { await model.run("body.extrude", ["depth": 10]) } }
-                Button("Exit Sketch", systemImage: "checkmark.circle") { Task { await model.exitSketch() } }
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
     }
 }

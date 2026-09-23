@@ -3,7 +3,8 @@
 //   trackpad: two-finger scroll pans, pinch zooms at cursor, rotate rolls
 //   click: pick (⇧ adds to selection) — picks go through selection.set on the command bus.
 //
-// STATUS: NOT yet compiled or run (M0 was developed on Linux). See PROGRESS.md.
+// With a sketch tool active, clicks become sketch-plane coordinates (plus the sketch curve
+// under the cursor, for trim) instead of selections.
 
 import ForgeCommands
 import ForgeCore
@@ -29,7 +30,7 @@ struct ViewportView: NSViewRepresentable {
             view.delegate = renderer
         }
         view.onPick = { ref, extend in Task { await model.select(ref, extend: extend) } }
-        view.onSketchClick = { point, tolerance in Task { await model.sketchClick(point, tolerance: tolerance) } }
+        view.onSketchClick = { point, tolerance, curve in Task { await model.sketchClick(point, tolerance: tolerance, curve: curve) } }
         view.onCancel = { model.cancelSketchOperation() }
         view.setAccessibilityLabel("3D viewport")
         view.setAccessibilityRole(.group)
@@ -53,6 +54,9 @@ struct ViewportView: NSViewRepresentable {
                 switch c {
                 case .orient(let o): view.orient(o)
                 case .fit: view.fit()
+                case .style(let st):
+                    view.renderer?.style = st
+                    view.needsDisplay = true
                 }
             }
             context.coordinator.appliedCommands = commands.count
@@ -71,7 +75,7 @@ final class ForgeMTKView: MTKView {
     var onPick: ((String?, Bool) -> Void)?
     /// Set while a sketch tool is active: clicks become sketch coordinates instead of picks.
     var sketchPlane: SketchPlane?
-    var onSketchClick: ((Point2, Double) -> Void)?
+    var onSketchClick: ((Point2, Double, String?) -> Void)?
     var onCancel: (() -> Void)?
     private var dragStart: NSPoint?
     private var dragged = false
@@ -121,7 +125,10 @@ final class ForgeMTKView: MTKView {
             let rel = hit - plane.origin
             // Snap tolerance: 8 pixels in model units at the target plane.
             let tolerance = 8 * 2 * cam.visibleHalfHeight / max(Double(bounds.height), 1)
-            onSketchClick?(Point2(rel.dot(plane.xAxis), rel.dot(plane.yAxis)), tolerance)
+            let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
+            let under = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
+                .flatMap { documentScene?.reference(for: $0) }
+            onSketchClick?(Point2(rel.dot(plane.xAxis), rel.dot(plane.yAxis)), tolerance, under)
             return
         }
         guard let ds = documentScene else { return }
