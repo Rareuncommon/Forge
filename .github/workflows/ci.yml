@@ -55,17 +55,27 @@ jobs:
           sudo xcode-select -s "$XC"
           swift --version
           xcrun --show-sdk-version
-      - name: Cache OCCT
+      # Restore/save are separate so the (long) OCCT build is cached even when a later step
+      # fails — a plain actions/cache only saves when the whole job succeeds.
+      - name: Restore OCCT
         id: occt-cache
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: Vendor/occt
           key: occt-V8_0_1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-occt.sh') }}
       - name: Build OCCT 8.0.1
         if: steps.occt-cache.outputs.cache-hit != 'true'
-        run: scripts/build-occt.sh
-      - name: Build (engine + app)
-        run: swift build --build-tests
+        run: scripts/build-occt.sh --jobs "$(sysctl -n hw.ncpu)"
+      - name: Save OCCT
+        if: steps.occt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: Vendor/occt
+          key: ${{ steps.occt-cache.outputs.cache-primary-key }}
+      - name: Build engine and tests
+        run: swift build --build-tests --target forge-cli && swift build --build-tests
+      - name: Build app (Metal + SwiftUI)
+        run: swift build --product ForgeApp
       - name: Test
         run: swift test
       - name: Golden models through forge-cli
