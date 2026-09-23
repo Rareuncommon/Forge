@@ -22,7 +22,7 @@ No third-party Swift packages are used (`Package.swift` has no dependencies).
 | Dependency | Version checked | License | Notes |
 |---|---|---|---|
 | MCP Swift SDK (`modelcontextprotocol/swift-sdk`) | 0.12.1 | MIT | Own implementation chosen (ADR 0006) |
-| FreeCAD planegcs | FreeCAD 1.1.3 | LGPL 2.1+ (Eigen MPL-2.0, Boost BSL-1.0) | Custom solver chosen; planegcs kept as out-of-tree test oracle (ADR 0003) |
+| FreeCAD planegcs | FreeCAD 1.1.3 | LGPL 2.1+ (Eigen MPL-2.0, Boost BSL-1.0) | Custom solver chosen; planegcs is built by `tools/planegcs-oracle/build.sh` as a separate, test-only executable (never linked, never shipped; ADR 0003/0005) |
 | Netgen | 6.2.2607 | LGPL 2.1 | Planned for meshing (M7), dynamic linking |
 
 ## Planned external processes (never linked)

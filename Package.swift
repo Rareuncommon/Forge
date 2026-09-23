@@ -88,7 +88,7 @@ var targets: [Target] = [
     .testTarget(name: "ForgeMCPTests", dependencies: ["ForgeMCP", "ForgeCommands"]),
     .testTarget(
         name: "GoldenModelTests",
-        dependencies: ["ForgeCommands"],
+        dependencies: ["ForgeCommands", "ForgeSketch"],
         resources: [.copy("Models")]
     ),
 ]

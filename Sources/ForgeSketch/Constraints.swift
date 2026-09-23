@@ -216,13 +216,21 @@ extension Sketch {
             }
             return [pt(ids[0]).x - pt(ids[1]).x]
         case .parallel:
+            // The angle between the lines folded into (−π/2, π/2]: zero only when parallel (a
+            // zero-length line cannot satisfy it, unlike a bare cross product), and slope 1
+            // everywhere — even from an exactly perpendicular start, where sin θ is stationary.
             let (a1, b1) = ends(ids[0]), (a2, b2) = ends(ids[1])
             let d1 = b1 - a1, d2 = b2 - a2
-            return [d1.cross(d2) / d2.length]
+            let (cr, dt) = (d1.cross(d2), d1.dot(d2))
+            let f = dt.value < 0 ? -1.0 : 1.0
+            return [D.atan2(cr * f, dt * f) * angularScale]
         case .perpendicular:
+            // Same, for the angle away from perpendicular.
             let (a1, b1) = ends(ids[0]), (a2, b2) = ends(ids[1])
             let d1 = b1 - a1, d2 = b2 - a2
-            return [d1.dot(d2) / d2.length]
+            let (cr, dt) = (d1.cross(d2), d1.dot(d2))
+            let f = cr.value < 0 ? -1.0 : 1.0
+            return [D.atan2(dt * f, cr * f) * angularScale]
         case .collinear:
             let (a2, b2) = ends(ids[1])
             return [lineDistance(a2, ids[0]), lineDistance(b2, ids[0])]

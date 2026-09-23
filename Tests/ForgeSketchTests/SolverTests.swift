@@ -1142,3 +1142,71 @@ struct EllipseTrimTests {
         #expect(near(s.point(ends(s, l).1), (20, 0), 1e-9))
     }
 }
+
+@Suite("Solver findings from the planegcs oracle")
+struct OracleFindingTests {
+    @Test func parallelAndPerpendicularCannotCollapseALine() throws {
+        // a ∥ b, b ⟂ c, c ∥ d: an angle between a and d other than 90° is a conflict — not
+        // something to "satisfy" by shrinking b to zero length.
+        var s = newSketch()
+        let a = s.addLine(from: (0, 0), to: (20, 0))
+        let b = s.addLine(from: (20, 0), to: (20, 1))
+        let c = s.addLine(from: (20, 1), to: (5, 10))
+        let d = s.addLine(from: (5, 10), to: (0, 12))
+        try s.addConstraint(.parallel, [a, b])
+        try s.addConstraint(.parallel, [c, d])
+        try s.addConstraint(.angle, [a, d], value: 2.9)
+        #expect(throws: ForgeError.self) { try s.addConstraint(.perpendicular, [b, c]) }
+        for id in [a, b, c, d] {
+            let (p, q) = ends(s, id)
+            #expect(hypot(s.point(q).0 - s.point(p).0, s.point(q).1 - s.point(p).1) > 1e-3)
+        }
+    }
+
+    @Test func tangentOnBothSidesIsAConflictNotAZeroCircle() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (0, 0), to: (30, 0))
+        let c = s.addCircle(center: (10, 5), radius: 5)
+        try s.addConstraint(.tangent, [l, c])
+        // Move the circle across the line, then ask for tangency again: that needs r = 0.
+        var t = s
+        try t.drag(t.entities[c]!.points[0], to: (10, -4))
+        do {
+            try t.addConstraint(.tangent, [l, c])
+            Issue.record("expected a conflict")
+        } catch let e as ForgeError {
+            #expect(e.code == .sketchConflict || e.code == .sketchRedundant)
+        }
+    }
+
+    @Test func radiusAndCentreToEndDistanceAreRedundant() throws {
+        var s = newSketch()
+        let arc = s.addArc(center: (0, 0), start: (10, 0), end: (0, 10))
+        let e = s.entities[arc]!
+        try s.addConstraint(.radius, [arc], value: 10)
+        do {
+            try s.addConstraint(.distance, [e.points[0], e.points[2]], value: 10)
+            Issue.record("expected sketch_redundant")
+        } catch let err as ForgeError {
+            #expect(err.code == .sketchRedundant)
+        }
+    }
+
+    @Test func aTriangleCannotBeMadeRightAngledByCollapsingASide() throws {
+        // Horizontal base, vertical side back to the origin: a third side perpendicular to the
+        // base would need the base to have zero length.
+        var s = newSketch()
+        let a = s.addLine(from: (0, 0), to: (30, 0))
+        let b = s.addLine(from: (30, 0), to: (0, 40))
+        let c = s.addLine(from: (0, 40), to: (0, 0))
+        try s.addConstraint(.coincident, [ends(s, a).1, ends(s, b).0])
+        try s.addConstraint(.coincident, [ends(s, b).1, ends(s, c).0])
+        try s.addConstraint(.coincident, [ends(s, c).1, ends(s, a).0])
+        try s.addConstraint(.horizontal, [a])
+        try s.addConstraint(.vertical, [c])
+        #expect(throws: ForgeError.self) { try s.addConstraint(.perpendicular, [a, b]) }
+        // A length dimension on the base itself may still make it small on purpose.
+        try s.addConstraint(.distance, [a], value: 0.01)
+        #expect(near(hypot(s.point(ends(s, a).1).0 - s.point(ends(s, a).0).0, s.point(ends(s, a).1).1 - s.point(ends(s, a).0).1), 0.01, 1e-9))
+    }
+}

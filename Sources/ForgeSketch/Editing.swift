@@ -53,9 +53,53 @@ extension Sketch {
         let id = trial.appendConstraint(c)
         let r = SketchSolver.solve(&trial)
         try Self.judge(r, new: id, previous: before, kind: kind, entities: ids, value: value, sketchID: self.id)
+        try trial.refuseCollapse(comparedTo: self, new: id, kind: kind, entities: ids)
         trial.refreshDriven()
         self = trial
         return id
+    }
+
+    /// Sizes that must stay positive: line lengths and circle/arc radii.
+    func curveSizes() -> [String: Double] {
+        var out: [String: Double] = [:]
+        for e in entities.values {
+            switch e.kind {
+            case .line:
+                let (a, b) = (point(e.points[0]), point(e.points[1]))
+                out[e.id] = hypot(b.0 - a.0, b.1 - a.1)
+            case .circle: out[e.id] = abs(params[e.params[0]])
+            case .arc:
+                let (c, a) = (point(e.points[0]), point(e.points[1]))
+                out[e.id] = hypot(a.0 - c.0, a.1 - c.1)
+            default: break
+            }
+        }
+        return out
+    }
+
+    /// A solution that satisfies the constraints only by collapsing a line or circle to zero
+    /// size (e.g. parallel + perpendicular through a zero-length line, or tangency on both
+    /// sides of a zero-radius circle) is a conflict, not a solution.
+    func refuseCollapse(comparedTo old: Sketch, new id: String, kind: ConstraintKind, entities ids: [String]) throws {
+        // 1e-6 of the sketch's coordinate scale (0.1 µm for a 100 mm part): the solver can stop
+        // a hair short of an exact collapse, and no real dimension is that small.
+        // Also relative: a curve shrinking 10⁴-fold as a side effect of another relation is being
+        // collapsed (the solver approaches zero only asymptotically). A size dimension on that
+        // very curve is an explicit request and exempt.
+        let tol = 1e-6 * max(1, params.map(abs).max() ?? 1)
+        let before = old.curveSizes()
+        let sized: Set<String> = [.distance, .radius, .diameter].contains(kind) && ids.count == 1 ? Set(ids) : []
+        let collapsed = curveSizes().filter { id, size in
+            guard let was = before[id], was > tol else { return false }
+            return size <= tol || (size < 1e-4 * was && !sized.contains(id))
+        }.map(\.key).sorted()
+        guard !collapsed.isEmpty else { return }
+        throw ForgeError(
+            .sketchConflict,
+            "\(kind.rawValue) on \(ids.joined(separator: ", ")) can only be satisfied by shrinking \(collapsed.joined(separator: ", ")) to zero size",
+            entities: (ids + collapsed).map { "\(self.id)/\($0)" },
+            suggestions: [SuggestedFix(description: "Inspect the sketch", command: "sketch.get", params: ["sketch": .string(self.id)])],
+            details: ["collapsed": .array(collapsed.map { .string($0) })])
     }
 
     static func validateDimension(_ kind: ConstraintKind, _ v: Double) throws {
@@ -132,6 +176,7 @@ extension Sketch {
         }
         let r = SketchSolver.solve(&trial)
         try Self.judge(r, new: id, previous: before, kind: c.kind, entities: c.entities, value: value, sketchID: self.id)
+        try trial.refuseCollapse(comparedTo: self, new: id, kind: c.kind, entities: c.entities)
         if r.status == .failed { throw ForgeError(.solverFailed, "no solution with \(id) = \(value ?? c.value ?? 0)", entities: ["\(self.id)/\(id)"]) }
         trial.refreshDriven()
         self = trial

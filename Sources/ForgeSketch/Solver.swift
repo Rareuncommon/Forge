@@ -221,9 +221,9 @@ public enum SketchSolver {
                 // the best point found.
             }
 
-            // Diagnosis: Gram–Schmidt over rows in creation order, internal (structural) rows
-            // last: when user relations imply an arc's own radius equality, the internal row is
-            // the one dropped instead of the user relation being reported redundant.
+            // Diagnosis: Gram–Schmidt over rows in creation order. Internal rows marked `yields`
+            // (a split piece's own end-on-curve rows, implied by construction by its joins) go
+            // last, so they are the ones dropped as dependent.
             var basis: [[Double]] = []
             var offsets: [(ri: Int, start: Int)] = []
             var next = 0
@@ -231,8 +231,8 @@ public enum SketchSolver {
                 offsets.append((ri, next))
                 next += rows[ri].count
             }
-            let ordered = offsets.filter { !sketch.constraints[rows[$0.ri].constraint].isInternal }
-                + offsets.filter { sketch.constraints[rows[$0.ri].constraint].isInternal }
+            let ordered = offsets.filter { !sketch.constraints[rows[$0.ri].constraint].yields }
+                + offsets.filter { sketch.constraints[rows[$0.ri].constraint].yields }
             for (ri, start) in ordered {
                 let c = sketch.constraints[rows[ri].constraint]
                 var dependent = false

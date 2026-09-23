@@ -412,10 +412,20 @@ extension Sketch {
         return arc
     }
 
-    /// A new partial ellipse on the same ellipse as `id` (shared axes and rotation).
+    /// A new partial ellipse on the same ellipse as `id` (shared axes and rotation). Its own
+    /// ends-on-ellipse rows yield to the joins that will tie it to the original.
     mutating func ellipsePiece(of id: String, from a: (Double, Double), to b: (Double, Double)) -> String {
         let e = entities[id]!
-        return insertEllipseArc(center: point(e.points[0]), shape: e.params, from: ellipseParam(id, a), to: ellipseParam(id, b), construction: e.construction)
+        let piece = insertEllipseArc(center: point(e.points[0]), shape: e.params, from: ellipseParam(id, a), to: ellipseParam(id, b), construction: e.construction)
+        markYielding(piece)
+        return piece
+    }
+
+    /// The piece's internal rows are implied by how it is joined to the curve it came from.
+    mutating func markYielding(_ piece: String) {
+        for i in constraints.indices where constraints[i].isInternal && constraints[i].entities.contains(piece) {
+            constraints[i].yields = true
+        }
     }
 
     // MARK: split
@@ -489,6 +499,7 @@ extension Sketch {
             if e.kind == .circle {
                 a1 = s.replaceCircle(id, withArcFrom: p1, to: p2, &result)
                 a2 = s.addArc(center: s.circleOf(a1).c, start: p2, end: p1, construction: e.construction)
+                s.markYielding(a2)
             } else {
                 a1 = s.replaceEllipse(id, withArcFrom: p1, to: p2, &result)
                 a2 = s.ellipsePiece(of: a1, from: p2, to: p1)

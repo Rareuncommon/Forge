@@ -103,6 +103,9 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
     public var tangentEnds: [String]? = nil
     /// Extra solver unknowns owned by the constraint (point on spline: the curve parameter t).
     public var aux: [Int]? = nil
+    /// Internal rows of a split piece that its joins imply by construction: considered last in
+    /// the rank analysis, so they (not the joins) are what is dropped as dependent.
+    public var yields: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, kind, entities, value, driven, side, at
@@ -111,6 +114,38 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
         case alignedEnds = "aligned_ends"
         case tangentEnds = "tangent_ends"
         case aux = "aux_params"
+        case yields = "yields_to_relations"
+    }
+
+    public init(
+        id: String, kind: ConstraintKind, entities: [String], value: Double?, driven: Bool, side: Double, isInternal: Bool,
+        at: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.entities = entities
+        self.value = value
+        self.driven = driven
+        self.side = side
+        self.isInternal = isInternal
+        self.at = at
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(ConstraintKind.self, forKey: .kind)
+        entities = try c.decode([String].self, forKey: .entities)
+        value = try c.decodeIfPresent(Double.self, forKey: .value)
+        driven = try c.decode(Bool.self, forKey: .driven)
+        side = try c.decode(Double.self, forKey: .side)
+        isInternal = try c.decode(Bool.self, forKey: .isInternal)
+        at = try c.decodeIfPresent(String.self, forKey: .at)
+        linkedTo = try c.decodeIfPresent(String.self, forKey: .linkedTo)
+        alignedEnds = try c.decodeIfPresent([String].self, forKey: .alignedEnds)
+        tangentEnds = try c.decodeIfPresent([String].self, forKey: .tangentEnds)
+        aux = try c.decodeIfPresent([Int].self, forKey: .aux)
+        yields = try c.decodeIfPresent(Bool.self, forKey: .yields) ?? false
     }
 }
 

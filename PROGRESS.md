@@ -75,8 +75,25 @@
   parameter from the other carrier's implicit form; pieces of one ellipse share its axis and
   rotation unknowns (so they stay one ellipse without extra relations) and are concentric.
   Golden model 022: ellipse trimmed by a chord (area and x-centroid analytic, DOF 6).
+- **planegcs oracle:** FreeCAD 1.1.3's planegcs now builds out of tree here and in CI
+  (`tools/planegcs-oracle`, three header shims, Eigen + Boost.Graph) as a test-only process.
+  `PlanegcsOracleTests` compares DOF, redundancy/conflict verdicts and, for fully defined
+  sketches, re-solved positions on the golden sketches plus 60 random sketches. Final run:
+  44 position matches, 19 diagnosis-only agreements, 3 mirror-branch cases (planegcs's
+  side-less tangency), 2 ill-conditioned (excluded from positions), 8 outside the mapped subset.
 
 ### Findings
+- The oracle found three real solver problems, all fixed: (1) parallel/perpendicular could be
+  "satisfied" by collapsing a line to zero length (cross/dot residuals) — now angle-based;
+  (2) two opposite-side tangencies were "satisfied" by shrinking the circle to radius 0, and
+  a right angle in a triangle with a horizontal and a vertical side shrank the base to
+  1.5e-4 mm — a relation whose solution collapses a curve (to ~0, or 10⁴-fold as a side
+  effect) is now refused as a conflict; the angle rows use atan2 so a solve from exactly
+  perpendicular lines does not stall; (3) the earlier
+  "internal rows last" rank order hid genuine redundancy (radius + centre-to-end distance on
+  one arc) — only split pieces' implied rows now yield.
+- Oracle-side limitations found and documented: planegcs's tangency has no side and its point
+  symmetry is singular on the axis.
 - The ellipse root-finder mishandled a sample lying exactly on the other curve (bisection
   from a zero end); a line along the major axis extended to (19.9992, 0.087) instead of
   (20, 0). Exact zeros are now recorded directly.
@@ -111,14 +128,13 @@
 - Not started in 7.1: spline tools (tangency/curvature handles, fit, simplify), parabola, conic, text,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
-- The planegcs oracle harness (ADR 0003) is not built.
 - `body.extrude`/`body.revolve` are kernel-level (no feature tree yet), so nothing in §7 is
   "done" even though bodies and sketches now round-trip through the file format.
 - Quick Look / Spotlight importers for the package are not written.
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1: stretch, spline tools (fit/simplify/curvature), conics/parabola, text; planegcs oracle harness.
+2. Remaining M1: stretch, spline tools (fit/simplify/curvature), conics/parabola, text.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

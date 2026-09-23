@@ -86,12 +86,18 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
 - **Whole-curve symmetry:** `symmetric` also relates two lines (4 rows), circles (3) or arcs
   (5: centres, start↔end, and the remaining end's angle as a cross product, which stays
   regular where a perpendicular-projection or midpoint form becomes singular).
-- **Internal rows last in the rank analysis:** an arc's internal radius equality is
-  structural. When user relations imply it (e.g. a circle split into two concentric arcs
-  sharing both ends), the internal row is the one dropped as dependent, instead of a user
-  relation being reported redundant. DOF is unchanged (rank is order-independent); the
-  trade-off is that a user relation that merely restates an arc's own radius equality is not
-  flagged.
+- **Yielding internal rows:** rank analysis is in creation order with internal rows in
+  place, so a user relation that restates an arc's own radius equality (e.g. a radius and a
+  centre-to-end distance) is reported redundant. Only the internal rows of split pieces, which
+  their joins imply by construction (a circle split into two concentric arcs sharing both
+  ends), are marked `yields` and considered last. (An earlier version moved *all* internal
+  rows last; the planegcs oracle showed that hid genuine redundancies.)
+- **No collapse:** parallel/perpendicular rows are the angle between the lines folded into
+  (−π/2, π/2] via atan2 (a bare cross/dot product is satisfied by a zero-length line; sin/cos
+  are stationary at the opposite configuration, so a solve from exactly perpendicular lines
+  stalls). A new relation or dimension whose solution shrinks a line or circle/arc to near
+  zero, or 10⁴-fold as a side effect, is refused as a conflict (a size dimension on that
+  curve itself is exempt). Found by the oracle.
 - **Splines:** clamped uniform B-splines whose control points are ordinary sketch points (no
   new unknowns; the end poles are the curve's ends). The kernel builds the identical
   `Geom_BSplineCurve` (same knots), so sketch and solid agree exactly. "Through points"
@@ -106,4 +112,12 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
   chunk, so the Jacobian stays exact for any row width.
 - **Tests:** unit tests with analytic answers, 40 seeded property tests (random closed
   polygons + circle, dimensions measured from a known configuration, parameters perturbed,
-  re-solved), and golden sketch models. The planegcs oracle harness is still to do.
+  re-solved), and golden sketch models.
+- **planegcs oracle** (`tools/planegcs-oracle`, test `PlanegcsOracleTests`, CI step): FreeCAD
+  1.1.3's planegcs built out of tree as a separate executable (LGPL; never linked) with shims
+  for three FreeCAD headers. The golden sketches and 60 random sketches (polygons, circles,
+  arcs, random relations, then dimensions until fully defined) are exported to it; DOF,
+  redundancy and conflict verdicts must agree, and fully defined, well-conditioned sketches
+  re-solved by both from the same perturbed start must land on the same points. Known
+  differences, handled explicitly: planegcs's line–circle tangency has no side (it may take
+  the mirror branch), and its point symmetry is singular for a point on the axis.

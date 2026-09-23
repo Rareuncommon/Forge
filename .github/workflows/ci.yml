@@ -37,11 +37,18 @@ jobs:
             | .build/debug/forge-cli mcp | python3 -c 'import sys,json; r=[json.loads(l) for l in sys.stdin]; assert r[1]["result"]["isError"] is False, r; print("mcp ok")'
       - name: FEATURES.md is in sync with SPEC.md
         run: python3 scripts/features.py --check
+      # Solver cross-check against FreeCAD's planegcs (docs/adr/0003). The oracle is an external,
+      # test-only executable (planegcs is LGPL-2.1+ and never linked into Forge, docs/adr/0005).
+      - name: Build the planegcs oracle
+        run: |
+          sudo apt-get install -y --no-install-recommends libeigen3-dev libboost-graph-dev
+          tools/planegcs-oracle/build.sh "$RUNNER_TEMP/oracle"
+      - name: Cross-check the solver against planegcs
+        run: FORGE_PLANEGCS_ORACLE="$RUNNER_TEMP/oracle/planegcs-oracle" /opt/swift/usr/bin/swift test --filter PlanegcsOracle
 
   macos-app:
     # Builds OCCT 8.0.1 with the reproducible script, then the whole package including the
     # SwiftUI/Metal app. Needs a runner with Xcode 27 (Swift 6.4, macOS 27 SDK).
-    # NOTE: not yet observed green — the M0 session had no macOS machine (see PROGRESS.md).
     runs-on: macos-26
     timeout-minutes: 120
     steps:
