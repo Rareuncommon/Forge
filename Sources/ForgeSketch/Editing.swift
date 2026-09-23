@@ -363,3 +363,101 @@ extension Sketch {
         return ((ux, uy), ((a.0 - ux) * (a.0 - ux) + (a.1 - uy) * (a.1 - uy)).squareRoot())
     }
 }
+
+extension Sketch {
+    /// Sketch fillet between two lines that meet at a corner (SPEC 7.1 "fillet (sketch)").
+    ///
+    /// The lines are trimmed back to the tangent points and joined by a tangent arc with a
+    /// radius dimension. A construction "virtual sharp" point stays at the intersection of the
+    /// two (infinite) lines; every constraint that referenced the corner endpoints — and length
+    /// dimensions of the two lines — is retargeted to it, so existing dimensions keep their
+    /// meaning (as in SolidWorks). Returns [arc, sharp point].
+    public mutating func filletCorner(_ lineA: String, _ lineB: String, radius r: Double) throws -> [String] {
+        guard r > 0, r.isFinite else { throw ForgeError(.invalidParams, "fillet radius must be positive") }
+        let A = try entity(lineA), B = try entity(lineB)
+        guard A.kind == .line, B.kind == .line, lineA != lineB else {
+            throw ForgeError(.invalidParams, "sketch fillet needs two different lines", entities: [lineA, lineB])
+        }
+        let scale = max(1, params.map(abs).max() ?? 1)
+        let tol = 1e-7 * scale
+        var corner: (String, String)?
+        for pa in A.points {
+            for pb in B.points {
+                let (x1, y1) = point(pa), (x2, y2) = point(pb)
+                if abs(x1 - x2) <= tol && abs(y1 - y2) <= tol { corner = (pa, pb) }
+            }
+        }
+        guard let (pa, pb) = corner else {
+            throw ForgeError(.invalidParams, "\(lineA) and \(lineB) do not meet at a common endpoint", entities: [lineA, lineB])
+        }
+        let otherA = A.points.first { $0 != pa }!, otherB = B.points.first { $0 != pb }!
+        let P = point(pa)
+        func unit(_ q: (Double, Double)) -> (Double, Double) {
+            let dx = q.0 - P.0, dy = q.1 - P.1, l = hypot(dx, dy)
+            return (dx / l, dy / l)
+        }
+        let ua = unit(point(otherA)), ub = unit(point(otherB))
+        let cosT = max(-1, min(1, ua.0 * ub.0 + ua.1 * ub.1))
+        let theta = acos(cosT)
+        guard theta > 1e-6, theta < .pi - 1e-6 else {
+            throw ForgeError(.invalidParams, "the lines are collinear at the corner; nothing to fillet", entities: [lineA, lineB])
+        }
+        let t = r / tan(theta / 2)
+        let lenA = hypot(point(otherA).0 - P.0, point(otherA).1 - P.1), lenB = hypot(point(otherB).0 - P.0, point(otherB).1 - P.1)
+        guard t < lenA - tol, t < lenB - tol else {
+            throw ForgeError(
+                .invalidParams, "radius \(r) mm is too large for these lines (needs \(t) mm of each line)", entities: [lineA, lineB],
+                suggestions: [SuggestedFix(description: "Use the largest radius that fits", command: "sketch.fillet",
+                                           params: ["sketch": .string(id), "lines": [.string(lineA), .string(lineB)], "radius": .number(0.9 * min(lenA, lenB) * tan(theta / 2))])])
+        }
+        var s = self
+        // 1. Virtual sharp at the corner, held on both infinite lines.
+        let sharp = s.addPoint(P.0, P.1, construction: true)
+        // 2. Retarget constraints on the corner endpoints and length dimensions of the lines.
+        for i in s.constraints.indices {
+            var c = s.constraints[i]
+            let isMutual = c.kind == .coincident && Set(c.entities) == Set([pa, pb])
+            if isMutual { continue }
+            if c.entities.contains(pa) || c.entities.contains(pb) {
+                c.entities = c.entities.map { $0 == pa || $0 == pb ? sharp : $0 }
+            } else if c.kind.isDimension, c.entities.count == 1, c.entities[0] == lineA || c.entities[0] == lineB,
+                c.kind == .distance || c.kind == .horizontalDistance || c.kind == .verticalDistance
+            {
+                let line = s.entities[c.entities[0]]!
+                let cornerEnd = c.entities[0] == lineA ? pa : pb
+                c.entities = line.points.map { $0 == cornerEnd ? sharp : $0 }
+            }
+            s.constraints[i] = c
+        }
+        // Drop the corner coincidence and anything retargeting made degenerate (sharp–sharp).
+        s.constraints.removeAll {
+            ($0.kind == .coincident && Set($0.entities) == Set([pa, pb])) || Set($0.entities).count != $0.entities.count
+        }
+        try s.addConstraint(.onEntity, [sharp, lineA])
+        try s.addConstraint(.onEntity, [sharp, lineB])
+        // 3. Trim the lines to the tangent points and insert the arc.
+        let ta = (P.0 + ua.0 * t, P.1 + ua.1 * t), tb = (P.0 + ub.0 * t, P.1 + ub.1 * t)
+        let bis = (ua.0 + ub.0, ua.1 + ub.1), bl = hypot(bis.0, bis.1)
+        let d = r / sin(theta / 2)
+        let c = (P.0 + bis.0 / bl * d, P.1 + bis.1 / bl * d)
+        let ea = s.entities[pa]!, eb = s.entities[pb]!
+        s.params[ea.params[0]] = ta.0
+        s.params[ea.params[1]] = ta.1
+        s.params[eb.params[0]] = tb.0
+        s.params[eb.params[1]] = tb.1
+        let ccw = (ta.0 - c.0) * (tb.1 - c.1) - (ta.1 - c.1) * (tb.0 - c.0) > 0
+        let arc = ccw ? s.addArc(center: c, start: ta, end: tb) : s.addArc(center: c, start: tb, end: ta)
+        let ae = s.entities[arc]!
+        try s.addConstraint(.coincident, [pa, ccw ? ae.points[1] : ae.points[2]])
+        try s.addConstraint(.coincident, [pb, ccw ? ae.points[2] : ae.points[1]])
+        try s.addConstraint(.tangent, [lineA, arc])
+        try s.addConstraint(.tangent, [lineB, arc])
+        try s.addConstraint(.radius, [arc], value: r)
+        s.resolve()
+        if let rep = s.report, rep.status == .failed || !rep.conflicting.isEmpty {
+            throw ForgeError(.solverFailed, "the fillet could not be solved with the existing constraints", entities: [lineA, lineB])
+        }
+        self = s
+        return [arc, sharp]
+    }
+}

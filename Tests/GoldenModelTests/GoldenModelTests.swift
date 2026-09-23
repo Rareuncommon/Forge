@@ -40,6 +40,9 @@ struct GoldenModelTests {
             let doc = try #require(await e.activeDocument)
             var out: [String: Data] = [:]
             for b in doc.orderedBodies { out[b.id] = try b.shape.brepData() }
+            for sk in doc.orderedSketches {
+                out[sk.id] = sk.params.withUnsafeBufferPointer { Data(buffer: $0) }
+            }
             return out
         }
         let a = try await build(), b = try await build()

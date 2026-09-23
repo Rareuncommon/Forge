@@ -1,0 +1,98 @@
+{
+  "forge_script": 1,
+  "name": "105_sketch_d_profile",
+  "description": "D-shaped profile: vertical line plus arc through its ends, centre constrained onto the line",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {}
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          0,
+          20
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_arc",
+      "params": {
+        "center": [
+          0,
+          10
+        ],
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          0,
+          20
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_relation",
+      "params": {
+        "type": "on_entity",
+        "entities": [
+          "point-5",
+          "line-1"
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-1"
+        ],
+        "value": 20
+      }
+    }
+  ],
+  "expect": {
+    "sketches": [
+      {
+        "sketch": "sketch-1",
+        "status": "fully_defined",
+        "dof": 0,
+        "points": [
+          {
+            "entity": "point-5",
+            "value": [
+              0,
+              10
+            ],
+            "tol": 1e-07
+          },
+          {
+            "entity": "point-7",
+            "value": [
+              0,
+              20
+            ],
+            "tol": 1e-07
+          }
+        ],
+        "loops": 1,
+        "valid_profile": true,
+        "region_area_mm2": {
+          "value": 157.07963267948966,
+          "tol": 1e-09
+        }
+      }
+    ]
+  }
+}

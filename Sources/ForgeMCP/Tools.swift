@@ -90,6 +90,11 @@ public enum ToolCatalog {
             alias("list_documents", "List documents", "document.list"),
             alias("activate_document", "Activate document", "document.activate"),
             alias("get_document_state", "Document state", "document.state"),
+            // ---- sketch
+            alias("create_sketch", "Create sketch", "sketch.create"),
+            alias("get_sketch", "Get sketch", "sketch.get"),
+            alias("edit_dimension", "Edit dimension", "sketch.set_dimension"),
+            alias("check_sketch", "Check sketch", "sketch.check"),
             // ---- query
             alias("list_bodies", "List bodies", "query.bodies"),
             alias("query_faces", "Query faces", "query.faces"),
@@ -186,7 +191,9 @@ enum PromptCatalog {
 
                 Workflow:
                 1. new_document (choose units that match the description).
-                2. Plan the bodies and boolean operations; call describe_command for any command you have not used.
+                2. Plan the geometry; call describe_command for any command you have not used. Profiles are drawn
+                   in sketches (create_sketch, sketch.add_* via execute) and fully defined with relations and
+                   dimensions — get_sketch reports DOF and conflicts, check_sketch validates closed profiles.
                 3. Use execute_batch with dry_run: true to check the plan, then run it for real (atomic).
                 4. Verify: get_document_state (volumes, bounding boxes, topology), validate_model, and render_multiview.
                 5. If anything is off, undo or fix with targeted commands; errors include executable suggested fixes.

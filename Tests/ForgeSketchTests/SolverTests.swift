@@ -382,3 +382,41 @@ struct SolverPropertyTests {
         }
     }
 }
+
+@Suite("Sketch fillet")
+struct FilletTests {
+    @Test func filletKeepsDimensionsAndAreaIsExact() throws {
+        var s = newSketch()
+        let lines = try s.addRectangle(.corner, [(0, 0), (40, 20)])
+        try s.addConstraint(.coincident, [Sketch.originID, s.entities[lines[0]]!.points[0]])
+        try s.addConstraint(.distance, [lines[0]], value: 40)
+        try s.addConstraint(.distance, [lines[1]], value: 20)
+        #expect(s.report?.dof == 0)
+        // Fillet the corner at (40, 0) between the bottom and right edges.
+        let created = try s.filletCorner(lines[0], lines[1], radius: 5)
+        let r = s.resolve()
+        #expect(r.status == .fullyDefined)
+        #expect(r.dof == 0)
+        // The virtual sharp stays at the original corner; the dimensions keep their meaning.
+        #expect(near(s.point(created[1]), (40, 0)))
+        #expect(near(s.point(s.entities[lines[1]]!.points[1]), (40, 20)))
+        let p = s.profiles()
+        #expect(p.valid)
+        #expect(near(p.regionAreaMM2, 800 - (25 - .pi * 25 / 4), 1e-9))
+        #expect(throws: ForgeError.self) { try s.filletCorner(lines[2], lines[3], radius: 50) }  // too large
+    }
+
+    @Test func filletAtAnAcuteCorner() throws {
+        var s = newSketch()
+        let a = s.addLine(from: (0, 0), to: (20, 0))
+        let b = s.addLine(from: (0, 0), to: (10, 10))
+        try s.addConstraint(.coincident, [s.entities[a]!.points[0], s.entities[b]!.points[0]])
+        let arc = try s.filletCorner(a, b, radius: 2)[0]
+        // 45° corner: tangent distance = r / tan(22.5°).
+        let t = 2 / tan(Double.pi / 8)
+        #expect(near(s.point(s.entities[a]!.points[0]), (t, 0), 1e-7))
+        let e = s.entities[arc]!
+        let (cx, cy) = s.point(e.points[0])
+        #expect(near(cy, 2) && near(cx, t))
+    }
+}

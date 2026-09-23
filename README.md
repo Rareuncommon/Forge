@@ -7,7 +7,7 @@ bus, reachable from the UI, scripts, `forge-cli` and MCP alike.
 - **Spec:** [SPEC.md](SPEC.md) · **Parity matrix:** [FEATURES.md](FEATURES.md) ·
   **Status:** [PROGRESS.md](PROGRESS.md) · **Decisions:** [docs/adr/](docs/adr/) ·
   **Licenses:** [docs/LICENSES.md](docs/LICENSES.md)
-- **Milestone:** M0 (foundations). This is a multi-year project; see FEATURES.md for the
+- **Milestone:** M0 (foundations) done headless; M1 (sketcher) in progress. This is a multi-year project; see FEATURES.md for the
   honest state of every SolidWorks capability.
 
 ![Headless render of a golden model](docs/images/m0-multiview.png)
@@ -19,6 +19,7 @@ Sources/
   CForgeKernel/   C++20 bridge over OCCT with a pure C ABI (include/forge_kernel.h)
   ForgeCore/      JSON values, structured errors, units, schema extraction, geometry math
   ForgeKernel/    Swift wrapper: Shape, Mesh, Kernel (no OCCT types leak)
+  ForgeSketch/    2D sketches: entities, constraint solver (DOF, conflicts), profiles
   ForgeCommands/  Command protocol + registry, Engine (undo/redo, transactions, dry-run, batch)
   ForgeRender/    Camera, headless software renderer + PNG, picking, Metal viewport (macOS)
   ForgeMCP/       MCP server (stdio + Unix socket), tools generated from the command registry

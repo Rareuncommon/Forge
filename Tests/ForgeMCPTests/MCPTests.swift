@@ -62,7 +62,7 @@ struct MCPServerTests {
         let names = tools.compactMap { $0["name"]?.stringValue }
         for required in ["list_commands", "describe_command", "search_commands", "execute", "execute_batch", "undo", "redo",
                          "new_document", "get_document_state", "render_view", "render_multiview", "pick", "validate_model",
-                         "compare_to_spec", "get_mass_properties", "measure", "begin_transaction", "commit_transaction", "rollback_transaction"] {
+                         "compare_to_spec", "get_mass_properties", "measure", "get_sketch", "edit_dimension", "create_sketch", "check_sketch", "begin_transaction", "commit_transaction", "rollback_transaction"] {
             #expect(names.contains(required), "missing tool \(required)")
         }
         #expect(Set(names).count == names.count, "duplicate tool names")

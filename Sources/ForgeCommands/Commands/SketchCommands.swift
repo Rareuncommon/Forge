@@ -919,3 +919,53 @@ public enum SketchSetConstruction: Command {
         return finish(&ctx, doc, &s, created: [], infer: false)
     }
 }
+
+public enum SketchFillet: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var lines: [String]?
+        public var corner: String?
+        public var radius: Length
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "lines": "The two lines meeting at the corner (or give 'corner')",
+            "corner": "A line endpoint at the corner; the two lines meeting there are filleted",
+            "radius": "Fillet radius",
+        ]
+        public func validate() throws {
+            try requirePositive(radius, "radius")
+            guard (lines?.count == 2) != (corner != nil) else { throw ForgeError(.invalidParams, "give either two 'lines' or a 'corner' point") }
+        }
+    }
+    public typealias Output = SketchEditResult
+
+    public static let name = "sketch.fillet"
+    public static let summary = "Round the corner between two lines with a tangent arc, keeping existing dimensions via a virtual sharp"
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .solverFailed]
+    public static let examples: [JSONValue] = [["lines": ["line-1", "line-4"], "radius": 5], ["corner": "point-3", "radius": "0.25 in"]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let pair: [String]
+        if let ls = p.lines {
+            pair = try ls.map { try localID($0, in: s) }
+        } else {
+            let pid = try localID(p.corner!, in: s)
+            let (x, y) = s.point(try s.entity(pid).id)
+            let tol = 1e-7 * max(1, abs(x), abs(y))
+            let meeting = s.orderedEntities.filter { e in
+                e.kind == .line && e.points.contains { q in let (u, v) = s.point(q); return abs(u - x) <= tol && abs(v - y) <= tol }
+            }
+            guard meeting.count == 2 else {
+                throw ForgeError(.invalidParams, "\(meeting.count) lines meet at \(pid); a corner needs exactly two", entities: meeting.map(\.id))
+            }
+            pair = meeting.map(\.id)
+        }
+        let before = Set(s.constraints.map(\.id))
+        let created = try s.filletCorner(pair[0], pair[1], radius: p.radius.millimeters)
+        let added = s.constraints.map(\.id).filter { !before.contains($0) && !$0.contains("#") }
+        return finish(&ctx, doc, &s, created: created, constraints: added, infer: false)
+    }
+}

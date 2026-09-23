@@ -1,0 +1,135 @@
+{
+  "forge_script": 1,
+  "name": "101_sketch_plate_fully_defined",
+  "description": "Rectangle on the origin with a hole, fully defined with dimensions in mixed units",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_rectangle",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            40,
+            20
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_circle",
+      "params": {
+        "center": [
+          20,
+          10
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-1"
+        ],
+        "value": "2 in"
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-4"
+        ],
+        "value": 25
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "diameter",
+        "entities": [
+          "circle-13"
+        ],
+        "value": 10
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "horizontal_distance",
+        "entities": [
+          "point-0",
+          "point-14"
+        ],
+        "value": "1 in"
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "vertical_distance",
+        "entities": [
+          "point-0",
+          "point-14"
+        ],
+        "value": 12.5
+      }
+    }
+  ],
+  "expect": {
+    "sketches": [
+      {
+        "sketch": "sketch-1",
+        "status": "fully_defined",
+        "dof": 0,
+        "points": [
+          {
+            "entity": "point-6",
+            "value": [
+              50.8,
+              25
+            ],
+            "tol": 1e-07
+          },
+          {
+            "entity": "point-14",
+            "value": [
+              25.4,
+              12.5
+            ],
+            "tol": 1e-07
+          },
+          {
+            "entity": "point-12",
+            "value": [
+              0,
+              0
+            ],
+            "tol": 1e-07
+          }
+        ],
+        "loops": 2,
+        "valid_profile": true,
+        "region_area_mm2": {
+          "value": 1191.460183660255,
+          "tol": 1e-09
+        }
+      }
+    ]
+  }
+}

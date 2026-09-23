@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 945 · in progress: 28 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 893 · in progress: 80 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -28,10 +28,10 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/transactions` | Transactions: begin/commit/rollback (§5.1) | done | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift | begin_transaction, commit_transaction, rollback_transaction |  |
 | `P/dry-run` | dry_run with predicted changes (§5.1) | done | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift, Tests/ForgeMCPTests/MCPTests.swift | execute(dry_run), execute_batch(dry_run) |  |
 | `P/batch` | Batch execution (atomic) (§5.1) | done | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift, Tests/ForgeMCPTests/MCPTests.swift | execute_batch |  |
-| `P/explicit-state` | No hidden state: selection/active document explicit & queryable (§5.4) | in progress | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift | get_document_state | selection + active document explicit; active sketch/config/edit mode arrive with those features |
+| `P/explicit-state` | No hidden state: selection/active document explicit & queryable (§5.4) | in progress | ForgeCommands | Tests/ForgeCommandsTests | get_document_state | selection, active document, active sketch (edit mode) explicit; active configuration arrives with configurations |
 | `P/journal` | Command journal replayable as a script (macro recorder foundation) (§5.3) | in progress | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift | resource forge://document/journal | replayable; uses transient refs until persistent naming (M2) |
 | `P/forge-cli` | forge-cli headless engine (§3) | done | forge-cli | CI golden run | — | run, exec, commands, describe, search, mcp, version |
-| `P/golden-models` | Golden-model regression suite (§9) | in progress | Tests | Tests/GoldenModelTests | compare_to_spec | 12 models with analytic expectations; grows every milestone |
+| `P/golden-models` | Golden-model regression suite (§9) | in progress | Tests | Tests/GoldenModelTests | compare_to_spec | 18 models (12 body, 6 sketch) with analytic expectations |
 | `P/determinism` | Deterministic regeneration, bit-for-bit (§3) | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests | — | bit-identical BREP across regenerations tested; persistent IDs pending (M2) |
 | `P/mcp-stdio` | MCP server over stdio (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | own JSON-RPC implementation (docs/adr/0006); protocol 2025-11-25 with fallbacks |
 | `P/mcp-socket` | MCP server over local Unix socket (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | 0600 permissions |
@@ -40,7 +40,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/mcp-open-save` | MCP tools: open, save (§5.2) | not started | — | — | — |  |
 | `P/mcp-export` | MCP tools: export (§5.2) | done | ForgeMCP | Tests/ForgeCommandsTests/EngineTests.swift | export_step, export_stl |  |
 | `P/mcp-mutate` | MCP tools: execute, execute_batch, undo, redo, transactions (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | execute, execute_batch, undo, redo, *_transaction | edit_feature/edit_dimension/set_parameter/delete need the feature tree (M2) |
-| `P/mcp-feature-tools` | MCP tools: get_feature_tree, get_feature, get_sketch, edit_feature, edit_dimension, set_parameter, get_parameters, get_errors, explain_error (§5.2) | not started | — | — | — |  |
+| `P/mcp-feature-tools` | MCP tools: get_feature_tree, get_feature, get_sketch, edit_feature, edit_dimension, set_parameter, get_parameters, get_errors, explain_error (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | get_sketch, edit_dimension | get_sketch and edit_dimension done; feature-tree tools need M2 |
 | `P/mcp-query-geometry` | MCP tool: query_geometry (semantic references, §4.3) | not started | — | — | — |  |
 | `P/mcp-vision` | MCP tools: render_view, render_multiview, pick (§5.2) | in progress | ForgeMCP / ForgeRender | Tests/ForgeMCPTests/MCPTests.swift, Tests/ForgeCommandsTests/EngineTests.swift | render_view, render_multiview, pick | section parameter pending |
 | `P/mcp-verification` | MCP tools: validate_model, compare_to_spec (§5.2) | in progress | ForgeMCP / ForgeCommands | Tests/ForgeMCPTests/MCPTests.swift, Tests/GoldenModelTests | validate_model, compare_to_spec | validate_model: validity + free edges; self-intersection/zero-thickness detail and explain_error pending |
@@ -75,28 +75,28 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `7.1/entities/line` | Entities: line | not started | ForgeSketch | — | — |  |
-| `7.1/entities/centerline` | Entities: centerline | not started | ForgeSketch | — | — |  |
-| `7.1/entities/midpoint-line` | Entities: midpoint line | not started | ForgeSketch | — | — |  |
-| `7.1/entities/rectangle` | Entities: rectangle | not started | ForgeSketch | — | — |  |
-| `7.1/entities/rectangle/corner` | ↳ corner | not started | ForgeSketch | — | — |  |
-| `7.1/entities/rectangle/center` | ↳ center | not started | ForgeSketch | — | — |  |
-| `7.1/entities/rectangle/3-point` | ↳ 3-point | not started | ForgeSketch | — | — |  |
-| `7.1/entities/rectangle/parallelogram` | ↳ parallelogram | not started | ForgeSketch | — | — |  |
-| `7.1/entities/slot` | Entities: slot | not started | ForgeSketch | — | — |  |
-| `7.1/entities/slot/straight` | ↳ straight | not started | ForgeSketch | — | — |  |
-| `7.1/entities/slot/center` | ↳ center | not started | ForgeSketch | — | — |  |
+| `7.1/entities/line` | Entities: line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line | no save/load until the file format (M2) |
+| `7.1/entities/centerline` | Entities: centerline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(construction) | no save/load until the file format (M2) |
+| `7.1/entities/midpoint-line` | Entities: midpoint line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(midpoint) | no save/load until the file format (M2) |
+| `7.1/entities/rectangle` | Entities: rectangle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | no save/load until the file format (M2) |
+| `7.1/entities/rectangle/corner` | ↳ corner | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 4 tested |
+| `7.1/entities/rectangle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | construction diagonal + midpoint centre |
+| `7.1/entities/rectangle/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 5 tested |
+| `7.1/entities/rectangle/parallelogram` | ↳ parallelogram | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 6 tested |
+| `7.1/entities/slot` | Entities: slot | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot | straight and center-point slots; arc slots not started |
+| `7.1/entities/slot/straight` | ↳ straight | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot | DOF 5, exact area tested; golden 102 |
+| `7.1/entities/slot/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot |  |
 | `7.1/entities/slot/arc` | ↳ arc | not started | ForgeSketch | — | — |  |
 | `7.1/entities/slot/3-point-arc` | ↳ 3-point arc | not started | ForgeSketch | — | — |  |
-| `7.1/entities/circle` | Entities: circle | not started | ForgeSketch | — | — |  |
-| `7.1/entities/circle/center` | ↳ center | not started | ForgeSketch | — | — |  |
-| `7.1/entities/circle/perimeter` | ↳ perimeter | not started | ForgeSketch | — | — |  |
-| `7.1/entities/arc` | Entities: arc | not started | ForgeSketch | — | — |  |
-| `7.1/entities/arc/center` | ↳ center | not started | ForgeSketch | — | — |  |
-| `7.1/entities/arc/tangent` | ↳ tangent | not started | ForgeSketch | — | — |  |
-| `7.1/entities/arc/3-point` | ↳ 3-point | not started | ForgeSketch | — | — |  |
-| `7.1/entities/polygon` | Entities: polygon | not started | ForgeSketch | — | — |  |
-| `7.1/entities/ellipse` | Entities: ellipse | not started | ForgeSketch | — | — |  |
+| `7.1/entities/circle` | Entities: circle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle | no save/load until the file format (M2) |
+| `7.1/entities/circle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle |  |
+| `7.1/entities/circle/perimeter` | ↳ perimeter | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle(through) |  |
+| `7.1/entities/arc` | Entities: arc | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc | no save/load until the file format (M2) |
+| `7.1/entities/arc/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc |  |
+| `7.1/entities/arc/tangent` | ↳ tangent | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc(tangent) | first-order endpoint tangency |
+| `7.1/entities/arc/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc(three_point) |  |
+| `7.1/entities/polygon` | Entities: polygon | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_polygon | inscribed/circumscribed; golden 104 |
+| `7.1/entities/ellipse` | Entities: ellipse | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_ellipse | relations: on_entity, concentric; ellipse dimensions pending |
 | `7.1/entities/partial-ellipse` | Entities: partial ellipse | not started | ForgeSketch | — | — |  |
 | `7.1/entities/parabola` | Entities: parabola | not started | ForgeSketch | — | — |  |
 | `7.1/entities/conic` | Entities: conic | not started | ForgeSketch | — | — |  |
@@ -105,12 +105,12 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/spline/style-spline` | ↳ style spline | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/equation-driven-curve` | ↳ equation-driven curve | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/fit-spline` | ↳ fit spline | not started | ForgeSketch | — | — |  |
-| `7.1/entities/point` | Entities: point | not started | ForgeSketch | — | — |  |
+| `7.1/entities/point` | Entities: point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_point | no save/load until the file format (M2) |
 | `7.1/entities/text` | Entities: text | not started | ForgeSketch | — | — |  |
 | `7.1/entities/text/with-fonts` | ↳ with fonts | not started | ForgeSketch | — | — |  |
-| `7.1/entities/construction-geometry` | Entities: construction geometry | not started | ForgeSketch | — | — |  |
-| `7.1/entities/fillet-chamfer` | Entities: fillet/chamfer | not started | ForgeSketch | — | — |  |
-| `7.1/entities/fillet-chamfer/sketch` | ↳ sketch | not started | ForgeSketch | — | — |  |
+| `7.1/entities/construction-geometry` | Entities: construction geometry | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.set_construction | excluded from profiles, drawn grey |
+| `7.1/entities/fillet-chamfer` | Entities: fillet/chamfer | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, golden 106 | execute:sketch.fillet | fillet with virtual sharp done; sketch chamfer not started |
+| `7.1/entities/fillet-chamfer/sketch` | ↳ sketch | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift | execute:sketch.fillet | see parent |
 | `7.1/tools/trim` | Tools: trim | not started | ForgeSketch | — | — |  |
 | `7.1/tools/trim/power` | ↳ power | not started | ForgeSketch | — | — |  |
 | `7.1/tools/trim/corner` | ↳ corner | not started | ForgeSketch | — | — |  |
@@ -151,44 +151,44 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/spline-tools/add-tangency-control` | ↳ add tangency control | not started | ForgeSketch | — | — |  |
 | `7.1/tools/spline-tools/curvature-combs` | ↳ curvature combs | not started | ForgeSketch | — | — |  |
 | `7.1/tools/instant2d` | Tools: Instant2D | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketchxpert` | Tools: SketchXpert | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketchxpert/conflict-repair` | ↳ conflict repair | not started | ForgeSketch | — | — |  |
-| `7.1/tools/check-sketch-for-feature` | Tools: Check Sketch for Feature | not started | ForgeSketch | — | — |  |
+| `7.1/tools/sketchxpert` | Tools: SketchXpert | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | — | conflicts/redundancies rejected with executable fixes (delete / make driven); interactive repair UI pending |
+| `7.1/tools/sketchxpert/conflict-repair` | ↳ conflict repair | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | — | see parent |
+| `7.1/tools/check-sketch-for-feature` | Tools: Check Sketch for Feature | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | check_sketch | loops, nesting, open ends, branches, crossings; exact areas |
 | `7.1/tools/repair-sketch` | Tools: Repair Sketch | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketch-contours-regions-selection` | Tools: sketch contours/regions selection | not started | ForgeSketch | — | — |  |
+| `7.1/tools/sketch-contours-regions-selection` | Tools: sketch contours/regions selection | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | check_sketch | loop/region detection done; picking a region for a feature lands with extrude (M2) |
 | `7.1/tools/sketch-ink-equivalent` | Tools: Sketch Ink equivalent | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-ink-equivalent/pencil` | ↳ pencil | not started | ForgeSketch | — | — |  |
-| `7.1/relations/coincident` | Relations: coincident | not started | ForgeSketch | — | — |  |
-| `7.1/relations/collinear` | Relations: collinear | not started | ForgeSketch | — | — |  |
-| `7.1/relations/coradial` | Relations: coradial | not started | ForgeSketch | — | — |  |
-| `7.1/relations/concentric` | Relations: concentric | not started | ForgeSketch | — | — |  |
-| `7.1/relations/horizontal` | Relations: horizontal | not started | ForgeSketch | — | — |  |
-| `7.1/relations/vertical` | Relations: vertical | not started | ForgeSketch | — | — |  |
-| `7.1/relations/parallel` | Relations: parallel | not started | ForgeSketch | — | — |  |
-| `7.1/relations/perpendicular` | Relations: perpendicular | not started | ForgeSketch | — | — |  |
-| `7.1/relations/tangent` | Relations: tangent | not started | ForgeSketch | — | — |  |
-| `7.1/relations/equal` | Relations: equal | not started | ForgeSketch | — | — |  |
-| `7.1/relations/symmetric` | Relations: symmetric | not started | ForgeSketch | — | — |  |
-| `7.1/relations/midpoint` | Relations: midpoint | not started | ForgeSketch | — | — |  |
-| `7.1/relations/fix` | Relations: fix | not started | ForgeSketch | — | — |  |
-| `7.1/relations/merge` | Relations: merge | not started | ForgeSketch | — | — |  |
+| `7.1/relations/coincident` | Relations: coincident | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/collinear` | Relations: collinear | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/coradial` | Relations: coradial | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/concentric` | Relations: concentric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/horizontal` | Relations: horizontal | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/vertical` | Relations: vertical | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/parallel` | Relations: parallel | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/perpendicular` | Relations: perpendicular | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/tangent` | Relations: tangent | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | line–circle/arc and circle–circle, distance or endpoint form |
+| `7.1/relations/equal` | Relations: equal | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | lines and radii |
+| `7.1/relations/symmetric` | Relations: symmetric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/midpoint` | Relations: midpoint | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/fix` | Relations: fix | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/merge` | Relations: merge | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation(coincident) | modelled as coincident points |
 | `7.1/relations/pierce` | Relations: pierce | not started | ForgeSketch | — | — |  |
 | `7.1/relations/intersection` | Relations: intersection | not started | ForgeSketch | — | — |  |
 | `7.1/relations/along-x-y-z` | Relations: along X/Y/Z | not started | ForgeSketch | — | — |  |
 | `7.1/relations/along-x-y-z/3d` | ↳ 3D | not started | ForgeSketch | — | — |  |
 | `7.1/relations/equal-curvature` | Relations: equal curvature | not started | ForgeSketch | — | — |  |
-| `7.1/relations/on-edge` | Relations: on-edge | not started | ForgeSketch | — | — |  |
+| `7.1/relations/on-edge` | Relations: on-edge | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation(on_entity) | point on line/circle/arc/ellipse; projection of model edges pending |
 | `7.1/relations/curve-length-equal` | Relations: curve length equal | not started | ForgeSketch | — | — |  |
-| `7.1/relations/automatic-relations-with-inference` | Relations: automatic relations with inference | not started | ForgeSketch | — | — |  |
-| `7.1/relations/display-delete-relations` | Relations: display/delete relations | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/smart-dimension` | Dimensions: smart dimension | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/smart-dimension/linear` | ↳ linear | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/smart-dimension/angular` | ↳ angular | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/smart-dimension/radial` | ↳ radial | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/smart-dimension/diameter` | ↳ diameter | not started | ForgeSketch | — | — |  |
+| `7.1/relations/automatic-relations-with-inference` | Relations: automatic relations with inference | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | (infer parameter) | coincident + horizontal/vertical from exact coordinates; tolerance-based UI inference pending |
+| `7.1/relations/display-delete-relations` | Relations: display/delete relations | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | get_sketch, execute:sketch.delete |  |
+| `7.1/dimensions/smart-dimension` | Dimensions: smart dimension | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension | explicit typed dimensions; UI smart-dimension picking pending |
+| `7.1/dimensions/smart-dimension/linear` | ↳ linear | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension | distance, horizontal, vertical |
+| `7.1/dimensions/smart-dimension/angular` | ↳ angular | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension | line–line |
+| `7.1/dimensions/smart-dimension/radial` | ↳ radial | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension |  |
+| `7.1/dimensions/smart-dimension/diameter` | ↳ diameter | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension |  |
 | `7.1/dimensions/smart-dimension/arc-length` | ↳ arc length | not started | ForgeSketch | — | — |  |
 | `7.1/dimensions/smart-dimension/path-length` | ↳ path length | not started | ForgeSketch | — | — |  |
-| `7.1/dimensions/driven-reference` | Dimensions: driven/reference | not started | ForgeSketch | — | — |  |
+| `7.1/dimensions/driven-reference` | Dimensions: driven/reference | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_dimension(driven) | measured values refresh after every solve |
 | `7.1/dimensions/ordinate` | Dimensions: ordinate | not started | ForgeSketch | — | — |  |
 | `7.1/dimensions/chain` | Dimensions: chain | not started | ForgeSketch | — | — |  |
 | `7.1/dimensions/baseline` | Dimensions: baseline | not started | ForgeSketch | — | — |  |

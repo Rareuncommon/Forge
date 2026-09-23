@@ -1,0 +1,120 @@
+{
+  "forge_script": 1,
+  "name": "106_sketch_filleted_rectangle",
+  "description": "40 x 20 rectangle on the origin, fully dimensioned, all four corners filleted R5 (virtual sharps keep the dimensions)",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {}
+    },
+    {
+      "command": "sketch.add_rectangle",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            40,
+            20
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-1"
+        ],
+        "value": 40
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-4"
+        ],
+        "value": 20
+      }
+    },
+    {
+      "command": "sketch.fillet",
+      "params": {
+        "lines": [
+          "line-1",
+          "line-4"
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.fillet",
+      "params": {
+        "lines": [
+          "line-4",
+          "line-7"
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.fillet",
+      "params": {
+        "lines": [
+          "line-7",
+          "line-10"
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.fillet",
+      "params": {
+        "corner": "point-2",
+        "radius": 5
+      }
+    }
+  ],
+  "expect": {
+    "sketches": [
+      {
+        "sketch": "sketch-1",
+        "status": "fully_defined",
+        "dof": 0,
+        "loops": 1,
+        "valid_profile": true,
+        "region_area_mm2": {
+          "value": 778.5398163397448,
+          "tol": 1e-09
+        },
+        "points": [
+          {
+            "entity": "point-3",
+            "value": [
+              35,
+              0
+            ],
+            "tol": 1e-07
+          },
+          {
+            "entity": "point-6",
+            "value": [
+              40,
+              15
+            ],
+            "tol": 1e-07
+          }
+        ]
+      }
+    ]
+  }
+}
