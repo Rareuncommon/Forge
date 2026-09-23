@@ -30,7 +30,10 @@ struct ViewportView: NSViewRepresentable {
             view.delegate = renderer
         }
         view.onPick = { ref, extend in Task { await model.select(ref, extend: extend) } }
-        view.onSketchClick = { point, tolerance, curve in Task { await model.sketchClick(point, tolerance: tolerance, curve: curve) } }
+        view.onSketchClick = { point, tolerance, curve, count in
+            Task { await model.sketchClick(point, tolerance: tolerance, curve: curve, clickCount: count) }
+        }
+        view.onSketchHover = { point, tolerance, at in model.sketchHover(point, tolerance: tolerance, viewPoint: at) }
         view.onCancel = { model.cancelSketchOperation() }
         view.setAccessibilityLabel("3D viewport")
         view.setAccessibilityRole(.group)
@@ -45,6 +48,11 @@ struct ViewportView: NSViewRepresentable {
             view.renderer?.setScene(ds.scene)
             view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
             if first { view.fit() }
+            view.needsDisplay = true
+        }
+        if context.coordinator.overlayVersion != model.overlayVersion {
+            context.coordinator.overlayVersion = model.overlayVersion
+            view.renderer?.setOverlay(Self.overlay(model.sketchState.preview, plane: model.sketchState.plane, markerSize: view.pixelSize * 5))
             view.needsDisplay = true
         }
         let commands = model.viewportCommands.log
@@ -66,6 +74,24 @@ struct ViewportView: NSViewRepresentable {
     final class Coordinator {
         var sceneVersion = 0
         var appliedCommands = 0
+        var overlayVersion = 0
+    }
+
+    static let previewColor = RGBA(0.95, 0.45, 0.10)
+    static let snapColor = RGBA(0.10, 0.45, 0.95)
+
+    /// Overlay items for the sketch preview: rubber-band geometry and the snap marker.
+    static func overlay(_ preview: SketchPreview?, plane: SketchPlane?, markerSize: Double) -> [RenderItem] {
+        guard let pv = preview, let plane else { return [] }
+        var lines = ReferenceGeometry.LineBuilder()
+        for pl in pv.polylines {
+            lines.add(pl.map { plane.point($0.u, $0.v) }, previewColor)
+        }
+        if let m = pv.marker {
+            let h = markerSize
+            lines.add([(-h, -h), (h, -h), (h, h), (-h, h), (-h, -h)].map { plane.point(m.u + $0.0, m.v + $0.1) }, snapColor)
+        }
+        return [lines.item(objectID: ReferenceGeometry.firstObjectID + 1)]
     }
 }
 
@@ -75,7 +101,10 @@ final class ForgeMTKView: MTKView {
     var onPick: ((String?, Bool) -> Void)?
     /// Set while a sketch tool is active: clicks become sketch coordinates instead of picks.
     var sketchPlane: SketchPlane?
-    var onSketchClick: ((Point2, Double, String?) -> Void)?
+    var onSketchClick: ((Point2, Double, String?, Int) -> Void)?
+    var onSketchHover: ((Point2?, Double, CGPoint) -> Void)?
+    /// A sketch tool press in progress (for click-drag drawing).
+    private var toolPress: NSPoint?
     var onCancel: (() -> Void)?
     private var dragStart: NSPoint?
     private var dragged = false
@@ -95,12 +124,77 @@ final class ForgeMTKView: MTKView {
         fit()
     }
 
+    /// Model units per view point at the camera target (for marker sizes and snap tolerance).
+    var pixelSize: Double {
+        guard let cam = renderer?.camera else { return 0.1 }
+        return 2 * cam.visibleHalfHeight / max(Double(bounds.height), 1)
+    }
+
+    /// Sketch-plane coordinates under a view point, and the snap tolerance there.
+    private func sketchPoint(at p: NSPoint, plane: SketchPlane) -> (Point2, Double)? {
+        guard let cam = renderer?.camera else { return nil }
+        let (o, d) = cam.ray(pixelX: Double(p.x), pixelY: Double(bounds.height - p.y), width: Double(bounds.width), height: Double(bounds.height))
+        let n = plane.normal
+        let denom = d.dot(n)
+        guard abs(denom) > 1e-9 else { return nil }
+        let hit = o + d * ((plane.origin - o).dot(n) / denom)
+        let rel = hit - plane.origin
+        return (Point2(rel.dot(plane.xAxis), rel.dot(plane.yAxis)), 8 * pixelSize)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hover(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onSketchHover?(nil, 0, .zero)
+    }
+
+    private func hover(_ event: NSEvent) {
+        guard let plane = sketchPlane else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        guard let sp = sketchPoint(at: p, plane: plane) else { return }
+        onSketchHover?(sp.0, sp.1, CGPoint(x: p.x, y: bounds.height - p.y))
+    }
+
+    private func sketchClick(at p: NSPoint, count: Int) {
+        guard let plane = sketchPlane, let r = renderer, let sp = sketchPoint(at: p, plane: plane) else { return }
+        let (q, tol) = sp
+        let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
+        let under = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
+            .flatMap { documentScene?.reference(for: $0) }
+        onSketchClick?(q, tol, under, count)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         dragStart = convert(event.locationInWindow, from: nil)
         dragged = false
+        if sketchPlane != nil {
+            // Sketch tools act on press; a drag then ends the entity where the mouse is released.
+            toolPress = dragStart
+            sketchClick(at: dragStart!, count: event.clickCount)
+        }
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        // Middle-drag orbits even while a sketch tool is active.
+        renderer?.camera.orbit(dx: Double(event.deltaX) * 0.01, dy: Double(event.deltaY) * 0.01)
+        needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if sketchPlane != nil {
+            dragged = true
+            hover(event)
+            return
+        }
         dragged = true
         if event.modifierFlags.contains(.option) {
             pan(event)
@@ -112,25 +206,14 @@ final class ForgeMTKView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         defer { dragStart = nil }
-        guard !dragged, let r = renderer else { return }
         let p = convert(event.locationInWindow, from: nil)
-        if let plane = sketchPlane {
-            // Ray through the cursor intersected with the sketch plane.
-            let cam = r.camera
-            let (o, d) = cam.ray(pixelX: Double(p.x), pixelY: Double(bounds.height - p.y), width: Double(bounds.width), height: Double(bounds.height))
-            let n = plane.normal
-            let denom = d.dot(n)
-            guard abs(denom) > 1e-9 else { return }
-            let hit = o + d * ((plane.origin - o).dot(n) / denom)
-            let rel = hit - plane.origin
-            // Snap tolerance: 8 pixels in model units at the target plane.
-            let tolerance = 8 * 2 * cam.visibleHalfHeight / max(Double(bounds.height), 1)
-            let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
-            let under = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
-                .flatMap { documentScene?.reference(for: $0) }
-            onSketchClick?(Point2(rel.dot(plane.xAxis), rel.dot(plane.yAxis)), tolerance, under)
+        if sketchPlane != nil {
+            // Click-drag drawing: releasing away from the press point is the second click.
+            if let start = toolPress, hypot(p.x - start.x, p.y - start.y) > 5 { sketchClick(at: p, count: 1) }
+            toolPress = nil
             return
         }
+        guard !dragged, let r = renderer else { return }
         guard let ds = documentScene else { return }
         let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
         let hit = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))

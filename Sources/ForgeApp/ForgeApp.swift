@@ -129,6 +129,12 @@ final class AppModel {
     /// The sketch being edited (mirrors document.state's active_sketch).
     var activeSketch: String?
     var sketchState = SketchUIState()
+    /// Shown next to the cursor while sketching (length, angle, radius…), at `hoverViewPoint`
+    /// (viewport coordinates, origin top-left).
+    var hoverLabel: String?
+    var hoverViewPoint = CGPoint.zero
+    /// Bumped when the sketch preview changes (re-upload of the viewport overlay).
+    var overlayVersion = 0
 
     func bootstrap() async {
         await run("document.new", ["name": "Part1"])
@@ -279,6 +285,18 @@ struct ContentView: View {
                     ViewportView()
                     HeadsUpToolbar()
                         .padding(.top, 8)
+                    if let label = model.hoverLabel {
+                        GeometryReader { _ in
+                            Text(label)
+                                .font(.caption.monospacedDigit())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                                .fixedSize()
+                                .position(x: model.hoverViewPoint.x + 60, y: model.hoverViewPoint.y + 22)
+                        }
+                        .allowsHitTesting(false)
+                    }
                 }
                 .frame(minWidth: 420, minHeight: 320)
                 PropertyManagerView()

@@ -37,9 +37,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
 
     var hint: String {
         switch self {
-        case .line: "Line: click points to draw connected lines; Esc ends the chain."
-        case .rectangle: "Rectangle: click two opposite corners."
-        case .circle: "Circle: click the centre, then a point on the circle."
+        case .line: "Line: click or drag to draw; lines chain on. Click the first point to close, double-click or Esc to stop."
+        case .rectangle: "Rectangle: click (or drag between) two opposite corners."
+        case .circle: "Circle: click the centre, then a point on the circle (or drag)."
         case .arc: "3 Point Arc: click the start, the end, then a point the arc passes through."
         case .point: "Point: click to place a point."
         case .fillet: "Sketch Fillet: click a corner where two lines meet (radius in the panel on the right)."
@@ -48,10 +48,25 @@ enum SketchTool: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the cursor snapped to while sketching.
+enum SnapKind: Equatable {
+    case none, point, horizontal, vertical
+}
+
+/// Rubber-band preview of the geometry the next click would create, in sketch coordinates.
+struct SketchPreview {
+    var polylines: [[Point2]] = []
+    var marker: Point2?
+    var snap: SnapKind = .none
+}
+
 /// Sketch-mode state kept by the app model.
 struct SketchUIState {
     var tool: SketchTool?
     var pending: [Point2] = []
+    /// First point of the current line chain: clicking it again closes the chain.
+    var chainStart: Point2?
+    var preview: SketchPreview?
     var filletRadius = 2.0
     /// Snap targets: sketch point positions (u, v) by id, refreshed after each command.
     var points: [(id: String, u: Double, v: Double)] = []
@@ -82,6 +97,99 @@ extension AppModel {
     func chooseTool(_ tool: SketchTool?) {
         sketchState.tool = tool
         sketchState.pending = []
+        sketchState.chainStart = nil
+        clearPreview()
+    }
+
+    func clearPreview() {
+        sketchState.preview = nil
+        hoverLabel = nil
+        overlayVersion += 1
+    }
+
+    /// Snap to an existing point, else (drawing a line) to exact horizontal/vertical within 3°
+    /// of the start — which relation inference then turns into a horizontal/vertical relation.
+    func snapped(_ raw: Point2, tolerance: Double) -> (Point2, SnapKind) {
+        var best: (Point2, Double)?
+        for q in sketchState.points {
+            let d = hypot(q.u - raw.u, q.v - raw.v)
+            if d <= tolerance && (best == nil || d < best!.1) { best = (Point2(q.u, q.v), d) }
+        }
+        if let b = best { return (b.0, .point) }
+        if sketchState.tool == .line, let s = sketchState.pending.last {
+            let dx = raw.u - s.u, dy = raw.v - s.v
+            let t = tan(3 * Double.pi / 180)
+            if abs(dy) <= abs(dx) * t { return (Point2(raw.u, s.v), .horizontal) }
+            if abs(dx) <= abs(dy) * t { return (Point2(s.u, raw.v), .vertical) }
+        }
+        return (raw, .none)
+    }
+
+    /// Cursor moved over the sketch plane (nil: left the viewport). Updates the preview and
+    /// the label shown next to the cursor.
+    func sketchHover(_ raw: Point2?, tolerance: Double, viewPoint: CGPoint) {
+        guard let tool = sketchState.tool, let raw else {
+            if sketchState.preview != nil { clearPreview() }
+            return
+        }
+        let (p, kind) = snapped(raw, tolerance: tolerance)
+        var pv = SketchPreview(marker: kind == .point ? p : nil, snap: kind)
+        var label: String?
+        let pending = sketchState.pending
+        func fmt(_ x: Double) -> String { String(format: "%.2f", x) }
+        switch tool {
+        case .line:
+            if let a = pending.last {
+                pv.polylines = [[a, p]]
+                let len = hypot(p.u - a.u, p.v - a.v)
+                var ang = atan2(p.v - a.v, p.u - a.u) * 180 / .pi
+                if ang < 0 { ang += 360 }
+                label = "L \(fmt(len))  ∠ \(String(format: "%.1f", ang))°" + (kind == .horizontal ? "  H" : kind == .vertical ? "  V" : "")
+            }
+        case .rectangle:
+            if let a = pending.first {
+                pv.polylines = [[a, Point2(p.u, a.v), p, Point2(a.u, p.v), a]]
+                label = "\(fmt(abs(p.u - a.u))) × \(fmt(abs(p.v - a.v)))"
+            }
+        case .circle:
+            if let c = pending.first {
+                let r = hypot(p.u - c.u, p.v - c.v)
+                pv.polylines = [(0...72).map { i in
+                    let t = 2 * Double.pi * Double(i) / 72
+                    return Point2(c.u + r * cos(t), c.v + r * sin(t))
+                }]
+                label = "R \(fmt(r))"
+            }
+        case .arc:
+            if pending.count == 1 {
+                pv.polylines = [[pending[0], p]]
+            } else if pending.count == 2 {
+                pv.polylines = [Self.arcThrough(pending[0], p, pending[1])]
+                if let cc = try? Sketch.circumcircle(pending[0].tuple, p.tuple, pending[1].tuple) { label = "R \(fmt(cc.radius))" }
+            }
+        case .point, .fillet, .trim:
+            break
+        }
+        if pv.polylines.isEmpty && label == nil { label = "\(fmt(p.u)), \(fmt(p.v))" }
+        sketchState.preview = pv
+        hoverLabel = label
+        hoverViewPoint = viewPoint
+        overlayVersion += 1
+    }
+
+    /// Polyline of the arc from a to b passing through m (a straight segment if collinear).
+    static func arcThrough(_ a: Point2, _ m: Point2, _ b: Point2) -> [Point2] {
+        guard let cc = try? Sketch.circumcircle(a.tuple, m.tuple, b.tuple) else { return [a, b] }
+        let (c, r) = (cc.center, cc.radius)
+        func ang(_ p: Point2) -> Double { atan2(p.v - c.1, p.u - c.0) }
+        let a0 = ang(a)
+        func ccw(_ t: Double) -> Double { var x = t - a0; while x < 0 { x += 2 * .pi }; while x >= 2 * .pi { x -= 2 * .pi }; return x }
+        var sweep = ccw(ang(b))
+        if ccw(ang(m)) > sweep { sweep -= 2 * .pi }  // the arc through m runs clockwise
+        return (0...48).map { i in
+            let t = a0 + sweep * Double(i) / 48
+            return Point2(c.0 + r * cos(t), c.1 + r * sin(t))
+        }
     }
 
     func refreshSketchState() async {
@@ -103,22 +211,18 @@ extension AppModel {
         sketchState.status = "\(sk.name): \(r?.status.rawValue.replacingOccurrences(of: "_", with: " ") ?? "") · \(r?.dof ?? 0) DOF"
     }
 
-    /// Snap to an existing sketch point within `tolerance` (sketch units), so inference makes
-    /// the new geometry coincident with it.
-    func snap(_ p: Point2, tolerance: Double) -> Point2 {
-        var best: (Point2, Double)?
-        for q in sketchState.points {
-            let d = hypot(q.u - p.u, q.v - p.v)
-            if d <= tolerance && (best == nil || d < best!.1) { best = (Point2(q.u, q.v), d) }
-        }
-        return best?.0 ?? p
-    }
-
     /// A click on the sketch plane with a tool active. `curve` is the sketch curve under the
     /// cursor, if any (used by trim).
-    func sketchClick(_ raw: Point2, tolerance: Double, curve: String?) async {
+    func sketchClick(_ raw: Point2, tolerance: Double, curve: String?, clickCount: Int = 1) async {
         guard let tool = sketchState.tool else { return }
-        let p = snap(raw, tolerance: tolerance)
+        if clickCount >= 2 && tool == .line {
+            // Double-click ends the chain (the first click already placed the point).
+            sketchState.pending = []
+            sketchState.chainStart = nil
+            clearPreview()
+            return
+        }
+        let p = snapped(raw, tolerance: tolerance).0
         func pt(_ q: Point2) -> JSONValue { [.number(q.u), .number(q.v)] }
         switch tool {
         case .point:
@@ -127,6 +231,16 @@ extension AppModel {
             if let start = sketchState.pending.last {
                 guard start != p else { return }
                 await run("sketch.add_line", ["start": pt(start), "end": pt(p)])
+                if let first = sketchState.chainStart, first == p {
+                    // Back at the chain's first point: the profile is closed, start afresh.
+                    sketchState.pending = []
+                    sketchState.chainStart = nil
+                    clearPreview()
+                    await refreshSketchState()
+                    return
+                }
+            } else {
+                sketchState.chainStart = p
             }
             sketchState.pending = [p]
         case .rectangle:
@@ -170,6 +284,8 @@ extension AppModel {
     func cancelSketchOperation() {
         if sketchState.pending.isEmpty { sketchState.tool = nil }
         sketchState.pending = []
+        sketchState.chainStart = nil
+        clearPreview()
     }
 
     /// Smart dimension from the current selection (SPEC 7.1): one line → length, one circle →

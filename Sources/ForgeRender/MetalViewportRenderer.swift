@@ -1,8 +1,8 @@
 // Metal viewport renderer (macOS). Mirrors SoftwareRenderer: shaded triangles + edges, and a
 // pick pass writing object/element IDs to integer render targets (GPU picking).
 //
-// STATUS: written against the Metal API but NOT yet compiled or run — the M0 development
-// environment was Linux. Verification on macOS 27 is the first item in PROGRESS.md.
+// An overlay layer (sketch previews, snap markers) is drawn last, on top, without depth test
+// and is never picked.
 
 #if canImport(MetalKit)
 import ForgeCore
@@ -18,11 +18,13 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     private let pickTrianglePipeline: any MTLRenderPipelineState
     private let pickLinePipeline: any MTLRenderPipelineState
     private let depthState: any MTLDepthStencilState
+    private let overlayDepthState: any MTLDepthStencilState
 
     public var camera = Camera()
     public var style: RenderStyle = .shadedWithEdges
     public var background = RGBA.background
     private var items: [GPUItem] = []
+    private var overlay: [GPUItem] = []
     private var sceneBounds: BoundingBox?
 
     struct GPUItem {
@@ -66,6 +68,11 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         ds.isDepthWriteEnabled = true
         guard let depth = device.makeDepthStencilState(descriptor: ds) else { return nil }
         depthState = depth
+        let ods = MTLDepthStencilDescriptor()
+        ods.depthCompareFunction = .always
+        ods.isDepthWriteEnabled = false
+        guard let odepth = device.makeDepthStencilState(descriptor: ods) else { return nil }
+        overlayDepthState = odepth
         super.init()
     }
 
@@ -73,7 +80,15 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     /// (portable alternative to [[primitive_id]]; see docs/adr/0009-viewport-rendering.md).
     public func setScene(_ scene: RenderScene) {
         sceneBounds = scene.bounds
-        items = scene.items.map { item in
+        items = scene.items.map(gpuItem)
+    }
+
+    /// Replace the overlay (drawn on top of everything, not pickable).
+    public func setOverlay(_ overlayItems: [RenderItem]) {
+        overlay = overlayItems.map(gpuItem)
+    }
+
+    private func gpuItem(_ item: RenderItem) -> GPUItem {
             let m = item.mesh
             var tri = [UInt8]()
             tri.reserveCapacity(m.triangleCount * 3 * Self.triStride)
@@ -108,7 +123,6 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
                 triangleVertexCount: m.triangleCount * 3,
                 lines: lines.isEmpty ? nil : device.makeBuffer(bytes: lines, length: lines.count, options: .storageModeShared),
                 lineVertexCount: lines.count / Self.lineStride, color: item.color)
-        }
     }
 
     private func append(_ buf: inout [UInt8], floats: [Float]) {
@@ -162,9 +176,20 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
                 enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
             }
         }
-        if style != .shaded {
-            enc.setRenderPipelineState(pick ? pickLinePipeline : linePipeline)
-            for item in items {
+        enc.setRenderPipelineState(pick ? pickLinePipeline : linePipeline)
+        for item in items {
+            // In "shaded" style body edges are hidden, but line-only items (sketches, reference
+            // geometry) are always drawn.
+            guard let lines = item.lines, style != .shaded || item.triangles == nil else { continue }
+            var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
+            enc.setVertexBuffer(lines, offset: 0, index: 0)
+            enc.setVertexBytes(&u, length: u.count * 4, index: 1)
+            enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
+            enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
+        }
+        if !pick && !overlay.isEmpty {
+            enc.setDepthStencilState(overlayDepthState)
+            for item in overlay {
                 guard let lines = item.lines else { continue }
                 var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
                 enc.setVertexBuffer(lines, offset: 0, index: 0)
