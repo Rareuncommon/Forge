@@ -46,8 +46,16 @@
   curve deleted) and `sketch.extend` (lines and arcs to the next curve). New ends are held by
   coincident/on-curve relations; relations that depended on the removed extent are deleted
   and listed. Golden model 018: circle and chord trimmed to a segment and extruded.
+- **Offset:** `sketch.offset` for chains of lines/arcs (corners extended/trimmed to meet,
+  tangent joints kept smooth) and circles; one driving `offset` dimension (also available in
+  `sketch.add_dimension`) with the other copies linked to it; bi-directional, line caps,
+  base-to-construction. Golden model 019: rectangle offset, offset re-dimensioned, extruded
+  as a frame. See ADR 0003 notes for how tangent joints avoid rank deficiency.
 
 ### Findings
+- Two of my new tests assumed an under-defined original stays put when a dimension changes;
+  the minimum-norm solver moves both (correct). Tests now fully define the original or check
+  the dimensioned quantity itself.
 - Trimming a line to an arc's end first left the two joined only by position: the arc end's
   earlier on-line relation made the new coincidence look redundant. The trim now replaces
   that relation with the coincidence; golden 018 checks the resulting DOF (4).
@@ -66,7 +74,8 @@
 - Pattern instances are placed exactly and tied to the seed's size, but spacing/angle are
   not yet dimensions that drive them; dynamic mirror is not implemented.
 - Ellipses cannot be trimmed/extended (no partial ellipse yet); trim is one pick per call.
-- Not started in 7.1: splines, partial ellipse, parabola, conic, text, offset,
+- Offset: ellipses and arc-joined corners/arc caps are not implemented.
+- Not started in 7.1: splines, partial ellipse, parabola, conic, text,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
@@ -76,7 +85,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1 tools: offset, splines, move/copy/rotate; planegcs oracle harness.
+2. Remaining M1 tools: move/copy/rotate/scale, splines, split; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

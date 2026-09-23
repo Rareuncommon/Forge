@@ -233,3 +233,73 @@ public enum SketchExtend: Command {
         return Output(ctx, s, r)
     }
 }
+
+public struct SketchOffsetOutput: Codable, Sendable {
+    public var sketch: SketchSummary
+    public var created: [String]
+    /// Copies per side, in chain order (two sides when bi-directional).
+    public var sides: [[String]]
+    public var caps: [String]
+    /// The offset dimension that drives every copy (change it with sketch.set_dimension).
+    public var dimension: String?
+    public var constraints: [String]
+}
+
+public enum SketchOffset: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var entities: [String]
+        public var distance: Length
+        public var toward: Point2?
+        public var reverse: Bool?
+        public var bidirectional: Bool?
+        public var capEnds: Bool?
+        public var makeBaseConstruction: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case sketch, entities, distance, toward, reverse, bidirectional
+            case capEnds = "cap_ends"
+            case makeBaseConstruction = "make_base_construction"
+        }
+
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "entities": "Lines, arcs and circles to offset; lines/arcs joined end to end are offset as chains",
+            "distance": "Offset distance",
+            "toward": FieldDoc("A point on the side to offset to", default: "outward for closed chains and circles; left of the first curve's direction for open chains"),
+            "reverse": FieldDoc("Offset to the other side", default: false),
+            "bidirectional": FieldDoc("Offset to both sides", default: false),
+            "cap_ends": FieldDoc("With bidirectional: close open chains with lines between the two copies' ends", default: false),
+            "make_base_construction": FieldDoc("Turn the original curves into construction geometry", default: false),
+        ]
+        public func validate() throws {
+            try requirePositive(distance, "distance")
+            guard !entities.isEmpty else { throw ForgeError(.invalidParams, "give the curves to offset") }
+            if capEnds == true && bidirectional != true { throw ForgeError(.invalidParams, "cap_ends needs bidirectional: true") }
+        }
+    }
+    public typealias Output = SketchOffsetOutput
+
+    public static let name = "sketch.offset"
+    public static let summary = "Offset lines, arcs and circles (chains stay joined at their corners); one dimension drives every copy"
+    public static let discussion = "Each copy gets an offset relation to its original, all linked to one driving offset dimension. Corners of a chain are extended/trimmed to meet; open chains' ends stay square to the originals. Ellipses: not implemented (their offset is not an ellipse)."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .notImplemented, .solverFailed]
+    public static let examples: [JSONValue] = [
+        ["entities": ["line-1", "line-4", "line-7", "line-10"], "distance": 5],
+        ["entities": ["line-1", "line-4"], "distance": "0.1 in", "bidirectional": true, "cap_ends": true],
+    ]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let r = try s.offset(
+            try p.entities.map { try localID($0, in: s) }, distance: p.distance.millimeters, toward: p.toward?.tuple,
+            reverse: p.reverse ?? false, bidirectional: p.bidirectional ?? false, capEnds: p.capEnds ?? false,
+            makeBaseConstruction: p.makeBaseConstruction ?? false)
+        ctx.commit(doc, s)
+        return Output(
+            sketch: SketchSummary(s, active: ctx.document.activeSketch == s.id), created: r.sides.flatMap { $0 } + r.caps,
+            sides: r.sides, caps: r.caps, dimension: r.dimension, constraints: r.constraints)
+    }
+}

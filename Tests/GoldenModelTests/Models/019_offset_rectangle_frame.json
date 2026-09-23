@@ -1,0 +1,144 @@
+{
+  "forge_script": 1,
+  "name": "019_offset_rectangle_frame",
+  "description": "Fully defined 40 x 20 rectangle offset outward (5 mm, then the offset dimension set to 3 mm) and extruded 10 mm: a 46 x 26 frame with a 40 x 20 opening",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_rectangle",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            40,
+            20
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-1"
+        ],
+        "value": 40
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-4"
+        ],
+        "value": 20
+      }
+    },
+    {
+      "command": "sketch.offset",
+      "params": {
+        "entities": [
+          "line-1",
+          "line-4",
+          "line-7",
+          "line-10"
+        ],
+        "distance": 5
+      }
+    },
+    {
+      "command": "sketch.set_dimension",
+      "params": {
+        "constraint": "constraint-16",
+        "value": 3
+      }
+    },
+    {
+      "command": "body.extrude",
+      "params": {
+        "sketch": "sketch-1",
+        "depth": 10
+      }
+    }
+  ],
+  "expect": {
+    "sketches": [
+      {
+        "sketch": "sketch-1",
+        "status": "fully_defined",
+        "dof": 0,
+        "points": [
+          {
+            "entity": "point-14",
+            "value": [
+              -3,
+              -3
+            ],
+            "tol": 1e-09
+          },
+          {
+            "entity": "point-15",
+            "value": [
+              43,
+              -3
+            ],
+            "tol": 1e-09
+          }
+        ],
+        "loops": 2,
+        "valid_profile": true,
+        "region_area_mm2": {
+          "value": 396,
+          "tol": 1e-09
+        }
+      }
+    ],
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 3960,
+          "tol": 1e-06
+        },
+        "surface_area_mm2": {
+          "value": 3432,
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            -3,
+            -3,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            43,
+            23,
+            10
+          ],
+          "tol": 1e-06
+        },
+        "faces": 10,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

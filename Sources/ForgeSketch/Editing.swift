@@ -20,6 +20,13 @@ extension Sketch {
     public mutating func addConstraint(_ kind: ConstraintKind, _ entities: [String], value: Double? = nil, driven: Bool = false)
         throws -> String
     {
+        try addConstraint(kind, entities, value: value, driven: driven, linkedTo: nil, alignedEnds: nil)
+    }
+
+    @discardableResult
+    mutating func addConstraint(
+        _ kind: ConstraintKind, _ entities: [String], value: Double?, driven: Bool, linkedTo: String?, alignedEnds: [String]?, tangentEnds: [String]? = nil
+    ) throws -> String {
         guard kind != .arcRadius else { throw ForgeError(.invalidParams, "arc_radius is internal") }
         let ids = try normalize(kind, entities)
         var value = value
@@ -36,6 +43,9 @@ extension Sketch {
         var trial = self
         var c = SketchConstraint(id: "", kind: kind, entities: ids, value: value, driven: driven, side: chooseSide(kind, ids), isInternal: false)
         if kind == .tangent { c.at = sharedTangencyPoint(ids) }
+        c.linkedTo = linkedTo
+        c.alignedEnds = alignedEnds
+        c.tangentEnds = tangentEnds
         let id = trial.appendConstraint(c)
         let r = SketchSolver.solve(&trial)
         try Self.judge(r, new: id, previous: before, kind: kind, entities: ids, value: value, sketchID: self.id)
@@ -53,6 +63,8 @@ extension Sketch {
             guard v > 0 else { throw ForgeError(.invalidParams, "\(kind.rawValue) must be positive") }
         case .distance:
             guard v >= 0 else { throw ForgeError(.invalidParams, "distance must not be negative") }
+        case .offset:
+            guard v > 0 else { throw ForgeError(.invalidParams, "offset distance must be positive") }
         default:
             break
         }

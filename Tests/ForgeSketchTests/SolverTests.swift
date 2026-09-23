@@ -691,3 +691,93 @@ struct TrimExtendTests {
         }
     }
 }
+
+@Suite("Sketch offset")
+struct OffsetTests {
+    func loopAreas(_ s: Sketch) -> [Double] { s.profiles().loops.map { abs($0.signedAreaMM2) }.sorted() }
+
+    @Test func closedRectangleOffsetsOutwardAndFollowsItsDimension() throws {
+        var s = newSketch()
+        let rect = try s.addRectangle(.corner, [(0, 0), (40, 20)])
+        let dof = s.resolve().dof
+        let r = try s.offset(rect, distance: 5)
+        let rep = s.resolve()
+        #expect(rep.dof == dof)
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        #expect(r.sides.count == 1 && r.sides[0].count == 4)
+        #expect(loopAreas(s).map { ($0 * 1e9).rounded() / 1e9 } == [800, 1500])
+        // With the original fully defined, only the copy can move when the offset changes.
+        try s.addConstraint(.distance, [rect[0]], value: 40)
+        try s.addConstraint(.distance, [rect[1]], value: 20)
+        try s.addConstraint(.fix, [ends(s, rect[0]).0])
+        #expect(s.resolve().status == .fullyDefined)
+        try s.setDimension(r.dimension!, value: 2, driven: nil)
+        #expect(loopAreas(s).map { ($0 * 1e9).rounded() / 1e9 } == [800, 44 * 24])
+    }
+
+    @Test func slotOffsetKeepsTangentJointsWithoutRedundancy() throws {
+        var s = newSketch()
+        let slot = try s.addSlot(.straight, (0, 0), (30, 0), width: 10)
+        let curves = slot.filter { s.entities[$0]!.kind != .point && !s.entities[$0]!.construction }
+        let dof = s.resolve().dof
+        _ = try s.offset(curves, distance: 3)
+        let rep = s.resolve()
+        #expect(rep.dof == dof)
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        let areas = loopAreas(s)
+        #expect(areas.count == 2)
+        #expect(near(areas[0], 30 * 10 + .pi * 25, 1e-7))
+        #expect(near(areas[1], 30 * 16 + .pi * 64, 1e-7))
+    }
+
+    @Test func openChainOneSideThenBothSidesWithCaps() throws {
+        var s = newSketch()
+        let a = s.addLine(from: (0, 0), to: (10, 0))
+        let b = s.addLine(from: (10, 0), to: (10, 10))
+        try s.addConstraint(.coincident, [ends(s, a).1, ends(s, b).0])
+        let dof = s.resolve().dof
+        var one = s
+        let r1 = try one.offset([a, b], distance: 2, toward: (5, 5))
+        #expect(one.resolve().dof == dof)
+        let (p, q) = ends(one, r1.sides[0][0]), (_, w) = ends(one, r1.sides[0][1])
+        #expect(near(one.point(p), (0, 2)) && near(one.point(q), (8, 2)) && near(one.point(w), (8, 10)))
+
+        let r2 = try s.offset([a, b], distance: 2, bidirectional: true, capEnds: true, makeBaseConstruction: true)
+        #expect(r2.sides.count == 2 && r2.caps.count == 2)
+        let rep = s.resolve()
+        #expect(rep.dof == dof && rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        let prof = s.profiles()
+        #expect(prof.valid)
+        #expect(near(loopAreas(s)[0], 80, 1e-9))  // a 4 mm band along a 20 mm L (mitred)
+    }
+
+    @Test func circlesArcsAndErrors() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (0, 0), radius: 10)
+        let r = try s.offset([c], distance: 3, toward: (0, 0))
+        #expect(near(s.circleOf(r.sides[0][0]).r, 7))
+        #expect(throws: ForgeError.self) { try s.offset([c], distance: 12, toward: (0, 0)) }
+        let e = s.addEllipse(center: (30, 0), major: 5, minor: 3, rotation: 0)
+        do {
+            _ = try s.offset([e], distance: 1)
+            Issue.record("expected not_implemented")
+        } catch let err as ForgeError {
+            #expect(err.code == .notImplemented)
+        }
+    }
+
+    @Test func filletedChainOffsetsWithoutRedundancy() throws {
+        var s = newSketch()
+        let a = s.addLine(from: (0, 0), to: (20, 0))
+        let b = s.addLine(from: (20, 0), to: (20, 15))
+        try s.addConstraint(.coincident, [ends(s, a).1, ends(s, b).0])
+        let arc = try s.filletCorner(a, b, radius: 4)[0]
+        let dof = s.resolve().dof
+        let r = try s.offset([a, arc, b], distance: 1.5, toward: (10, 5))
+        let rep = s.resolve()
+        #expect(rep.dof == dof)
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        let copyArc = r.sides[0].first { s.entities[$0]!.kind == .arc }!
+        #expect(near(s.circleOf(copyArc).r, 2.5))
+    }
+}

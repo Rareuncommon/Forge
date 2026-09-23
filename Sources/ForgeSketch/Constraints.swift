@@ -96,6 +96,11 @@ extension Sketch {
         case .angle:
             guard k == [.line, .line] else { throw bad("two lines") }
             return ids
+        case .offset:
+            guard k.count == 2, k[0] == k[1], k[0] == .line || Self.isRound(k[0]) else {
+                throw bad("two lines, two arcs or two circles (original, then offset copy)")
+            }
+            return ids
         case .arcRadius:
             return ids
         }
@@ -116,6 +121,9 @@ extension Sketch {
             default: return 2
             }
         case .coradial: return 3
+        case .offset:
+            let tangent = c.tangentEnds?.count ?? 0, aligned = c.alignedEnds?.count ?? 0
+            return entities[c.entities[0]]?.kind == .line ? 2 + aligned : 3 - (tangent > 0 ? 1 : 0) + aligned + tangent
         default: return 1
         }
     }
@@ -254,6 +262,32 @@ extension Sketch {
             default:
                 return sym(pt(ids[0]), pt(ids[1]))
             }
+        case .offset:
+            // Copy at signed distance side·value from the original (left of a line's direction;
+            // outward for circles/arcs), plus aligned free ends.
+            let orig = entities[ids[0]]!, copy = entities[ids[1]]!
+            let tangent = c.tangentEnds ?? []
+            var rows: [D]
+            if orig.kind == .line {
+                rows = copy.points.filter { !tangent.contains($0) }.map { lineDistance(pt($0), ids[0]) * s - v }
+            } else {
+                let c1 = center(ids[0]), c2 = center(ids[1])
+                rows = [c2.x - c1.x, c2.y - c1.y]
+                if tangent.isEmpty { rows.append((radius(ids[1]) - radius(ids[0])) * s - v) }
+            }
+            for p2 in (c.alignedEnds ?? []) + tangent {
+                guard let k = copy.points.firstIndex(of: p2) else { continue }
+                let q = pt(p2), o = pt(orig.points[k])
+                if orig.kind == .line {
+                    let (a, b) = ends(ids[0])
+                    let d = b - a
+                    rows.append((q - o).dot(d) / d.length)
+                } else {
+                    let c1 = center(ids[0])
+                    rows.append((o - c1).cross(q - c1) / radius(ids[0]))
+                }
+            }
+            return rows
         case .midpoint:
             let q = pt(ids[0])
             let (a, b) = ends(ids[1])
@@ -329,6 +363,13 @@ extension Sketch {
         case .verticalDistance:
             let (a, b) = pair()
             return (b.y - a.y) * c.side
+        case .offset:
+            if entities[ids[0]]!.kind == .line {
+                let (a2, _) = ends(ids[1]), (a, b) = ends(ids[0])
+                let d = b - a
+                return d.cross(a2 - a) / d.length * c.side
+            }
+            return (radius(ids[1]) - radius(ids[0])) * c.side
         case .radius:
             return radius(ids[0])
         case .diameter:
@@ -414,7 +455,7 @@ extension Sketch {
             let m0 = reflect(point(a.points[0])), m1 = reflect(point(a.points[1]))
             let (s0, s1) = (point(b.points[0]), point(b.points[1]))
             return d2(m0, s0) + d2(m1, s1) <= d2(m0, s1) + d2(m1, s0) ? 1 : -1
-        case .horizontalDistance, .verticalDistance, .angle:
+        case .horizontalDistance, .verticalDistance, .angle, .offset:
             probe.side = 1
             return sign(measure(probe, x))
         default:

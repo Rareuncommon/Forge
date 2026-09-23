@@ -76,6 +76,16 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
   current geometry, keeping residuals smooth and solutions near the drawn configuration.
 - **Dragging:** the dragged point is held at the target and the rest solved; if that is
   impossible the whole sketch is solved from the target (minimal movement).
+- **Offsets and tangent joints:** at a smooth joint of an offset chain both copies constrain
+  the shared point in the same (normal) direction, so their rows are linearly dependent and
+  the point could slide. The `offset` relation therefore lists `tangent_ends`: there the
+  later copy drops its normal row (line distance / arc radius) and holds the point with an
+  alignment row along the original's normal instead. Chains of any mix of corners and
+  tangencies are fully defined with no redundancy. Copies of a chain are `linked_to` one
+  driving offset dimension.
+- **Whole-curve symmetry:** `symmetric` also relates two lines (4 rows), circles (3) or arcs
+  (5: centres, start↔end, and the remaining end's angle as a cross product, which stays
+  regular where a perpendicular-projection or midpoint form becomes singular).
 - **Tests:** unit tests with analytic answers, 40 seeded property tests (random closed
   polygons + circle, dimensions measured from a known configuration, parameters perturbed,
   re-solved), and golden sketch models. The planegcs oracle harness is still to do.

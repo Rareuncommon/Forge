@@ -59,13 +59,13 @@ public enum ConstraintKind: String, Codable, Sendable, CaseIterable, SchemaEnum 
         symmetric, midpoint, concentric, collinear, coradial, fix
     // dimensions
     case distance, horizontalDistance = "horizontal_distance", verticalDistance = "vertical_distance",
-        radius, diameter, angle
+        radius, diameter, angle, offset
     // internal (created with geometry, not user-visible as relations)
     case arcRadius = "arc_radius"
 
     public var isDimension: Bool {
         switch self {
-        case .distance, .horizontalDistance, .verticalDistance, .radius, .diameter, .angle: true
+        case .distance, .horizontalDistance, .verticalDistance, .radius, .diameter, .angle, .offset: true
         default: false
         }
     }
@@ -88,10 +88,22 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
     /// For tangency between curves that share an endpoint: the endpoint (of a circular curve)
     /// where the tangency holds. Endpoint tangency uses a first-order formulation.
     public var at: String? = nil
+    /// Offset: the driving offset this one follows (one dimension drives a whole chain).
+    public var linkedTo: String? = nil
+    /// Offset: endpoints of the copy held on the normal through the original's matching end
+    /// (the free ends of an open chain).
+    public var alignedEnds: [String]? = nil
+    /// Offset: copy endpoints at a tangent joint of a chain. There the neighbouring copy already
+    /// fixes the point's normal position, so this copy holds it only tangentially (aligned with
+    /// the original's end) and drops its own distance row (line) or radius row (arc).
+    public var tangentEnds: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, kind, entities, value, driven, side, at
         case isInternal = "is_internal"
+        case linkedTo = "linked_to"
+        case alignedEnds = "aligned_ends"
+        case tangentEnds = "tangent_ends"
     }
 }
 
@@ -265,7 +277,9 @@ public struct Sketch: Codable, Sendable, Hashable {
     }
 
     mutating func setValue(_ id: String, _ value: Double) {
-        if let i = constraints.firstIndex(where: { $0.id == id }) { constraints[i].value = value }
+        for i in constraints.indices where constraints[i].id == id || constraints[i].linkedTo == id {
+            constraints[i].value = value
+        }
     }
 
     mutating func setDriven(_ id: String, _ driven: Bool) {

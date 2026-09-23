@@ -241,4 +241,25 @@ struct SketchCommandTests {
             #expect(err.code == .invalidParams)
         }
     }
+    @Test func offsetThroughTheBus() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_circle", ["center": [0, 0], "radius": 10])  // circle-1
+        let r = try await e.execute("sketch.offset", ["entities": ["circle-1"], "distance": "0.1 in", "toward": [0, 0]]).result
+        let copy = r["sides"]![0]![0]!.stringValue!
+        #expect(abs(try await entity(e, copy)["radius"]!.doubleValue! - 7.46) < 1e-9)
+        let dim = r["dimension"]!.stringValue!
+        try await e.execute("sketch.set_dimension", ["constraint": .string(dim), "value": 4])
+        // The original is free too, so check what the dimension controls: the radius difference.
+        let r0 = try await entity(e, "circle-1")["radius"]!.doubleValue!, r1 = try await entity(e, copy)["radius"]!.doubleValue!
+        #expect(abs(r0 - r1 - 4) < 1e-9)
+        try await e.execute("edit.undo")
+        try await e.execute("edit.undo")
+        #expect(try await e.execute("sketch.get").result["entities"]!.arrayValue!.count == 3)
+        do {
+            try await e.execute("sketch.offset", ["entities": ["circle-1"], "distance": 1, "cap_ends": true])
+            Issue.record("expected error")
+        } catch let err as ForgeError {
+            #expect(err.code == .invalidParams)
+        }
+    }
 }

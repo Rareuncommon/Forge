@@ -26,7 +26,7 @@ public enum RelationType: String, Codable, Sendable, CaseIterable, SchemaEnum {
 
 /// Dimension types accepted by sketch.add_dimension (SPEC 7.1 "Dimensions").
 public enum DimensionType: String, Codable, Sendable, CaseIterable, SchemaEnum {
-    case distance, horizontalDistance = "horizontal_distance", verticalDistance = "vertical_distance", radius, diameter, angle
+    case distance, horizontalDistance = "horizontal_distance", verticalDistance = "vertical_distance", radius, diameter, angle, offset
 
     var kind: ConstraintKind { ConstraintKind(rawValue: rawValue)! }
 }

@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 881 · in progress: 92 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 877 · in progress: 96 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -116,10 +116,10 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/trim/corner` | ↳ corner | not started | ForgeSketch | — | — |  |
 | `7.1/tools/trim/inside-outside` | ↳ inside/outside | not started | ForgeSketch | — | — |  |
 | `7.1/tools/extend` | Tools: extend | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.extend | lines and arcs |
-| `7.1/tools/offset` | Tools: offset | not started | ForgeSketch | — | — |  |
-| `7.1/tools/offset/bi-directional` | ↳ bi-directional | not started | ForgeSketch | — | — |  |
-| `7.1/tools/offset/cap-ends` | ↳ cap ends | not started | ForgeSketch | — | — |  |
-| `7.1/tools/offset/construction` | ↳ construction | not started | ForgeSketch | — | — |  |
+| `7.1/tools/offset` | Tools: offset | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift, Tests/GoldenModelTests/Models/019_offset_rectangle_frame.json | execute:sketch.offset | lines/arcs chains + circles, one driving dimension; ellipses NOT IMPLEMENTED; corners joined by extension only (no arc-join option); not yet a feature-tree item (M2) |
+| `7.1/tools/offset/bi-directional` | ↳ bi-directional | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(bidirectional) |  |
+| `7.1/tools/offset/cap-ends` | ↳ cap ends | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(cap_ends) | line caps only (arc caps NOT IMPLEMENTED) |
+| `7.1/tools/offset/construction` | ↳ construction | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(make_base_construction) |  |
 | `7.1/tools/convert-entities` | Tools: convert entities | not started | ForgeSketch | — | — |  |
 | `7.1/tools/intersection-curve` | Tools: intersection curve | not started | ForgeSketch | — | — |  |
 | `7.1/tools/silhouette-entities` | Tools: silhouette entities | not started | ForgeSketch | — | — |  |

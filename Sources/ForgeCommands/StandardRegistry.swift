@@ -50,6 +50,7 @@ extension CommandRegistry {
         r.register(SketchPatternCircular.self)
         r.register(SketchTrim.self)
         r.register(SketchExtend.self)
+        r.register(SketchOffset.self)
         // bodies
         r.register(BodyCreateBox.self)
         r.register(BodyCreateCylinder.self)

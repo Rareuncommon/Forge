@@ -163,6 +163,7 @@ extension Sketch {
             switch c.kind {
             case .distance, .horizontalDistance, .verticalDistance: return c.entities == [curve]
             case .midpoint: return true
+            case .offset: return c.alignedEnds != nil || c.tangentEnds != nil
             case .equal: return entities[curve]?.kind == .line
             case .symmetric: return c.entities.count == 3 && c.entities[2] != curve
             default: return false
@@ -179,13 +180,18 @@ extension Sketch {
 
     /// Constraints that reference a point, or use it as a tangency point.
     func constraintsOn(_ pointID: String) -> [String] {
-        userConstraints.filter { $0.entities.contains(pointID) || $0.at == pointID }.map(\.id)
+        userConstraints.filter {
+            $0.entities.contains(pointID) || $0.at == pointID || ($0.alignedEnds ?? []).contains(pointID)
+                || ($0.tangentEnds ?? []).contains(pointID)
+        }.map(\.id)
     }
 
     mutating func retarget(_ constraintIDs: [String], from old: String, to new: String) {
         for i in constraints.indices where constraintIDs.contains(constraints[i].id) {
             constraints[i].entities = constraints[i].entities.map { $0 == old ? new : $0 }
             if constraints[i].at == old { constraints[i].at = new }
+            constraints[i].alignedEnds = constraints[i].alignedEnds?.map { $0 == old ? new : $0 }
+            constraints[i].tangentEnds = constraints[i].tangentEnds?.map { $0 == old ? new : $0 }
         }
     }
 
