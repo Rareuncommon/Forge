@@ -1,0 +1,46 @@
+{
+  "forge_script": 1,
+  "name": "010_inch_document",
+  "description": "Inch document: bare numbers are inches; mixed-unit strings convert",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {
+        "units": {
+          "length": "in"
+        }
+      }
+    },
+    {
+      "command": "body.create_box",
+      "params": {
+        "width": 1,
+        "height": 2,
+        "depth": "25.4 mm"
+      }
+    }
+  ],
+  "expect": {
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 32774.128,
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            25.4,
+            50.8,
+            25.4
+          ],
+          "tol": 1e-09
+        },
+        "faces": 6,
+        "edges": 12,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

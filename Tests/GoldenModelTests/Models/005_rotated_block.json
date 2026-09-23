@@ -1,0 +1,69 @@
+{
+  "forge_script": 1,
+  "name": "005_rotated_block",
+  "description": "10x20x30 block rotated 90 deg about Z (angle given with units)",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "body.create_box",
+      "params": {
+        "width": 10,
+        "height": 20,
+        "depth": 30
+      }
+    },
+    {
+      "command": "body.transform",
+      "params": {
+        "body": "body-1",
+        "rotate": {
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "angle": "90 deg"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 6000,
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            -20,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            0,
+            10,
+            30
+          ],
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            -10,
+            5,
+            15
+          ],
+          "tol": 1e-09
+        },
+        "faces": 6
+      }
+    ]
+  }
+}

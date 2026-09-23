@@ -1,0 +1,58 @@
+{
+  "forge_script": 1,
+  "name": "008_torus",
+  "description": "Torus R=20, r=5",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "body.create_torus",
+      "params": {
+        "major_radius": 20,
+        "minor_radius": 5
+      }
+    }
+  ],
+  "expect": {
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 9869.604401089358,
+          "tol": 1e-06
+        },
+        "surface_area_mm2": {
+          "value": 3947.8417604357437,
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            0,
+            0,
+            0
+          ],
+          "tol": 1e-09
+        },
+        "bbox_min": {
+          "value": [
+            -25,
+            -25,
+            -5
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            25,
+            25,
+            5
+          ],
+          "tol": 1e-06
+        },
+        "valid": true
+      }
+    ]
+  }
+}

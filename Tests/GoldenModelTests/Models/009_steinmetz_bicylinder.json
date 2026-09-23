@@ -1,0 +1,90 @@
+{
+  "forge_script": 1,
+  "name": "009_steinmetz_bicylinder",
+  "description": "Intersection of two perpendicular r=10 cylinders (Steinmetz solid: V=16r^3/3, A=16r^2)",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "body.create_cylinder",
+      "params": {
+        "radius": 10,
+        "height": 30,
+        "origin": [
+          0,
+          0,
+          -15
+        ]
+      }
+    },
+    {
+      "command": "body.create_cylinder",
+      "params": {
+        "radius": 10,
+        "height": 30,
+        "origin": [
+          -15,
+          0,
+          0
+        ],
+        "axis": [
+          1,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "command": "body.boolean",
+      "params": {
+        "operation": "common",
+        "target": "body-1",
+        "tool": "body-2"
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 5333.333333333333,
+          "tol": 0.0001
+        },
+        "surface_area_mm2": {
+          "value": 1600,
+          "tol": 0.0001
+        },
+        "centroid": {
+          "value": [
+            0,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            -10,
+            -10,
+            -10
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            10,
+            10,
+            10
+          ],
+          "tol": 1e-06
+        },
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

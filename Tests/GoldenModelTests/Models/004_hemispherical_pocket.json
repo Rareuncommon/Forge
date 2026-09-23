@@ -1,0 +1,65 @@
+{
+  "forge_script": 1,
+  "name": "004_hemispherical_pocket",
+  "description": "20 mm cube with a hemispherical pocket of radius 8 in the top face (r=10 would be tangent to the edges and split the face)",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "body.create_box",
+      "params": {
+        "width": 20,
+        "height": 20,
+        "depth": 20
+      }
+    },
+    {
+      "command": "body.create_sphere",
+      "params": {
+        "radius": 8.0,
+        "center": [
+          10,
+          10,
+          20
+        ]
+      }
+    },
+    {
+      "command": "body.boolean",
+      "params": {
+        "operation": "cut",
+        "target": "body-1",
+        "tool": "body-2"
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 6927.669707574684,
+          "tol": 1e-06
+        },
+        "surface_area_mm2": {
+          "value": 2601.0619298297465,
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            10,
+            10,
+            8.916473740257874
+          ],
+          "tol": 1e-06
+        },
+        "faces": 7,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

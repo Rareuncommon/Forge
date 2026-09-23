@@ -1,0 +1,83 @@
+{
+  "forge_script": 1,
+  "name": "012_counterbored_plate",
+  "description": "Plate with a counterbore built from two cuts (pre-Hole-Wizard)",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "body.create_box",
+      "params": {
+        "width": 50,
+        "height": 50,
+        "depth": 20,
+        "origin": [
+          -25,
+          -25,
+          0
+        ]
+      }
+    },
+    {
+      "command": "body.create_cylinder",
+      "params": {
+        "radius": 4,
+        "height": 30,
+        "origin": [
+          0,
+          0,
+          -5
+        ]
+      }
+    },
+    {
+      "command": "body.boolean",
+      "params": {
+        "operation": "cut",
+        "target": "body-1",
+        "tool": "body-2"
+      }
+    },
+    {
+      "command": "body.create_cylinder",
+      "params": {
+        "radius": 7,
+        "height": 10,
+        "origin": [
+          0,
+          0,
+          15
+        ]
+      }
+    },
+    {
+      "command": "body.boolean",
+      "params": {
+        "operation": "cut",
+        "target": "body-1",
+        "tool": "body-3"
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 48476.32756300895,
+          "tol": 1e-06
+        },
+        "surface_area_mm2": {
+          "value": 9496.371639267187,
+          "tol": 1e-06
+        },
+        "faces": 9,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}
