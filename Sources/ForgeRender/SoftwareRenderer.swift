@@ -133,7 +133,7 @@ public enum SoftwareRenderer {
                     let start = Int(mesh.edgeOffsets[e]), end = Int(mesh.edgeOffsets[e + 1])
                     let edgeID = mesh.edgeIDs[e]
                     let highlighted = item.highlightAll || item.highlightedEdges.contains(edgeID)
-                    let c = highlighted ? RGBA.highlight : RGBA.edge
+                    let c = highlighted ? RGBA.highlight : (item.edgeColors[edgeID] ?? RGBA.edge)
                     guard end - start >= 2 else { continue }
                     for k in start..<(end - 1) {
                         let p = Vec3(Double(mesh.edgePoints[3 * k]), Double(mesh.edgePoints[3 * k + 1]), Double(mesh.edgePoints[3 * k + 2]))

@@ -31,6 +31,15 @@ public struct ChangeSet: Codable, Sendable, Hashable {
             }
         }
         for id in before?.bodyOrder ?? [] where a[id] == nil { c.deleted.append(id) }
+        let bs = before?.sketches ?? [:], asx = after?.sketches ?? [:]
+        for id in after?.sketchOrder ?? [] {
+            if let old = bs[id] {
+                if old != asx[id]! { c.modified.append(id) }
+            } else {
+                c.created.append(id)
+            }
+        }
+        for id in before?.sketchOrder ?? [] where asx[id] == nil { c.deleted.append(id) }
         return c
     }
 }
@@ -303,7 +312,7 @@ extension Document {
     /// longer exist.
     func preservingSelection(of current: Document) -> Document {
         var d = self
-        d.selection = current.selection.filter { ref in EntityRef(parsing: ref).map { d.bodies[$0.body] != nil } ?? false }
+        d.selection = current.selection.filter { d.referenceExists($0) }
         return d
     }
 }

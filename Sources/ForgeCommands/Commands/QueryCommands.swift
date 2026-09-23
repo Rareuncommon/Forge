@@ -255,6 +255,14 @@ public enum SelectionSet: Command {
         var doc = try ctx.requireDocument()
         var refs: [String] = []
         for s in p.entities {
+            if s.hasPrefix("sketch-") || doc.sketches[String(s.split(separator: "/").first ?? "")] != nil {
+                guard doc.referenceExists(s) else {
+                    throw ForgeError(.unknownEntity, "no sketch entity '\(s)'", entities: [s],
+                                     suggestions: [SuggestedFix(description: "List the sketch", command: "sketch.get", params: ["sketch": .string(String(s.split(separator: "/")[0]))])])
+                }
+                refs.append(s)
+                continue
+            }
             let r = try EntityRef.parse(s)
             let b = try doc.body(r.body)
             let t = try b.shape.topology()

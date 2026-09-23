@@ -1,5 +1,6 @@
 import ForgeCore
 import ForgeKernel
+import ForgeSketch
 import Foundation
 
 /// A solid (or other B-rep) body in a document.
@@ -34,6 +35,13 @@ public struct Document: Sendable {
     public var selection: [String] = []
     var nextBodyNumber = 1
 
+    /// Sketches in creation order.
+    public private(set) var sketchOrder: [String] = []
+    public private(set) var sketches: [String: Sketch] = [:]
+    /// The sketch being edited (explicit edit-mode state, SPEC §5.4). Sketch commands default to it.
+    public var activeSketch: String?
+    var nextSketchNumber = 1
+
     public init(id: String, name: String, units: UnitSystem = .mmgs) {
         self.id = id
         self.name = name
@@ -67,7 +75,77 @@ public struct Document: Sendable {
     public mutating func removeBody(_ id: String) throws {
         guard bodies.removeValue(forKey: id) != nil else { throw unknownBody(id) }
         bodyOrder.removeAll { $0 == id }
-        selection.removeAll { EntityRef(parsing: $0)?.body == id }
+        pruneSelection()
+    }
+
+    // MARK: sketches
+
+    public var orderedSketches: [Sketch] { sketchOrder.compactMap { sketches[$0] } }
+
+    public mutating func addSketch(name: String?, plane: SketchPlane) -> Sketch {
+        let id = "sketch-\(nextSketchNumber)"
+        nextSketchNumber += 1
+        var sk = Sketch(id: id, name: name ?? "Sketch\(id.dropFirst(7))", plane: plane)
+        sk.resolve()
+        sketches[id] = sk
+        sketchOrder.append(id)
+        return sk
+    }
+
+    /// The sketch with this id, or the active sketch when `id` is nil.
+    public func sketch(_ id: String?) throws -> Sketch {
+        guard let id = id ?? activeSketch else {
+            throw ForgeError(
+                .preconditionFailed, "no sketch given and no sketch is being edited",
+                suggestions: [
+                    SuggestedFix(description: "Create a sketch on the Front plane", command: "sketch.create", params: ["plane": "front"]),
+                    SuggestedFix(description: "Edit an existing sketch", command: "sketch.edit", params: ["sketch": .string(sketchOrder.last ?? "sketch-1")]),
+                ])
+        }
+        if let s = sketches[id] { return s }
+        let byName = orderedSketches.filter { $0.name == id }
+        if byName.count == 1 { return byName[0] }
+        throw ForgeError(
+            .unknownEntity, "no sketch '\(id)'" + (sketchOrder.isEmpty ? "" : "; sketches: \(sketchOrder.joined(separator: ", "))"), entities: [id],
+            suggestions: [SuggestedFix(description: "List document state", command: "document.state")])
+    }
+
+    public mutating func updateSketch(_ s: Sketch) {
+        precondition(sketches[s.id] != nil)
+        sketches[s.id] = s
+        pruneSelection()
+    }
+
+    public mutating func removeSketch(_ id: String) throws {
+        let s = try sketch(id)
+        sketches.removeValue(forKey: s.id)
+        sketchOrder.removeAll { $0 == s.id }
+        if activeSketch == s.id { activeSketch = nil }
+        pruneSelection()
+    }
+
+    // MARK: references
+
+    /// Whether a reference string names something that currently exists: "body-1",
+    /// "body-1/face-3", "sketch-2", "sketch-2/line-5".
+    public func referenceExists(_ ref: String) -> Bool {
+        let parts = ref.split(separator: "/", maxSplits: 1).map(String.init)
+        guard let head = parts.first else { return false }
+        if let sk = sketches[head] {
+            return parts.count == 1 || sk.entities[parts[1]] != nil || sk.constraints.contains { $0.id == parts[1] }
+        }
+        guard let r = EntityRef(parsing: ref), let b = bodies[r.body] else { return false }
+        guard let i = r.index, let t = try? b.shape.topology() else { return true }
+        switch r.kind {
+        case .body: return true
+        case .face: return i < t.faces
+        case .edge: return i < t.edges
+        case .vertex: return i < t.vertices
+        }
+    }
+
+    mutating func pruneSelection() {
+        selection = selection.filter { referenceExists($0) }
     }
 
     public func body(_ id: String) throws -> Body {

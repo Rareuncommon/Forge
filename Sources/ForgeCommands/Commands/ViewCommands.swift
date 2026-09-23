@@ -29,15 +29,20 @@ final class MeshCache: @unchecked Sendable {
     }
 }
 
-/// Builds the render scene for a document. Object IDs index `bodies`.
+/// Builds the render scene for a document: bodies (object ids 0..<bodies.count) followed by
+/// sketches (one item each; edge ids index the sketch's drawn curves).
 public struct DocumentScene: Sendable {
     public var scene: RenderScene
     public var bodies: [String]
+    public var sketches: [String]
+    /// For each sketch item, the curve id per edge index.
+    public var sketchCurves: [[String]]
 
-    public init(document: Document, bodies filter: [String]? = nil, highlight: [String] = []) throws {
+    public init(document: Document, bodies filter: [String]? = nil, highlight: [String] = [], showSketches: Bool = true) throws {
         let selected = try filter.map { try $0.map { try document.body($0).id } }
         let list = document.orderedBodies.filter { selected?.contains($0.id) ?? true }
-        let refs = try highlight.map(EntityRef.parse)
+        let bodyRefs = highlight.filter { !document.sketches.keys.contains(String($0.split(separator: "/").first ?? "")) }
+        let refs = bodyRefs.compactMap(EntityRef.init(parsing:))
         var items: [RenderItem] = []
         for (i, b) in list.enumerated() {
             let mine = refs.filter { $0.body == b.id }
@@ -49,14 +54,48 @@ public struct DocumentScene: Sendable {
                     highlightedEdges: Set(mine.filter { $0.kind == .edge }.compactMap { $0.index.map(UInt32.init) }),
                     highlightAll: mine.contains { $0.kind == .body }))
         }
-        scene = RenderScene(items: items)
         bodies = list.map(\.id)
+        sketches = []
+        sketchCurves = []
+        guard showSketches else {
+            scene = RenderScene(items: items)
+            return
+        }
+        for sk in document.orderedSketches {
+            var points: [Float] = [], offsets: [UInt32] = [0], ids: [UInt32] = []
+            var colors: [UInt32: RGBA] = [:], highlighted: Set<UInt32> = []
+            var curves: [String] = []
+            for e in sk.orderedEntities where e.kind != .point {
+                let edge = UInt32(curves.count)
+                curves.append(e.id)
+                for (u, v) in sk.polyline(e.id) {
+                    let p = sk.plane.point(u, v)
+                    points += [Float(p.x), Float(p.y), Float(p.z)]
+                }
+                offsets.append(UInt32(points.count / 3))
+                ids.append(edge)
+                let state = sk.report?.entityStates[e.id] ?? .underDefined
+                colors[edge] = e.construction ? .sketchConstruction : state == .overDefined ? .sketchOver : state == .fullyDefined ? .sketchFully : .sketchUnder
+                if highlight.contains("\(sk.id)/\(e.id)") || highlight.contains(sk.id) { highlighted.insert(edge) }
+            }
+            guard !curves.isEmpty else { continue }
+            let mesh = Mesh(positions: [], normals: [], indices: [], triangleFaces: [], edgeOffsets: offsets, edgeIDs: ids, edgePoints: points)
+            items.append(RenderItem(objectID: UInt32(list.count + sketches.count), mesh: mesh, color: .sketchUnder, highlightedEdges: highlighted, edgeColors: colors))
+            sketches.append(sk.id)
+            sketchCurves.append(curves)
+        }
+        scene = RenderScene(items: items)
     }
 
     /// Entity reference for a pick hit.
     public func reference(for hit: PickHit) -> String? {
-        guard Int(hit.objectID) < bodies.count else { return nil }
-        return EntityRef(body: bodies[Int(hit.objectID)], kind: hit.element == .face ? .face : .edge, index: Int(hit.index)).description
+        let o = Int(hit.objectID)
+        if o < bodies.count {
+            return EntityRef(body: bodies[o], kind: hit.element == .face ? .face : .edge, index: Int(hit.index)).description
+        }
+        let k = o - bodies.count
+        guard k < sketches.count, Int(hit.index) < sketchCurves[k].count else { return nil }
+        return "\(sketches[k])/\(sketchCurves[k][Int(hit.index)])"
     }
 }
 
@@ -72,6 +111,7 @@ public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
     /// Orbit offsets applied after the standard orientation (degrees, turntable).
     public var yaw: Double?
     public var pitch: Double?
+    public var sketches: Bool?
 
     public static let fieldDocs: [String: FieldDoc] = [
         "orientation": FieldDoc("Standard view", default: "isometric"),
@@ -83,6 +123,7 @@ public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
         "highlight": FieldDoc("Entities drawn in the highlight colour (bodies, faces, edges)", default: []),
         "yaw": FieldDoc("Extra rotation about the vertical axis in degrees", default: 0),
         "pitch": FieldDoc("Extra rotation about the horizontal axis in degrees", default: 0),
+        "sketches": FieldDoc("Show sketches (curves coloured by constraint state)", default: true),
     ]
 
     public func validate() throws {
@@ -148,7 +189,7 @@ public enum ViewRender: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let doc = try ctx.requireDocument()
         let view = p.view ?? ViewSpec()
-        let ds = try DocumentScene(document: doc, bodies: view.bodies, highlight: view.highlight ?? doc.selection)
+        let ds = try DocumentScene(document: doc, bodies: view.bodies, highlight: view.highlight ?? doc.selection, showSketches: view.sketches ?? true)
         let img = view.render(ds)
         let png = PNG.encode(rgba: img.rgba, width: img.width, height: img.height)
         if let path = p.path {
@@ -251,10 +292,13 @@ public enum ViewPick: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let doc = try ctx.requireDocument()
         let view = p.view ?? ViewSpec()
-        let ds = try DocumentScene(document: doc, bodies: view.bodies)
+        let ds = try DocumentScene(document: doc, bodies: view.bodies, showSketches: view.sketches ?? true)
         let img = view.render(ds)
         guard let hit = img.pick(x: p.x, y: p.y, radius: p.radius ?? 3), let ref = ds.reference(for: hit) else {
             return Output(hit: nil, element: nil, face: nil, edge: nil)
+        }
+        guard Int(hit.objectID) < ds.bodies.count else {
+            return Output(hit: ref, element: "sketch_curve", face: nil, edge: nil)
         }
         let b = try doc.body(ds.bodies[Int(hit.objectID)])
         switch hit.element {

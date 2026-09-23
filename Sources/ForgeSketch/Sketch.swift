@@ -219,7 +219,8 @@ public struct Sketch: Codable, Sendable, Hashable {
             remove.insert(id)
             for p in e.points where entities[p]?.owner == id { remove.insert(p) }
         }
-        let removedEntities = entityOrder.filter { remove.contains($0) }
+        // Requested items first, then what they took with them (owned points), in sketch order.
+        let removedEntities = ids + entityOrder.filter { remove.contains($0) && !ids.contains($0) }
         let removedConstraints = constraints.filter { $0.entities.contains(where: remove.contains) }.map(\.id)
         constraints.removeAll { $0.entities.contains(where: remove.contains) }
         for id in remove { entities.removeValue(forKey: id) }

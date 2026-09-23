@@ -17,6 +17,11 @@ public struct RGBA: Sendable, Hashable, Codable {
     public static let edge = RGBA(0.08, 0.09, 0.11)
     public static let highlight = RGBA(1.0, 0.55, 0.1)
     public static let background = RGBA(0.93, 0.94, 0.96)
+    // Sketch colours by constraint state (SolidWorks convention).
+    public static let sketchUnder = RGBA(0.10, 0.35, 0.90)
+    public static let sketchFully = RGBA(0.05, 0.05, 0.05)
+    public static let sketchOver = RGBA(0.90, 0.10, 0.10)
+    public static let sketchConstruction = RGBA(0.55, 0.55, 0.60)
 
     /// Default body palette (stable by index).
     public static func bodyColor(_ i: Int) -> RGBA {
@@ -45,11 +50,14 @@ public struct RenderItem: Sendable {
     public var highlightedFaces: Set<UInt32>
     public var highlightedEdges: Set<UInt32>
     public var highlightAll: Bool
+    /// Per-edge colours (e.g. sketch curves by constraint state); default is RGBA.edge.
+    public var edgeColors: [UInt32: RGBA]
 
     public init(
         objectID: UInt32, mesh: Mesh, color: RGBA, highlightedFaces: Set<UInt32> = [], highlightedEdges: Set<UInt32> = [],
-        highlightAll: Bool = false
+        highlightAll: Bool = false, edgeColors: [UInt32: RGBA] = [:]
     ) {
+        self.edgeColors = edgeColors
         self.objectID = objectID
         self.mesh = mesh
         self.color = color

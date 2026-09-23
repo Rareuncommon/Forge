@@ -13,7 +13,7 @@ public enum UndoBehavior: String, Codable, Sendable {
 }
 
 public enum CommandCategory: String, Codable, Sendable, CaseIterable {
-    case document, body, query, selection, view, export, edit, help
+    case document, sketch, body, query, selection, view, export, edit, help
 }
 
 /// Parameters for commands that take none.

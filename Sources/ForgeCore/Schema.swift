@@ -418,3 +418,89 @@ public enum SchemaValidator {
         return prev[b.count]
     }
 }
+
+/// A point in sketch coordinates: two lengths (numbers in document units or unit strings).
+public struct Point2: Codable, Sendable, Hashable, JSONSchemaProviding {
+    public var u: Double
+    public var v: Double
+
+    public init(_ u: Double, _ v: Double) {
+        self.u = u
+        self.v = v
+    }
+
+    public var tuple: (Double, Double) { (u, v) }
+
+    public init(from decoder: any Decoder) throws {
+        var c = try decoder.unkeyedContainer()
+        let u = try c.decode(Length.self), v = try c.decode(Length.self)
+        guard c.isAtEnd else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "expected exactly 2 coordinates") }
+        self.u = u.millimeters
+        self.v = v.millimeters
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.unkeyedContainer()
+        try c.encode(u)
+        try c.encode(v)
+    }
+
+    public static var jsonSchema: JSONValue {
+        ["type": "array", "items": Length.jsonSchema, "minItems": 2, "maxItems": 2,
+         "description": "[u, v] in sketch coordinates; lengths in document units or with a unit string"]
+    }
+    public static var schemaPlaceholder: Point2 { Point2(0, 0) }
+}
+
+/// A dimension value whose kind (length or angle) depends on context: a number in document
+/// units, or a string with units ("25 mm", "30 deg").
+public struct Quantity: Codable, Sendable, Hashable, JSONSchemaProviding {
+    enum Raw: Hashable { case number(Double), text(String) }
+    let raw: Raw
+    let units: UnitSystem
+
+    public init(millimeters: Double) {
+        raw = .text("\(millimeters) mm")
+        units = .mmgs
+    }
+
+    public init(from decoder: any Decoder) throws {
+        units = decoder.userInfo[.unitSystem] as? UnitSystem ?? .mmgs
+        let c = try decoder.singleValueContainer()
+        if let d = try? c.decode(Double.self) {
+            raw = .number(d)
+        } else {
+            raw = .text(try c.decode(String.self))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch raw {
+        case .number(let d): try c.encode(d)
+        case .text(let s): try c.encode(s)
+        }
+    }
+
+    public func length() throws -> Double {
+        switch raw {
+        case .number(let d): return d * units.length.millimeters
+        case .text(let s): return try QuantityParser.length(s, default: units.length)
+        }
+    }
+
+    public func angle() throws -> Double {
+        switch raw {
+        case .number(let d): return d * units.angle.radians
+        case .text(let s): return try QuantityParser.angle(s, default: units.angle)
+        }
+    }
+
+    public static var jsonSchema: JSONValue {
+        ["oneOf": [
+            ["type": "number", "description": "value in document units (length or angle, by dimension type)"],
+            ["type": "string", "description": "value with unit, e.g. \"25 mm\", \"1 in\", \"30 deg\""],
+        ]]
+    }
+    public static var schemaPlaceholder: Quantity { Quantity(millimeters: 0) }
+}

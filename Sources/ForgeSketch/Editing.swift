@@ -189,7 +189,7 @@ extension Sketch {
 
     /// Add coincident relations for new points that land exactly on existing points, and
     /// horizontal/vertical relations for exactly axis-aligned new lines.
-    mutating func inferRelations(newEntities: [String]) -> [InferredRelation] {
+    public mutating func inferRelations(newEntities: [String]) -> [InferredRelation] {
         var out: [InferredRelation] = []
         let fresh = Set(newEntities.flatMap { [$0] + (entities[$0]?.points ?? []) })
         for id in newEntities {

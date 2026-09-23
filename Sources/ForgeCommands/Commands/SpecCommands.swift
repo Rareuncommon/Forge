@@ -1,5 +1,6 @@
 import ForgeCore
 import ForgeKernel
+import ForgeSketch
 import Foundation
 
 /// An expected scalar with tolerance. Passes if |actual - value| <= max(tol, rel * |value|).
@@ -66,18 +67,55 @@ public struct BodyExpectation: Codable, Sendable, Hashable, SchemaDocumented {
     ]
 }
 
+public struct PointExpectation: Codable, Sendable, Hashable, SchemaDocumented {
+    public var entity: String
+    public var value: [Double]
+    public var tol: Double?
+    public static let fieldDocs: [String: FieldDoc] = [
+        "entity": "Sketch point id", "value": "Expected [u, v] in mm", "tol": FieldDoc("Absolute tolerance", default: 1e-6),
+    ]
+}
+
+public struct SketchExpectation: Codable, Sendable, Hashable, SchemaDocumented {
+    public var sketch: String
+    public var status: SolveStatus?
+    public var dof: Int?
+    public var points: [PointExpectation]?
+    public var loops: Int?
+    public var validProfile: Bool?
+    public var regionAreaMM2: ScalarExpectation?
+
+    enum CodingKeys: String, CodingKey {
+        case sketch, status, dof, points, loops
+        case validProfile = "valid_profile"
+        case regionAreaMM2 = "region_area_mm2"
+    }
+
+    public static let fieldDocs: [String: FieldDoc] = [
+        "sketch": "Sketch id or name",
+        "status": "Expected solver status",
+        "dof": "Expected remaining degrees of freedom",
+        "points": "Expected point positions",
+        "loops": "Expected number of closed profile loops",
+        "valid_profile": "Expected usability as a feature profile",
+        "region_area_mm2": "Expected enclosed region area (outer loops minus holes)",
+    ]
+}
+
 public struct ModelSpec: Codable, Sendable, Hashable, SchemaDocumented {
     public var bodyCount: Int?
     public var bodies: [BodyExpectation]?
+    public var sketches: [SketchExpectation]?
 
     enum CodingKeys: String, CodingKey {
-        case bodies
+        case bodies, sketches
         case bodyCount = "body_count"
     }
 
     public static let fieldDocs: [String: FieldDoc] = [
         "body_count": "Expected number of bodies in the document",
         "bodies": "Per-body expectations",
+        "sketches": "Per-sketch expectations",
     ]
 }
 
@@ -164,6 +202,45 @@ public enum QueryCompareToSpec: Command {
             count("vertices", e.vertices, topo.vertices)
             flag("valid", e.valid, validity.isValid)
             flag("closed", e.closed, validity.isClosed)
+        }
+        for e in spec.sketches ?? [] {
+            guard let sk = try? doc.sketch(e.sketch) else {
+                checks.append(SpecCheck(subject: e.sketch, property: "exists", expected: true, actual: false, passed: false))
+                continue
+            }
+            let r = sk.report
+            if let st = e.status {
+                checks.append(SpecCheck(subject: sk.id, property: "status", expected: .string(st.rawValue), actual: .string(r?.status.rawValue ?? "unsolved"), passed: r?.status == st))
+            }
+            if let d = e.dof {
+                checks.append(SpecCheck(subject: sk.id, property: "dof", expected: .number(Double(d)), actual: .number(Double(r?.dof ?? -1)), passed: r?.dof == d))
+            }
+            for pe in e.points ?? [] {
+                guard let ent = sk.entities[pe.entity], ent.kind == .point else {
+                    checks.append(SpecCheck(subject: "\(sk.id)/\(pe.entity)", property: "exists", expected: true, actual: false, passed: false))
+                    continue
+                }
+                let (u, v) = sk.point(pe.entity)
+                let tol = pe.tol ?? 1e-6
+                let ok = pe.value.count == 2 && abs(pe.value[0] - u) <= tol && abs(pe.value[1] - v) <= tol
+                checks.append(SpecCheck(
+                    subject: "\(sk.id)/\(pe.entity)", property: "position", expected: ["value": .array(pe.value.map { .number($0) }), "tol": .number(tol)],
+                    actual: [.number(u), .number(v)], passed: ok))
+            }
+            if e.loops != nil || e.validProfile != nil || e.regionAreaMM2 != nil {
+                let pr = sk.profiles()
+                if let n = e.loops {
+                    checks.append(SpecCheck(subject: sk.id, property: "loops", expected: .number(Double(n)), actual: .number(Double(pr.loops.count)), passed: n == pr.loops.count))
+                }
+                if let vp = e.validProfile {
+                    checks.append(SpecCheck(subject: sk.id, property: "valid_profile", expected: .bool(vp), actual: .bool(pr.valid), passed: vp == pr.valid))
+                }
+                if let a = e.regionAreaMM2 {
+                    checks.append(SpecCheck(
+                        subject: sk.id, property: "region_area_mm2", expected: ["value": .number(a.value), "allowed_deviation": .number(a.allowed())],
+                        actual: .number(pr.regionAreaMM2), passed: abs(pr.regionAreaMM2 - a.value) <= a.allowed()))
+                }
+            }
         }
         let failures = checks.filter { !$0.passed }.count
         return SpecReport(passed: failures == 0, failures: failures, checks: checks)

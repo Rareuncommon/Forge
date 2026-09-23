@@ -36,9 +36,9 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
 
     // Vertex layouts (must match the MSL structs below).
     // TriVertex: packed_float3 position, packed_float3 normal, uint element, uint highlighted = 32 bytes
-    // LineVertex: packed_float3 position, uint element, uint highlighted = 20 bytes
+    // LineVertex: packed_float3 position, uint element, uint highlighted, packed_float3 color = 32 bytes
     static let triStride = 32
-    static let lineStride = 20
+    static let lineStride = 32
 
     public init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice(), colorFormat: MTLPixelFormat = .bgra8Unorm_srgb) {
         guard let device, let queue = device.makeCommandQueue() else { return nil }
@@ -93,10 +93,12 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
                 guard en - s >= 2 else { continue }
                 let id = (m.edgeIDs[e] + 1) | RenderImage.edgeFlag
                 let hl: UInt32 = item.highlightAll || item.highlightedEdges.contains(m.edgeIDs[e]) ? 1 : 0
+                let color = item.edgeColors[m.edgeIDs[e]] ?? RGBA.edge
                 for k in s..<(en - 1) {
                     for p in [k, k + 1] {
                         append(&lines, floats: [m.edgePoints[3 * p], m.edgePoints[3 * p + 1], m.edgePoints[3 * p + 2]])
                         append(&lines, uints: [id, hl])
+                        append(&lines, floats: [color.r, color.g, color.b])
                     }
                 }
             }
@@ -238,11 +240,12 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         };
 
         struct TriVertex { packed_float3 position; packed_float3 normal; uint element; uint highlighted; };
-        struct LineVertex { packed_float3 position; uint element; uint highlighted; };
+        struct LineVertex { packed_float3 position; uint element; uint highlighted; packed_float3 color; };
 
         struct VOut {
             float4 position [[position]];
             float3 normal;
+            float3 color;
             uint element [[flat]];
             uint highlighted [[flat]];
         };
@@ -251,6 +254,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             VOut o;
             o.position = u.viewProj * float4(float3(v[vid].position), 1.0);
             o.normal = float3(v[vid].normal);
+            o.color = float3(0.0);
             o.element = v[vid].element;
             o.highlighted = v[vid].highlighted;
             return o;
@@ -261,6 +265,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             o.position = u.viewProj * float4(float3(v[vid].position), 1.0);
             o.position.z -= 0.0015 * o.position.w;   // draw edges on top of their faces
             o.normal = float3(0.0);
+            o.color = float3(v[vid].color);
             o.element = v[vid].element;
             o.highlighted = v[vid].highlighted;
             return o;
@@ -278,7 +283,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         }
 
         fragment float4 line_fragment(VOut in [[stage_in]], constant Uniforms& u [[buffer(1)]]) {
-            return in.highlighted != 0 ? float4(u.highlight.rgb, 1.0) : float4(u.color.rgb, 1.0);
+            return in.highlighted != 0 ? float4(u.highlight.rgb, 1.0) : float4(in.color, 1.0);
         }
 
         struct PickOut { uint object [[color(0)]]; uint element [[color(1)]]; };

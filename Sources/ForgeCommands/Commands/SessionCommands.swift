@@ -112,14 +112,21 @@ public enum DocumentState: Command {
     public struct Output: Codable, Sendable {
         public var document: DocumentSummary
         public var bodies: [BodySummary]
+        public var sketches: [SketchSummary]
+        public var activeSketch: String?
         public var selection: [String]
         public var undo: [String]
         public var redo: [String]
         public var transaction: String?
+
+        enum CodingKeys: String, CodingKey {
+            case document, bodies, sketches, selection, undo, redo, transaction
+            case activeSketch = "active_sketch"
+        }
     }
 
     public static let name = "document.state"
-    public static let summary = "Full explicit state of the active document: bodies, selection, undo/redo stacks, open transaction"
+    public static let summary = "Full explicit state of the active document: bodies, sketches, sketch being edited, selection, undo/redo stacks, open transaction"
     public static let discussion = "Nothing about the session is hidden: everything that affects how later commands behave is returned here (SPEC §5.4)."
     public static let category = CommandCategory.document
     public static let undo = UndoBehavior.none
@@ -130,7 +137,9 @@ public enum DocumentState: Command {
         let s = ctx.session.documents[doc.id]!
         return Output(
             document: DocumentSummary(doc, active: doc.id == ctx.session.activeDocumentID),
-            bodies: try doc.orderedBodies.map(BodySummary.init), selection: doc.selection,
+            bodies: try doc.orderedBodies.map(BodySummary.init),
+            sketches: doc.orderedSketches.map { SketchSummary($0, active: $0.id == doc.activeSketch) }, activeSketch: doc.activeSketch,
+            selection: doc.selection,
             undo: s.undoLabels, redo: s.redoLabels, transaction: s.transactionLabel)
     }
 }

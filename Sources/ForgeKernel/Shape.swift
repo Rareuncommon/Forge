@@ -216,10 +216,12 @@ public struct Mesh: Sendable {
 
     /// Axis-aligned bounds of the tessellation.
     public var bounds: BoundingBox? {
-        guard vertexCount > 0 else { return nil }
-        var lo = position(0), hi = lo
-        for i in 1..<vertexCount {
-            let p = position(i)
+        let all = positions + edgePoints
+        guard all.count >= 3 else { return nil }
+        func at(_ i: Int) -> Vec3 { Vec3(Double(all[3 * i]), Double(all[3 * i + 1]), Double(all[3 * i + 2])) }
+        var lo = at(0), hi = lo
+        for i in 1..<(all.count / 3) {
+            let p = at(i)
             lo = Vec3(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
             hi = Vec3(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
         }
