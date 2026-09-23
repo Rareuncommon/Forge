@@ -53,6 +53,17 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <BRep_Builder.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <ShapeFix_Face.hxx>
+#include <ShapeFix_Shape.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Elips.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Trsf.hxx>
 
@@ -381,6 +392,122 @@ FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_
         return nullptr;
     }
     return wrap(mk.Shape());
+    FK_END(nullptr)
+}
+
+// ---- profiles → solids ----------------------------------------------------------
+
+FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount, FKError *err) {
+    clearError(err);
+    if (!segments || !loopStart || !regionOf || loopCount == 0) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "no profile loops");
+        return nullptr;
+    }
+    FK_BEGIN
+    auto pnt = [](const double *v) { return gp_Pnt(v[0], v[1], v[2]); };
+    std::vector<TopoDS_Wire> wires;
+    for (size_t li = 0; li < loopCount; ++li) {
+        BRepBuilderAPI_MakeWire mw;
+        for (int32_t si = loopStart[li]; si < loopStart[li + 1]; ++si) {
+            const FKSegment &sg = segments[si];
+            TopoDS_Edge e;
+            switch (sg.kind) {
+            case FK_SEG_LINE:
+                e = BRepBuilderAPI_MakeEdge(pnt(sg.p), pnt(sg.p + 3));
+                break;
+            case FK_SEG_ARC: {
+                GC_MakeArcOfCircle arc(pnt(sg.p), pnt(sg.p + 3), pnt(sg.p + 6));
+                if (!arc.IsDone()) {
+                    setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate arc in profile");
+                    return nullptr;
+                }
+                e = BRepBuilderAPI_MakeEdge(arc.Value());
+                break;
+            }
+            case FK_SEG_CIRCLE: {
+                gp_Circ c(gp_Ax2(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5])), sg.p[9]);
+                e = BRepBuilderAPI_MakeEdge(c);
+                break;
+            }
+            case FK_SEG_ELLIPSE: {
+                gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
+                e = BRepBuilderAPI_MakeEdge(gp_Elips(ax, sg.p[9], sg.p[10]));
+                break;
+            }
+            default:
+                setError(err, FK_ERR_INVALID_ARGUMENT, "unknown segment kind");
+                return nullptr;
+            }
+            mw.Add(e);
+            if (!mw.IsDone()) {
+                setError(err, FK_ERR_CONSTRUCTION_FAILED, "profile loop is not connected");
+                return nullptr;
+            }
+        }
+        wires.push_back(mw.Wire());
+    }
+    std::vector<TopoDS_Shape> faces;
+    for (size_t li = 0; li < loopCount;) {
+        const int32_t region = regionOf[li];
+        BRepBuilderAPI_MakeFace mf(wires[li], Standard_True);
+        if (!mf.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "profile loop is not planar or not closed");
+            return nullptr;
+        }
+        size_t lj = li + 1;
+        for (; lj < loopCount && regionOf[lj] == region; ++lj) mf.Add(TopoDS::Wire(wires[lj].Reversed()));
+        // Let ShapeFix orient outer/inner wires consistently whatever the input winding.
+        ShapeFix_Face fix(mf.Face());
+        fix.FixOrientation();
+        fix.Perform();
+        faces.push_back(fix.Face());
+        li = lj;
+    }
+    if (faces.size() == 1) return wrap(faces[0]);
+    BRep_Builder b;
+    TopoDS_Compound comp;
+    b.MakeCompound(comp);
+    for (auto &f : faces) b.Add(comp, f);
+    return wrap(comp);
+    FK_END(nullptr)
+}
+
+FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err) {
+    clearError(err);
+    if (!hasShape(profile, err)) return nullptr;
+    if (!validAxis(v)) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "extrusion vector must be non-zero");
+        return nullptr;
+    }
+    FK_BEGIN
+    BRepPrimAPI_MakePrism mk(profile->shape, gp_Vec(v[0], v[1], v[2]), Standard_True);
+    TopoDS_Shape s = mk.Shape();
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(s, TopAbs_SOLID, solids);
+    if (solids.Extent() == 1) s = solids(1);
+    return wrap(s);
+    FK_END(nullptr)
+}
+
+FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double axis[3], double angle, FKError *err) {
+    clearError(err);
+    if (!hasShape(profile, err)) return nullptr;
+    if (!finite3(origin) || !validAxis(axis) || !(angle > 0) || angle > 2 * M_PI + 1e-12) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "revolve needs a finite axis and 0 < angle <= 360 degrees");
+        return nullptr;
+    }
+    FK_BEGIN
+    gp_Ax1 ax(gp_Pnt(origin[0], origin[1], origin[2]), gp_Dir(axis[0], axis[1], axis[2]));
+    BRepPrimAPI_MakeRevol mk(profile->shape, ax, std::min(angle, 2 * M_PI), Standard_True);
+    if (!mk.IsDone()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "revolve failed (does the profile cross the axis?)");
+        return nullptr;
+    }
+    TopoDS_Shape s = mk.Shape();
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(s, TopAbs_SOLID, solids);
+    if (solids.Extent() == 1) s = solids(1);
+    return wrap(s);
     FK_END(nullptr)
 }
 

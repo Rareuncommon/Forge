@@ -48,6 +48,8 @@ extension CommandRegistry {
         r.register(BodyCreateSphere.self)
         r.register(BodyCreateCone.self)
         r.register(BodyCreateTorus.self)
+        r.register(BodyExtrude.self)
+        r.register(BodyRevolve.self)
         r.register(BodyBoolean.self)
         r.register(BodyTransform.self)
         r.register(BodyFilletEdges.self)

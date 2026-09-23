@@ -120,3 +120,83 @@ func withUnsafePointer3<R>(_ v: Vec3, _ body: (UnsafePointer<Double>) -> R) -> R
     let a = [v.x, v.y, v.z]
     return a.withUnsafeBufferPointer { body($0.baseAddress!) }
 }
+
+/// A segment of a planar profile loop, in model coordinates (mm).
+public enum ProfileSegment: Sendable, Hashable {
+    case line(Vec3, Vec3)
+    /// start, a point on the arc, end
+    case arc(Vec3, Vec3, Vec3)
+    case circle(center: Vec3, normal: Vec3, radius: Double)
+    case ellipse(center: Vec3, normal: Vec3, majorDirection: Vec3, majorRadius: Double, minorRadius: Double)
+
+    var c: FKSegment {
+        var s = FKSegment()
+        var p = [Double](repeating: 0, count: 11)
+        func put(_ v: Vec3, _ at: Int) {
+            p[at] = v.x
+            p[at + 1] = v.y
+            p[at + 2] = v.z
+        }
+        switch self {
+        case .line(let a, let b):
+            s.kind = Int32(FK_SEG_LINE.rawValue)
+            put(a, 0)
+            put(b, 3)
+        case .arc(let a, let m, let b):
+            s.kind = Int32(FK_SEG_ARC.rawValue)
+            put(a, 0)
+            put(m, 3)
+            put(b, 6)
+        case .circle(let c, let n, let r):
+            s.kind = Int32(FK_SEG_CIRCLE.rawValue)
+            put(c, 0)
+            put(n, 3)
+            p[9] = r
+        case .ellipse(let c, let n, let d, let a, let b):
+            s.kind = Int32(FK_SEG_ELLIPSE.rawValue)
+            put(c, 0)
+            put(n, 3)
+            put(d, 6)
+            p[9] = a
+            p[10] = b
+        }
+        withUnsafeMutableBytes(of: &s.p) { raw in
+            p.withUnsafeBytes { raw.copyMemory(from: $0) }
+        }
+        return s
+    }
+}
+
+extension Kernel {
+    /// Planar faces from profile loops. `regions[i]` groups loops; the first loop of each
+    /// region is its outer boundary, the rest are holes.
+    public static func faces(loops: [[ProfileSegment]], regions: [Int]) throws -> Shape {
+        precondition(loops.count == regions.count)
+        guard !loops.isEmpty else { throw ForgeError(.invalidParams, "no profile loops") }
+        var segs: [FKSegment] = []
+        var starts: [Int32] = []
+        for l in loops {
+            starts.append(Int32(segs.count))
+            segs += l.map(\.c)
+        }
+        starts.append(Int32(segs.count))
+        let reg = regions.map { Int32($0) }
+        return try call { err in
+            segs.withUnsafeBufferPointer { sp in
+                starts.withUnsafeBufferPointer { st in
+                    reg.withUnsafeBufferPointer { rg in fk_make_faces(sp.baseAddress, st.baseAddress, rg.baseAddress, loops.count, err) }
+                }
+            }
+        }
+    }
+
+    public static func extrude(_ profile: Shape, by v: Vec3) throws -> Shape {
+        try call { err in withUnsafePointer3(v) { fk_extrude(profile.handle, $0, err) } }
+    }
+
+    public static func revolve(_ profile: Shape, origin: Vec3, axis: Vec3, angle: Double) throws -> Shape {
+        try call { err in
+            withUnsafePointer3(origin) { o in withUnsafePointer3(axis) { a in fk_revolve(profile.handle, o, a, angle, err) } }
+        }
+    }
+}

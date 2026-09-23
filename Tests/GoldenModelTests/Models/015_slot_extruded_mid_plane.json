@@ -1,0 +1,117 @@
+{
+  "forge_script": 1,
+  "name": "015_slot_extruded_mid_plane",
+  "description": "Fully defined slot on the Top plane extruded 6 mm symmetric about the plane",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "top"
+      }
+    },
+    {
+      "command": "sketch.add_slot",
+      "params": {
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          30,
+          0
+        ],
+        "width": 10
+      }
+    },
+    {
+      "command": "sketch.add_relation",
+      "params": {
+        "type": "coincident",
+        "entities": [
+          "point-0",
+          "point-16"
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_relation",
+      "params": {
+        "type": "horizontal",
+        "entities": [
+          "line-15"
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-15"
+        ],
+        "value": 30
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "radius",
+        "entities": [
+          "arc-4"
+        ],
+        "value": 5
+      }
+    },
+    {
+      "command": "body.extrude",
+      "params": {
+        "sketch": "sketch-1",
+        "depth": 6,
+        "direction": "mid_plane"
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 2271.238898038469,
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            -5,
+            -3,
+            -5
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            35,
+            3,
+            5
+          ],
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            15,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "faces": 6,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

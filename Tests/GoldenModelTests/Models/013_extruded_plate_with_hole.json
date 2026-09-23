@@ -1,0 +1,136 @@
+{
+  "forge_script": 1,
+  "name": "013_extruded_plate_with_hole",
+  "description": "Fully defined sketch (50.8 x 25 plate, \u00d810 hole) extruded 10 mm along the Front normal",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_rectangle",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            40,
+            20
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_circle",
+      "params": {
+        "center": [
+          20,
+          10
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-1"
+        ],
+        "value": "2 in"
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "distance",
+        "entities": [
+          "line-4"
+        ],
+        "value": 25
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "diameter",
+        "entities": [
+          "circle-13"
+        ],
+        "value": 10
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "horizontal_distance",
+        "entities": [
+          "point-0",
+          "point-14"
+        ],
+        "value": "1 in"
+      }
+    },
+    {
+      "command": "sketch.add_dimension",
+      "params": {
+        "type": "vertical_distance",
+        "entities": [
+          "point-0",
+          "point-14"
+        ],
+        "value": 12.5
+      }
+    },
+    {
+      "command": "body.extrude",
+      "params": {
+        "sketch": "sketch-1",
+        "depth": 10
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 11914.601836602551,
+          "tol": 1e-06
+        },
+        "surface_area_mm2": {
+          "value": 4213.07963267949,
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            0,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            50.8,
+            25,
+            10
+          ],
+          "tol": 1e-06
+        },
+        "faces": 7,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

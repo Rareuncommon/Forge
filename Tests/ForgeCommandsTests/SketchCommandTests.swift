@@ -170,4 +170,30 @@ struct SketchCommandTests {
         #expect(dry.changes.modified == ["sketch-1"])
         #expect(abs(try await entity(e, "line-1")["length_mm"]!.doubleValue! - 10) < 1e-9)
     }
+
+    @Test func extrudeHandlesHolesAndIslands() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [40, 40]]])
+        try await e.execute("sketch.add_rectangle", ["points": [[10, 10], [30, 30]]])
+        try await e.execute("sketch.add_circle", ["center": [20, 20], "radius": 5])
+        let check = try await e.execute("sketch.check").result
+        #expect(check["loops"]?.arrayValue?.compactMap { $0["depth"]?.intValue }.sorted() == [0, 1, 2])
+        let body = try await e.execute("body.extrude", ["depth": 2]).result["body"]!
+        #expect(abs(body["volume_mm3"]!.doubleValue! - (1600 - 400 + 25 * Double.pi) * 2) < 1e-6)
+        #expect(body["topology"]?["solids"] == 2)  // the island is a separate solid
+    }
+
+    @Test func extrudingAnOpenProfileExplainsWhy() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_line", ["start": [0, 0], "end": [10, 0]])
+        try await e.execute("sketch.add_line", ["start": [10, 0], "end": [10, 10]])
+        do {
+            try await e.execute("body.extrude", ["depth": 5])
+            Issue.record("expected error")
+        } catch let err as ForgeError {
+            #expect(err.code == .preconditionFailed)
+            #expect(err.message.contains("open contour"))
+            #expect(err.suggestions.first?.command == "sketch.check")
+        }
+    }
 }

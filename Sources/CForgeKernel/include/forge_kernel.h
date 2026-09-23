@@ -146,6 +146,28 @@ FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError 
 FKShape *fk_transform(const FKShape *shape, const double m[12], FKError *err);
 FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_t count, double radius, FKError *err);
 
+/* ---- profiles → solids ---------------------------------------------------- */
+typedef enum FKSegmentKind {
+    FK_SEG_LINE = 0,     /* p[0..2] start, p[3..5] end */
+    FK_SEG_ARC = 1,      /* p[0..2] start, p[3..5] a point on the arc, p[6..8] end */
+    FK_SEG_CIRCLE = 2,   /* p[0..2] centre, p[3..5] normal, p[9] radius */
+    FK_SEG_ELLIPSE = 3,  /* p[0..2] centre, p[3..5] normal, p[6..8] major direction, p[9] major r, p[10] minor r */
+} FKSegmentKind;
+
+typedef struct FKSegment {
+    int32_t kind;
+    double p[11];
+} FKSegment;
+
+/* Planar face(s) from loops. Segments of loop i are segments[loopStart[i] .. loopStart[i+1]).
+ * regionOf[i] groups loops into faces; within a region the first loop is the outer boundary
+ * and the rest are holes. Returns a face, or a compound of faces for several regions. */
+FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount, FKError *err);
+/* Linear sweep of a face (or faces) by vector v. */
+FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err);
+/* Revolution about an axis through origin with direction axis, by angle (radians, ≤ 2π). */
+FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double axis[3], double angle, FKError *err);
+
 /* ---- queries ------------------------------------------------------------ */
 int32_t fk_shape_type(const FKShape *shape);
 int32_t fk_topology(const FKShape *shape, FKTopology *out, FKError *err);

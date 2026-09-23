@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 893 · in progress: 80 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 889 · in progress: 84 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -31,7 +31,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/explicit-state` | No hidden state: selection/active document explicit & queryable (§5.4) | in progress | ForgeCommands | Tests/ForgeCommandsTests | get_document_state | selection, active document, active sketch (edit mode) explicit; active configuration arrives with configurations |
 | `P/journal` | Command journal replayable as a script (macro recorder foundation) (§5.3) | in progress | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift | resource forge://document/journal | replayable; uses transient refs until persistent naming (M2) |
 | `P/forge-cli` | forge-cli headless engine (§3) | done | forge-cli | CI golden run | — | run, exec, commands, describe, search, mcp, version |
-| `P/golden-models` | Golden-model regression suite (§9) | in progress | Tests | Tests/GoldenModelTests | compare_to_spec | 18 models (12 body, 6 sketch) with analytic expectations |
+| `P/golden-models` | Golden-model regression suite (§9) | in progress | Tests | Tests/GoldenModelTests | compare_to_spec | 22 models (16 body, 6 sketch) with analytic expectations |
 | `P/determinism` | Deterministic regeneration, bit-for-bit (§3) | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests | — | bit-identical BREP across regenerations tested; persistent IDs pending (M2) |
 | `P/mcp-stdio` | MCP server over stdio (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | own JSON-RPC implementation (docs/adr/0006); protocol 2025-11-25 with fallbacks |
 | `P/mcp-socket` | MCP server over local Unix socket (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | 0600 permissions |
@@ -215,16 +215,16 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/reference-geometry/reference-curves/split-line` | ↳ split line | not started | ForgeModel | — | — |  |
 | `7.2/reference-geometry/reference-curves/curve-through-xyz-points` | ↳ curve through XYZ points | not started | ForgeModel | — | — |  |
 | `7.2/reference-geometry/reference-curves/curve-through-reference-points` | ↳ curve through reference points | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude` | Boss/base & cut: extrude | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/blind` | ↳ blind | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/extrude` | Boss/base & cut: extrude | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | kernel-level from sketch profiles (holes, islands); parametric feature, cut and end conditions in M2 |
+| `7.2/boss-base-and-cut/extrude/blind` | ↳ blind | in progress | ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | normal/reverse |
 | `7.2/boss-base-and-cut/extrude/through-all` | ↳ through all | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/extrude/up-to-next-vertex-surface-offset` | ↳ up to next/vertex/surface/offset | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/mid-plane` | ↳ mid-plane | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/extrude/mid-plane` | ↳ mid-plane | in progress | ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude(mid_plane) |  |
 | `7.2/boss-base-and-cut/extrude/thin-feature` | ↳ thin feature | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/extrude/draft` | ↳ draft | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/extrude/direction-2` | ↳ direction-2 | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/extrude/contour-selection` | ↳ contour selection | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/revolve` | Boss/base & cut: revolve | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/revolve` | Boss/base & cut: revolve | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.revolve | about a sketch line, any angle; parametric feature in M2 |
 | `7.2/boss-base-and-cut/sweep` | Boss/base & cut: sweep | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/sweep/profile` | ↳ profile | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/sweep/solid-body-tool-sweep` | ↳ solid-body tool sweep | not started | ForgeModel | — | — |  |
