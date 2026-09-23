@@ -31,6 +31,9 @@ public enum ErrorCode: String, Codable, Sendable, CaseIterable {
     case noTransaction = "no_transaction"
     case unsupported = "unsupported"
     case notImplemented = "not_implemented"
+    case sketchConflict = "sketch_conflict"
+    case sketchRedundant = "sketch_redundant"
+    case solverFailed = "solver_failed"
     case internalError = "internal_error"
 }
 

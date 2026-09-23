@@ -69,7 +69,8 @@ var targets: [Target] = [
     ),
     .target(name: "ForgeCore", swiftSettings: strictSwift),
     .target(name: "ForgeKernel", dependencies: ["CForgeKernel", "ForgeCore"], swiftSettings: strictSwift),
-    .target(name: "ForgeCommands", dependencies: ["ForgeCore", "ForgeKernel", "ForgeRender"], swiftSettings: strictSwift),
+    .target(name: "ForgeSketch", dependencies: ["ForgeCore"], swiftSettings: strictSwift),
+    .target(name: "ForgeCommands", dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeRender"], swiftSettings: strictSwift),
     .target(name: "ForgeRender", dependencies: ["ForgeCore", "ForgeKernel"], swiftSettings: strictSwift),
     .target(name: "ForgeMCP", dependencies: ["ForgeCore", "ForgeCommands", "ForgeRender"], swiftSettings: strictSwift),
     .executableTarget(
@@ -80,6 +81,7 @@ var targets: [Target] = [
 
     .testTarget(name: "ForgeCoreTests", dependencies: ["ForgeCore"]),
     .testTarget(name: "ForgeKernelTests", dependencies: ["ForgeKernel"]),
+    .testTarget(name: "ForgeSketchTests", dependencies: ["ForgeSketch"]),
     .testTarget(name: "ForgeCommandsTests", dependencies: ["ForgeCommands"]),
     .testTarget(name: "ForgeRenderTests", dependencies: ["ForgeRender", "ForgeKernel"]),
     .testTarget(name: "ForgeMCPTests", dependencies: ["ForgeMCP", "ForgeCommands"]),
@@ -92,7 +94,7 @@ var targets: [Target] = [
 
 var products: [Product] = [
     .executable(name: "forge-cli", targets: ["forge-cli"]),
-    .library(name: "ForgeEngine", targets: ["ForgeCore", "ForgeKernel", "ForgeCommands", "ForgeRender", "ForgeMCP"]),
+    .library(name: "ForgeEngine", targets: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender", "ForgeMCP"]),
 ]
 
 #if os(macOS)
