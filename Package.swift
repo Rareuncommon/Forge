@@ -110,7 +110,9 @@ products.append(.executable(name: "ForgeApp", targets: ["ForgeApp"]))
 
 let package = Package(
     name: "Forge",
-    platforms: [.macOS("27.0")],
+    // The product targets macOS 27 (Info.plist LSMinimumSystemVersion); the package itself
+    // builds with the macOS 26 SDK too so CI runners without Xcode 27 can compile it.
+    platforms: [.macOS("26.0")],
     products: products,
     targets: targets,
     cxxLanguageStandard: .cxx20
