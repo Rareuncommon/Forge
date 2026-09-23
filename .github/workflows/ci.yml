@@ -72,11 +72,12 @@ jobs:
         with:
           path: Vendor/occt
           key: ${{ steps.occt-cache.outputs.cache-primary-key }}
-      - name: Build engine and tests
-        run: swift build --build-tests --target forge-cli && swift build --build-tests
-      - name: Build app (Metal + SwiftUI)
-        run: swift build --product ForgeApp
+      - name: Build engine and tests (without the app)
+        run: FORGE_NO_APP=1 swift build --build-tests
       - name: Test
-        run: swift test
+        run: FORGE_NO_APP=1 swift test
       - name: Golden models through forge-cli
         run: .build/debug/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
+      - name: Build app (Metal + SwiftUI)
+        if: always()
+        run: swift build --product ForgeApp

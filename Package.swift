@@ -99,7 +99,9 @@ var products: [Product] = [
 
 #if os(macOS)
 // The GUI shell only exists on macOS (Metal + SwiftUI). Everything else is headless and
-// builds on Linux for CI (docs/adr/0007-build-and-ci.md).
+// builds on Linux for CI (docs/adr/0007-build-and-ci.md). FORGE_NO_APP=1 leaves it out so
+// engine tests can run independently of the app build.
+if env["FORGE_NO_APP"] == nil {
 targets.append(
     .executableTarget(
         name: "ForgeApp",
@@ -108,6 +110,7 @@ targets.append(
     )
 )
 products.append(.executable(name: "ForgeApp", targets: ["ForgeApp"]))
+}
 #endif
 
 let package = Package(
