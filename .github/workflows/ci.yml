@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-headless:
+    # The headless engine (kernel bridge, commands, MCP, renderer, forge-cli) on Ubuntu with
+    # the distribution's OCCT 7.6. Mirrors the environment the M0 session verified.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Swift toolchain
+        uses: actions/cache@v4
+        with:
+          path: /opt/swift
+          key: swift-6.4.0-ubuntu24.04-${{ runner.arch }}
+      - name: Bootstrap (Swift 6.4.0 + OCCT dev packages)
+        run: scripts/bootstrap-linux.sh
+      - name: Build
+        run: /opt/swift/usr/bin/swift build --build-tests
+      - name: Test
+        run: /opt/swift/usr/bin/swift test
+      - name: Golden models through forge-cli
+        run: .build/debug/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
+      - name: MCP stdio smoke test
+        run: |
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"describe_command","arguments":{"name":"body.create_box"}}}' \
+            | .build/debug/forge-cli mcp | python3 -c 'import sys,json; r=[json.loads(l) for l in sys.stdin]; assert r[1]["result"]["isError"] is False, r; print("mcp ok")'
+      - name: FEATURES.md is in sync with SPEC.md
+        run: python3 scripts/features.py --check
+
+  macos-app:
+    # Builds OCCT 8.0.1 with the reproducible script, then the whole package including the
+    # SwiftUI/Metal app. Needs a runner with Xcode 27 (Swift 6.4, macOS 27 SDK).
+    # NOTE: not yet observed green — the M0 session had no macOS machine (see PROGRESS.md).
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)"
+          swift --version
+      - name: Cache OCCT
+        id: occt-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/occt
+          key: occt-V8_0_1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-occt.sh') }}
+      - name: Build OCCT 8.0.1
+        if: steps.occt-cache.outputs.cache-hit != 'true'
+        run: scripts/build-occt.sh
+      - name: Build (engine + app)
+        run: swift build --build-tests
+      - name: Test
+        run: swift test
+      - name: Golden models through forge-cli
+        run: .build/debug/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
