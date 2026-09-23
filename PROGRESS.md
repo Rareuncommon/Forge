@@ -135,8 +135,9 @@
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
 2. Remaining M1: stretch, spline tools (fit/simplify/curvature), conics/parabola, text.
-3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
-   v1 file format, turning extrude/revolve/fillet into parametric features.
+3. M2: feature tree + regeneration engine per ADR 0011 (proposed): kernel history ABI and
+   named shapes first, then sketch + extrude as the first parametric features, then file
+   format v2 with v1 migration.
 
 ## Session 1 — 2026-09-23 — Milestone 0 (foundations)
 
