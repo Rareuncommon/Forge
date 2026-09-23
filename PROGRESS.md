@@ -3,12 +3,12 @@
 ## Session 2 — 2026-09-23 — Milestone 1 (sketcher) + first sketch-to-solid
 
 ### CI status
-- GitHub Actions `linux-headless`: **green** on the pushed M0 commits (run #1 and #2).
-- `macos-app`: run #1 failed because the `macos-26` runner has no Xcode 27. The workflow now
-  selects the newest installed Xcode and the package's minimum deployment target is macOS 26
-  (the app bundle still declares macOS 27). Run #2 got past Xcode selection and was building
-  OCCT 8.0.1 when this entry was written — see the next session entry for its outcome. This is
-  the path to verifying the Metal/SwiftUI code, which has still never been compiled.
+- `linux-headless`: **green** on every pushed commit.
+- `macos-app`: **green** on `b601dc4` (run #7, `macos-26` runner): OCCT 8.0.1 built from source
+  and cached; engine + 110 tests + all golden models pass on macOS; **`ForgeApp` (SwiftUI) and
+  `MetalViewportRenderer` compile and link** for the first time. The app has still not been
+  *run* interactively (no display on CI), so orbit/pan/zoom/picking in the Metal viewport and
+  the sketch UI remain unverified at runtime.
 
 ### Done this session (all verified on Linux, OCCT 7.6.3 and 8.0.1)
 - **ForgeSketch** (new module): sketch model (points, lines, circles, arcs, ellipses,
@@ -34,6 +34,13 @@
   and a rendered thumbnail; atomic writes, schema-version check and a migration table.
   `document.save` / `document.open` commands and MCP `save` / `open` tools. Every golden
   model now does save → open → re-check spec → save and requires byte-identical files.
+- **Sketch mirror and patterns:** `sketch.mirror` (copies related by symmetric relations —
+  `symmetric` now also relates two lines, circles or arcs as wholes; an arc pair uses a
+  5-row form so it is never redundant with the copy's internal radius), `sketch.pattern_linear`
+  (1 or 2 directions, direction by angle or along a line) and `sketch.pattern_circular` (full
+  or partial angle, about coordinates or a point/circle). Copies keep the seed's topology
+  (coincident / on-curve / tangent), dropping relations the symmetry already implies. Golden
+  model 017: a mirrored half profile extruded (analytic area 198 mm², 10 faces).
 
 ### Findings
 - JSONEncoder wrote `-0` for a plane axis that decodes to `0`, so the second save differed.
@@ -48,8 +55,10 @@
 - Sketch UI in the app (click-to-draw, dimension editing on canvas, DOF colouring in the
   Metal viewport) is not written; M1's "sketch UI" exit criterion is open. The command
   palette can already drive every sketch command.
-- Not started in 7.1: splines, partial ellipse, parabola, conic, text, sketch chamfer, trim /
-  extend / offset / mirror / patterns and the other sketch tools, arc slots, 3D sketches,
+- Pattern instances are placed exactly and tied to the seed's size, but spacing/angle are
+  not yet dimensions that drive them; dynamic mirror is not implemented.
+- Not started in 7.1: splines, partial ellipse, parabola, conic, text, trim / extend / offset,
+  move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
 - `body.extrude`/`body.revolve` are kernel-level (no feature tree yet), so nothing in §7 is
@@ -57,8 +66,8 @@
 - Quick Look / Spotlight importers for the package are not written.
 
 ### Next steps
-1. Read macOS CI results; fix whatever the first real compile of ForgeApp/Metal reports.
-2. Sketch UI on macOS (drawing tools through the command bus, canvas dimension editing).
+1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
+2. Remaining M1 tools: trim/extend, offset, splines; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

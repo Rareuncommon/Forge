@@ -196,4 +196,30 @@ struct SketchCommandTests {
             #expect(err.suggestions.first?.command == "sketch.check")
         }
     }
+    @Test func mirrorAndPatternsThroughTheBus() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_line", ["start": [0, -5], "end": [0, 30], "construction": true])  // line-1
+        try await e.execute("sketch.add_circle", ["center": [10, 10], "radius": 2])  // circle-4
+        let before = try await e.execute("sketch.get").result["entities"]!.arrayValue!.count
+        let m = try await e.execute("sketch.mirror", ["entities": ["sketch-1/circle-4"], "axis": "line-1"]).result
+        #expect(m["created"]?.arrayValue?.count == 1)
+        let copy = m["created"]![0]!.stringValue!
+        #expect(try await entity(e, copy)["center"] == [-10, 10])
+        try await e.execute("edit.undo")
+        #expect(try await e.execute("sketch.get").result["entities"]!.arrayValue!.count == before)
+
+        let lin = try await e.execute("sketch.pattern_linear", ["entities": ["circle-4"], "count": 3, "spacing": "0.5 in", "along": "line-1"]).result
+        #expect(lin["instances"]?.arrayValue?.count == 2)
+        let top = try await entity(e, lin["instances"]![1]![0]!.stringValue!)["center"]!.arrayValue!
+        #expect(abs(top[0].doubleValue! - 10) < 1e-9 && abs(top[1].doubleValue! - (10 + 2 * 12.7)) < 1e-9)
+
+        let circ = try await e.execute("sketch.pattern_circular", ["entities": ["circle-4"], "count": 4, "about": "point-0"]).result
+        #expect(circ["created"]?.arrayValue?.count == 3)
+        do {
+            try await e.execute("sketch.pattern_circular", ["entities": ["circle-4"], "count": 4, "about": "line-1"])
+            Issue.record("expected error")
+        } catch let err as ForgeError {
+            #expect(err.code == .invalidParams)
+        }
+    }
 }

@@ -731,7 +731,7 @@ public enum SketchAddRelation: Command {
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": sketchParamDoc,
             "type": "Relation type",
-            "entities": "Entity ids (\"line-1\" or \"sketch-1/line-1\"). coincident: 2 points; on_entity: point + curve; horizontal/vertical: line or 2 points; parallel/perpendicular/collinear: 2 lines; tangent: line+circle/arc or 2 circles/arcs; equal: 2 lines or 2 circles/arcs; symmetric: 2 points + axis line; midpoint: point + line; concentric/coradial: 2 circles/arcs; fix: 1 entity",
+            "entities": "Entity ids (\"line-1\" or \"sketch-1/line-1\"). coincident: 2 points; on_entity: point + curve; horizontal/vertical: line or 2 points; parallel/perpendicular/collinear: 2 lines; tangent: line+circle/arc or 2 circles/arcs; equal: 2 lines or 2 circles/arcs; symmetric: 2 points, 2 lines, 2 circles or 2 arcs + the axis line; midpoint: point + line; concentric/coradial: 2 circles/arcs; fix: 1 entity",
         ]
     }
     public typealias Output = SketchEditResult

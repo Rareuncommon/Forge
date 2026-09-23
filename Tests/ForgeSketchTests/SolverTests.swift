@@ -448,3 +448,142 @@ struct ChamferTests {
         #expect(throws: ForgeError.self) { try s.chamferCorner(lines[2], lines[3], distance: 30) }
     }
 }
+
+@Suite("Sketch mirror and patterns")
+struct MirrorPatternTests {
+    /// A fixed vertical construction axis x = 0 through the origin.
+    func withAxis() throws -> (Sketch, String) {
+        var s = newSketch()
+        let axis = s.addLine(from: (0, 0), to: (0, 30), construction: true)
+        let (a, _) = ends(s, axis)
+        try s.addConstraint(.coincident, [a, Sketch.originID])
+        try s.addConstraint(.vertical, [axis])
+        try s.addConstraint(.distance, [axis], value: 30)
+        return (s, axis)
+    }
+
+    @Test func mirrorAddsNoFreedomAndCopiesFollow() throws {
+        var (s, axis) = try withAxis()
+        let line = s.addLine(from: (5, 0), to: (15, 10))
+        let arc = s.addArc(center: (20, 0), start: (22, 0), end: (20, 2))
+        let circle = s.addCircle(center: (10, 20), radius: 3)
+        let dof = s.resolve().dof
+        #expect(dof == 12)
+        let (created, _) = try s.mirror([line, arc, circle], about: axis)
+        #expect(created.count == 3)
+        let r = s.resolve()
+        #expect(r.dof == dof)
+        #expect(r.redundant.isEmpty && r.conflicting.isEmpty)
+        // Reflection across x = 0; the arc's sense reverses (start = image of the end).
+        let (l0, l1) = ends(s, created[0])
+        #expect(near(s.point(l0), (-5, 0)) && near(s.point(l1), (-15, 10)))
+        let a = s.entities[created[1]]!
+        #expect(near(s.point(a.points[0]), (-20, 0)) && near(s.point(a.points[1]), (-20, 2)) && near(s.point(a.points[2]), (-22, 0)))
+        // Editing the original drives the copy.
+        let rad = try s.addConstraint(.radius, [circle], value: 3)
+        try s.setDimension(rad, value: 5, driven: nil)
+        let c = s.entities[created[2]]!
+        #expect(near(s.params[c.params[0]], 5))
+        #expect(near(s.point(c.points[0]), (-10, 20)))
+        try s.drag(arc, to: (25, 1))
+        let ao = s.entities[arc]!
+        let (cx, cy) = s.point(ao.points[0])
+        #expect(near(s.point(a.points[0]), (-cx, cy), 1e-6))
+    }
+
+    @Test func mirroringAFilletedChainKeepsItConnectedWithoutRedundancy() throws {
+        var s = newSketch()
+        let axis = s.addLine(from: (-5, -10), to: (-5, 30), construction: true)
+        try s.addConstraint(.vertical, [axis])
+        let a = s.addLine(from: (0, 0), to: (20, 0))
+        let b = s.addLine(from: (20, 0), to: (20, 15))
+        try s.addConstraint(.coincident, [ends(s, a).1, ends(s, b).0])
+        let arc = try s.filletCorner(a, b, radius: 4)[0]
+        let before = s.resolve()
+        let (created, added) = try s.mirror([a, b, arc], about: axis)
+        let r = s.resolve()
+        #expect(r.dof == before.dof)
+        #expect(r.redundant.isEmpty && r.conflicting.isEmpty)
+        #expect(created.count == 3 && !added.isEmpty)
+        // The mirrored arc's ends sit on the mirrored lines' trimmed ends.
+        let ma = s.entities[created[2]]!, la = s.entities[created[0]]!, lb = s.entities[created[1]]!
+        let arcEnds = [s.point(ma.points[1]), s.point(ma.points[2])]
+        #expect(arcEnds.contains { near($0, s.point(la.points[1]), 1e-6) })
+        #expect(arcEnds.contains { near($0, s.point(lb.points[0]), 1e-6) })
+        // Image of (20 - 4, 0) across x = -5 is (-26, 0).
+        #expect(near(s.point(la.points[1]), (-26, 0), 1e-6))
+        // Two open chains (original and copy).
+        #expect(s.profiles().openEnds.count == 4)
+    }
+
+    @Test func mirrorRejectsTheAxisAndNonLines() throws {
+        var (s, axis) = try withAxis()
+        let circle = s.addCircle(center: (10, 20), radius: 3)
+        #expect(throws: ForgeError.self) { try s.mirror([axis], about: axis) }
+        #expect(throws: ForgeError.self) { try s.mirror([axis], about: circle) }
+    }
+
+    @Test func symmetricLinesAndCirclesAsWholes() throws {
+        var (s, axis) = try withAxis()
+        let l1 = s.addLine(from: (3, 1), to: (8, 6))
+        let l2 = s.addLine(from: (-7.5, 6.2), to: (-3.1, 0.8))  // reversed and slightly off
+        let c1 = s.addCircle(center: (10, 20), radius: 3)
+        let c2 = s.addCircle(center: (-9, 21), radius: 2.5)
+        let dof = s.resolve().dof
+        try s.addConstraint(.symmetric, [l1, l2, axis])
+        try s.addConstraint(.symmetric, [c1, c2, axis])
+        let r = s.resolve()
+        #expect(r.dof == dof - 4 - 3)
+        #expect(r.redundant.isEmpty)
+        let (a2, b2) = ends(s, l2), (a1, b1) = ends(s, l1)
+        #expect(near(s.point(b2), (-s.point(a1).0, s.point(a1).1), 1e-7))
+        #expect(near(s.point(a2), (-s.point(b1).0, s.point(b1).1), 1e-7))
+        let e1 = s.entities[c1]!, e2 = s.entities[c2]!
+        #expect(near(s.params[e1.params[0]], s.params[e2.params[0]]))
+        #expect(throws: ForgeError.self) { try s.addConstraint(.symmetric, [l1, c1, axis]) }
+    }
+
+    @Test func linearPatternOfACircle() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (0, 0), radius: 2)
+        let (created, _) = try s.linearPattern([c], direction: 0, spacing: 10, count: 3)
+        #expect(created.count == 2)
+        let centres = created.map { s.point(s.entities[$0[0]]!.points[0]) }
+        #expect(near(centres[0], (10, 0)) && near(centres[1], (20, 0)))
+        #expect(s.resolve().dof == 3 + 2 + 2)  // copies keep the seed radius
+        #expect(s.resolve().redundant.isEmpty)
+    }
+
+    @Test func twoDirectionLinearPatternOfARectangle() throws {
+        var s = newSketch()
+        let rect = try s.addRectangle(.corner, [(0, 0), (4, 2)])
+        let (created, _) = try s.linearPattern(rect, direction: 0, spacing: 10, count: 2, direction2: .pi / 2, spacing2: 5, count2: 2)
+        #expect(created.count == 3)
+        let r = s.resolve()
+        // Seed: x, y, w, h. Each copy: sides parallel/equal to the seed → only its position.
+        #expect(r.dof == 4 + 3 * 2)
+        #expect(r.redundant.isEmpty && r.conflicting.isEmpty)
+        let report = s.profiles()
+        #expect(report.loops.count == 4)
+        #expect(report.loops.allSatisfy { near(abs($0.signedAreaMM2), 8, 1e-9) })
+    }
+
+    @Test func circularPatternFullCircle() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (10, 0), radius: 2)
+        let (created, _) = try s.circularPattern([c], center: (0, 0), angle: 2 * .pi, count: 4)
+        let centres = created.map { s.point(s.entities[$0[0]]!.points[0]) }
+        #expect(near(centres[0], (0, 10)) && near(centres[1], (-10, 0)) && near(centres[2], (0, -10)))
+        #expect(s.resolve().dof == 3 + 3 * 2)
+    }
+
+    @Test func circularPatternPartialAngleIncludesBothEnds() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (10, 0), to: (12, 0))
+        let (created, _) = try s.circularPattern([l], center: (0, 0), angle: .pi / 2, count: 3)
+        let (a, b) = ends(s, created[1][0])
+        #expect(near(s.point(a), (0, 10)) && near(s.point(b), (0, 12)))
+        let (m, _) = ends(s, created[0][0])
+        #expect(near(s.point(m), (10 * cos(.pi / 4), 10 * sin(.pi / 4))))
+    }
+}

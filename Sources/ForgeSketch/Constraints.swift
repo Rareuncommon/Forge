@@ -59,7 +59,9 @@ extension Sketch {
             if k.count == 2, Self.isRound(k[0]), Self.isRound(k[1]) { return ids }
             throw bad("two lines or two circles/arcs")
         case .symmetric:
-            guard k == [.point, .point, .line] else { throw bad("two points and a line (the symmetry axis)") }
+            guard k.count == 3, k[2] == .line, k[0] == k[1], k[0] != .ellipse else {
+                throw bad("two points, lines, circles or arcs and a line (the symmetry axis)")
+            }
             return ids
         case .midpoint:
             if k == [.point, .line] { return ids }
@@ -105,7 +107,14 @@ extension Sketch {
     func rowCount(_ c: SketchConstraint) -> Int {
         if c.driven || c.kind == .fix { return 0 }
         switch c.kind {
-        case .coincident, .midpoint, .concentric, .collinear, .symmetric: return 2
+        case .coincident, .midpoint, .concentric, .collinear: return 2
+        case .symmetric:
+            switch entities[c.entities[0]]?.kind {
+            case .line: return 4
+            case .circle: return 3
+            case .arc: return 5  // centre (2) + start↔end (2) + end↔start angle (1); radius is internal
+            default: return 2
+            }
         case .coradial: return 3
         default: return 1
         }
@@ -217,11 +226,34 @@ extension Sketch {
             }
             return [radius(ids[0]) - radius(ids[1])]
         case .symmetric:
-            let a = pt(ids[0]), b = pt(ids[1])
             let (la, lb) = ends(ids[2])
             let d = lb - la
-            let mid = (a + b) * D(constant: 0.5)
-            return [lineDistance(mid, ids[2]), (b - a).dot(d) / d.length]
+            func sym(_ a: V2<D>, _ b: V2<D>) -> [D] {
+                [lineDistance((a + b) * D(constant: 0.5), ids[2]), (b - a).dot(d) / d.length]
+            }
+            func reflect(_ q: V2<D>) -> V2<D> {
+                let n = V2(x: -d.y / d.length, y: d.x / d.length)
+                return q - n * (lineDistance(q, ids[2]) * 2.0)
+            }
+            let e1 = entities[ids[0]]!, e2 = entities[ids[1]]!
+            switch e1.kind {
+            case .line:
+                // side 1: start↔start; side -1: start↔end (chosen at creation).
+                let (a1, b1) = ends(ids[0]), (a2, b2) = ends(ids[1])
+                return s > 0 ? sym(a1, a2) + sym(b1, b2) : sym(a1, b2) + sym(b1, a2)
+            case .circle:
+                return sym(pt(e1.points[0]), pt(e2.points[0])) + [radius(ids[0]) - radius(ids[1])]
+            case .arc:
+                // A reflection reverses orientation: arc 2 runs from mirror(end 1) to mirror(start 1).
+                // With the centres mirrored and arc 2's radius internal, the last end only needs its
+                // angle; the cross product is regular everywhere on the circle.
+                let c2 = pt(e2.points[0]), s2 = pt(e2.points[1])
+                let m = reflect(pt(e1.points[2]))
+                return sym(pt(e1.points[0]), c2) + sym(pt(e1.points[1]), pt(e2.points[2]))
+                    + [(m - c2).cross(s2 - c2) / radius(ids[1])]
+            default:
+                return sym(pt(ids[0]), pt(ids[1]))
+            }
         case .midpoint:
             let q = pt(ids[0])
             let (a, b) = ends(ids[1])
@@ -368,6 +400,20 @@ extension Sketch {
                 return sign(measure(probe, x))
             }
             return 1
+        case .symmetric where entities[ids[0]]!.kind == .line:
+            // Pair each endpoint with the nearer mirror image.
+            let a = entities[ids[0]]!, b = entities[ids[1]]!, axis = entities[ids[2]]!
+            let (ax, ay) = point(axis.points[0]), (bx, by) = point(axis.points[1])
+            let dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy
+            func reflect(_ q: (Double, Double)) -> (Double, Double) {
+                let t = ((q.0 - ax) * dx + (q.1 - ay) * dy) / l2
+                let fx = ax + t * dx, fy = ay + t * dy
+                return (2 * fx - q.0, 2 * fy - q.1)
+            }
+            func d2(_ p: (Double, Double), _ q: (Double, Double)) -> Double { (p.0 - q.0) * (p.0 - q.0) + (p.1 - q.1) * (p.1 - q.1) }
+            let m0 = reflect(point(a.points[0])), m1 = reflect(point(a.points[1]))
+            let (s0, s1) = (point(b.points[0]), point(b.points[1]))
+            return d2(m0, s0) + d2(m1, s1) <= d2(m0, s1) + d2(m1, s0) ? 1 : -1
         case .horizontalDistance, .verticalDistance, .angle:
             probe.side = 1
             return sign(measure(probe, x))
