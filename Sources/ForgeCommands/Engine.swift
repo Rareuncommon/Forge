@@ -1,0 +1,309 @@
+import ForgeCore
+import Foundation
+
+/// One recorded command invocation — the unit of scripts, macros and journals.
+public struct Invocation: Codable, Sendable, Hashable {
+    public var command: String
+    public var params: JSONValue
+
+    public init(_ command: String, _ params: JSONValue = .object([:])) {
+        self.command = command
+        self.params = params
+    }
+}
+
+/// Entities touched by a command (SPEC §5.1 dry_run: "what would change").
+public struct ChangeSet: Codable, Sendable, Hashable {
+    public var created: [String] = []
+    public var modified: [String] = []
+    public var deleted: [String] = []
+
+    public var isEmpty: Bool { created.isEmpty && modified.isEmpty && deleted.isEmpty }
+
+    static func diff(_ before: Document?, _ after: Document?) -> ChangeSet {
+        var c = ChangeSet()
+        let b = before?.bodies ?? [:], a = after?.bodies ?? [:]
+        for id in after?.bodyOrder ?? [] {
+            if let old = b[id] {
+                if old.shape !== a[id]!.shape || old.name != a[id]!.name { c.modified.append(id) }
+            } else {
+                c.created.append(id)
+            }
+        }
+        for id in before?.bodyOrder ?? [] where a[id] == nil { c.deleted.append(id) }
+        return c
+    }
+}
+
+public struct CommandOutcome: Codable, Sendable {
+    public var command: String
+    public var document: String?
+    public var dryRun: Bool
+    public var result: JSONValue
+    public var changes: ChangeSet
+
+    enum CodingKeys: String, CodingKey {
+        case command, document, result, changes
+        case dryRun = "dry_run"
+    }
+}
+
+public struct BatchOutcome: Codable, Sendable {
+    public var outcomes: [CommandOutcome]
+    public var failedIndex: Int?
+    public var error: ForgeError?
+    public var committed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case outcomes, error, committed
+        case failedIndex = "failed_index"
+    }
+}
+
+struct UndoEntry: Sendable {
+    var label: String
+    var before: Document
+    var after: Document
+}
+
+struct OpenTransaction: Sendable {
+    var label: String
+    var snapshot: Document
+    var journalCount: Int
+}
+
+/// Per-document session state: the document plus its history.
+public struct DocumentSession: Sendable {
+    public var document: Document
+    var undoStack: [UndoEntry] = []
+    var redoStack: [UndoEntry] = []
+    var transaction: OpenTransaction?
+    /// Every successfully committed mutating/session invocation, replayable as a script.
+    public internal(set) var journal: [Invocation] = []
+
+    public var undoLabels: [String] { undoStack.map(\.label) }
+    public var redoLabels: [String] { redoStack.map(\.label) }
+    public var transactionLabel: String? { transaction?.label }
+}
+
+/// All state owned by the engine.
+public struct SessionState: Sendable {
+    public var documents: [String: DocumentSession] = [:]
+    public var documentOrder: [String] = []
+    public var activeDocumentID: String?
+    var nextDocumentNumber = 1
+    public static let undoLimit = 200
+
+    public init() {}
+
+    public mutating func createDocument(name: String?, units: UnitSystem) -> Document {
+        let id = "doc-\(nextDocumentNumber)"
+        nextDocumentNumber += 1
+        let doc = Document(id: id, name: name ?? "Part\(documentOrder.count + 1)", units: units)
+        documents[id] = DocumentSession(document: doc)
+        documentOrder.append(id)
+        activeDocumentID = id
+        return doc
+    }
+}
+
+/// The command bus. Every client — UI, MCP, CLI scripts, macros, plugins — executes through
+/// here (SPEC §3 "Single command bus"). An actor: commands run serially off the main thread.
+public actor Engine {
+    public nonisolated let registry: CommandRegistry
+    public private(set) var state = SessionState()
+
+    public init(registry: CommandRegistry = .standard) {
+        self.registry = registry
+    }
+
+    // MARK: execution
+
+    /// Execute one command. `document` defaults to the active document.
+    @discardableResult
+    public func execute(_ command: String, _ params: JSONValue = .object([:]), dryRun: Bool = false, document: String? = nil)
+        throws -> CommandOutcome
+    {
+        let d = try registry.descriptor(command)
+        if dryRun && !d.supportsDryRun {
+            throw ForgeError(.unsupported, "'\(command)' changes session state and cannot be dry-run")
+        }
+        let params = params.isNull ? .object([:]) : params
+        let problems = SchemaValidator.validate(params, against: d.paramsSchema)
+        if !problems.isEmpty {
+            throw ForgeError(
+                .invalidParams, problems.joined(separator: "; "),
+                suggestions: [SuggestedFix(description: "Show the parameter schema", command: "help.describe_command", params: ["name": .string(command)])],
+                details: ["problems": .array(problems.map { .string($0) })])
+        }
+        let docID = document ?? state.activeDocumentID
+        if let docID, state.documents[docID] == nil {
+            throw ForgeError(
+                .unknownEntity, "no open document '\(docID)'", entities: [docID],
+                suggestions: [SuggestedFix(description: "List open documents", command: "document.list")])
+        }
+        let units = docID.flatMap { state.documents[$0]?.document.units } ?? .mmgs
+        var ctx = CommandContext(session: state, documentID: docID, registry: registry, dryRun: dryRun)
+        let before = docID.flatMap { state.documents[$0]?.document }
+
+        let result: JSONValue
+        do {
+            result = try d.invoke(params, units, &ctx)
+        } catch {
+            throw ForgeError.wrap(error)
+        }
+        let after = docID.flatMap { ctx.session.documents[$0]?.document }
+        let changes = d.undo == .undoable ? ChangeSet.diff(before, after) : ChangeSet()
+        let outcome = CommandOutcome(command: command, document: ctx.documentID ?? ctx.session.activeDocumentID, dryRun: dryRun, result: result, changes: changes)
+        if dryRun { return outcome }
+
+        switch d.undo {
+        case .none:
+            break
+        case .session:
+            state = ctx.session
+            if let id = ctx.session.activeDocumentID, command != "edit.undo", command != "edit.redo",
+                !command.hasPrefix("transaction."), state.documents[id] != nil
+            {
+                state.documents[id]!.journal.append(Invocation(command, params))
+            }
+        case .undoable:
+            state = ctx.session
+            guard let docID, let before, let after else { break }
+            var s = state.documents[docID]!
+            s.journal.append(Invocation(command, params))
+            if s.transaction == nil {
+                s.undoStack.append(UndoEntry(label: command, before: before, after: after))
+                if s.undoStack.count > SessionState.undoLimit { s.undoStack.removeFirst() }
+                s.redoStack.removeAll()
+            }
+            state.documents[docID] = s
+        }
+        return outcome
+    }
+
+    /// Execute a list of commands. With `atomic` (default) the batch is one transaction:
+    /// if any command fails, everything is rolled back and one undo step results on success.
+    public func executeBatch(_ items: [Invocation], atomic: Bool = true, dryRun: Bool = false) throws -> BatchOutcome {
+        let saved = state
+        var outcomes: [CommandOutcome] = []
+        // A dry-run batch really executes (so later steps can reference entities created by
+        // earlier ones) and then restores the saved state.
+        let ownsTransaction = atomic && !dryRun && activeTransaction == nil && state.activeDocumentID != nil
+        if ownsTransaction {
+            try execute("transaction.begin", ["label": .string("batch of \(items.count) commands")])
+        }
+        for (i, item) in items.enumerated() {
+            do {
+                var o = try execute(item.command, item.params)
+                o.dryRun = dryRun
+                outcomes.append(o)
+            } catch {
+                let fe = ForgeError.wrap(error)
+                if atomic || dryRun { state = saved }
+                return BatchOutcome(outcomes: outcomes, failedIndex: i, error: fe, committed: !atomic && !dryRun && i > 0)
+            }
+        }
+        if dryRun {
+            state = saved
+            return BatchOutcome(outcomes: outcomes, failedIndex: nil, error: nil, committed: false)
+        }
+        if ownsTransaction { try execute("transaction.commit") }
+        return BatchOutcome(outcomes: outcomes, failedIndex: nil, error: nil, committed: true)
+    }
+
+    var activeTransaction: OpenTransaction? {
+        state.activeDocumentID.flatMap { state.documents[$0]?.transaction }
+    }
+
+    // MARK: read access for clients (renderer, UI)
+
+    public var activeDocument: Document? { state.activeDocumentID.flatMap { state.documents[$0]?.document } }
+
+    public func document(_ id: String?) -> Document? {
+        (id ?? state.activeDocumentID).flatMap { state.documents[$0]?.document }
+    }
+
+    public func journal(document id: String? = nil) -> [Invocation] {
+        (id ?? state.activeDocumentID).flatMap { state.documents[$0]?.journal } ?? []
+    }
+}
+
+// MARK: - Session commands operating on SessionState
+
+extension SessionState {
+    mutating func undo(documentID: String) throws -> String {
+        guard var s = documents[documentID] else { throw ForgeError(.preconditionFailed, "no open document") }
+        if s.transaction != nil {
+            throw ForgeError(
+                .transactionActive, "cannot undo while transaction '\(s.transaction!.label)' is open",
+                suggestions: [
+                    SuggestedFix(description: "Discard the transaction", command: "transaction.rollback"),
+                    SuggestedFix(description: "Commit the transaction", command: "transaction.commit"),
+                ])
+        }
+        guard let entry = s.undoStack.popLast() else { throw ForgeError(.nothingToUndo, "nothing to undo") }
+        s.document = entry.before.preservingSelection(of: s.document)
+        s.redoStack.append(entry)
+        s.journal.append(Invocation("edit.undo"))
+        documents[documentID] = s
+        return entry.label
+    }
+
+    mutating func redo(documentID: String) throws -> String {
+        guard var s = documents[documentID] else { throw ForgeError(.preconditionFailed, "no open document") }
+        if s.transaction != nil { throw ForgeError(.transactionActive, "cannot redo while a transaction is open") }
+        guard let entry = s.redoStack.popLast() else { throw ForgeError(.nothingToRedo, "nothing to redo") }
+        s.document = entry.after.preservingSelection(of: s.document)
+        s.undoStack.append(entry)
+        s.journal.append(Invocation("edit.redo"))
+        documents[documentID] = s
+        return entry.label
+    }
+
+    mutating func beginTransaction(documentID: String, label: String) throws {
+        guard var s = documents[documentID] else { throw ForgeError(.preconditionFailed, "no open document") }
+        if let t = s.transaction {
+            throw ForgeError(.transactionActive, "transaction '\(t.label)' is already open (transactions do not nest)")
+        }
+        s.transaction = OpenTransaction(label: label, snapshot: s.document, journalCount: s.journal.count)
+        documents[documentID] = s
+    }
+
+    mutating func commitTransaction(documentID: String) throws -> (label: String, changes: ChangeSet) {
+        guard var s = documents[documentID], let t = s.transaction else {
+            throw ForgeError(.noTransaction, "no open transaction", suggestions: [SuggestedFix(description: "Start one", command: "transaction.begin")])
+        }
+        let changes = ChangeSet.diff(t.snapshot, s.document)
+        if !changes.isEmpty {
+            s.undoStack.append(UndoEntry(label: t.label, before: t.snapshot, after: s.document))
+            if s.undoStack.count > SessionState.undoLimit { s.undoStack.removeFirst() }
+            s.redoStack.removeAll()
+        }
+        s.transaction = nil
+        documents[documentID] = s
+        return (t.label, changes)
+    }
+
+    mutating func rollbackTransaction(documentID: String) throws -> (label: String, changes: ChangeSet) {
+        guard var s = documents[documentID], let t = s.transaction else {
+            throw ForgeError(.noTransaction, "no open transaction")
+        }
+        let discarded = ChangeSet.diff(t.snapshot, s.document)
+        s.document = t.snapshot
+        s.journal.removeSubrange(t.journalCount...)
+        s.transaction = nil
+        documents[documentID] = s
+        return (t.label, discarded)
+    }
+}
+
+extension Document {
+    /// Undo/redo restore geometry but keep the current selection, minus entities that no
+    /// longer exist.
+    func preservingSelection(of current: Document) -> Document {
+        var d = self
+        d.selection = current.selection.filter { ref in EntityRef(parsing: ref).map { d.bodies[$0.body] != nil } ?? false }
+        return d
+    }
+}
