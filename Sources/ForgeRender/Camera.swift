@@ -127,6 +127,28 @@ public struct Camera: Sendable, Hashable {
         }
     }
 
+    /// View position (origin top-left, y down) of a world point: the inverse of `ray`. Nil
+    /// for a point behind a perspective camera.
+    public func project(_ p: Vec3, width: Double, height: Double) -> (x: Double, y: Double)? {
+        guard width > 0, height > 0 else { return nil }
+        let aspect = width / height
+        let rel = p - eye
+        let x = rel.dot(right), y = rel.dot(up)
+        let ndcX: Double, ndcY: Double
+        switch projection {
+        case .orthographic:
+            ndcX = x / (orthoHalfHeight * aspect)
+            ndcY = y / orthoHalfHeight
+        case .perspective:
+            let depth = -rel.dot(back)
+            guard depth > 1e-9 else { return nil }
+            let t = tan(fovY / 2)
+            ndcX = x / (depth * t * aspect)
+            ndcY = y / (depth * t)
+        }
+        return ((ndcX + 1) / 2 * width, (1 - ndcY) / 2 * height)
+    }
+
     /// World-space ray through a pixel (origin top-left, y down).
     public func ray(pixelX: Double, pixelY: Double, width: Double, height: Double) -> (origin: Vec3, direction: Vec3) {
         let aspect = width / height

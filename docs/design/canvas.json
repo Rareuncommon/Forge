@@ -1,0 +1,52 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-09-23T23:30:55Z"
+ },
+ "title": "Forge CAD — macOS UI",
+ "launch": {
+  "view": "canvas"
+ },
+ "pages": [],
+ "boards": {
+  "Main.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Part · Extrude in progress (light)",
+   "radius": 12
+  },
+  "Sketch.dc.html": {
+   "x": 1520,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "Sketch · drawing a line (dark)",
+   "radius": 12
+  },
+  "System.dc.html": {
+   "x": 0,
+   "y": 1020,
+   "w": 1440,
+   "h": 1880,
+   "title": "Interface kit"
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "Sketch.dc.html",
+  "System.dc.html"
+ ],
+ "notes": {
+  "t1": {
+   "x": 0,
+   "y": -300,
+   "text": "Forge — SolidWorks-grade CAD, native to macOS",
+   "kind": "title1",
+   "maxW": 2960
+  }
+ },
+ "designSystems": []
+}

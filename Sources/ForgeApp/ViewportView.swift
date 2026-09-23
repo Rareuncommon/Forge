@@ -26,8 +26,15 @@ struct ViewportView: NSViewRepresentable {
         view.preferredFramesPerSecond = 120
         view.enableSetNeedsDisplay = true
         if let renderer = MetalViewportRenderer(device: view.device) {
+            // Transparent clear: the SwiftUI gradient behind the view is the background.
+            renderer.transparentBackground = true
             view.renderer = renderer
             view.delegate = renderer
+        }
+        view.layer?.isOpaque = false
+        view.onCamera = { camera, width, height in
+            let p = ViewProjection(camera: camera, width: width, height: height)
+            if model.projection != p { model.projection = p }
         }
         view.onPick = { ref, extend in Task { await model.select(ref, extend: extend) } }
         view.onSketchClick = { point, tolerance, curve, count in
@@ -47,12 +54,13 @@ struct ViewportView: NSViewRepresentable {
             view.documentScene = ds
             view.renderer?.setScene(ds.scene)
             view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
-            if first { view.fit() }
+            if first { view.fit() } else { view.cameraChanged() }
             view.needsDisplay = true
         }
         if context.coordinator.overlayVersion != model.overlayVersion {
             context.coordinator.overlayVersion = model.overlayVersion
-            view.renderer?.setOverlay(Self.overlay(model.sketchState.preview, plane: model.sketchState.plane, markerSize: view.pixelSize * 5))
+            view.renderer?.setOverlay(
+                Self.overlay(model.sketchState.preview, plane: model.sketchState.plane, markerSize: view.pixelSize * 5, dark: model.isDark))
             view.needsDisplay = true
         }
         let commands = model.viewportCommands.log
@@ -62,9 +70,11 @@ struct ViewportView: NSViewRepresentable {
                 switch c {
                 case .orient(let o): view.orient(o)
                 case .fit: view.fit()
+                case .previous: view.previousView()
                 case .style(let st):
                     view.renderer?.style = st
                     view.needsDisplay = true
+                case .projection(let kind): view.setProjection(kind)
                 }
             }
             context.coordinator.appliedCommands = commands.count
@@ -77,19 +87,21 @@ struct ViewportView: NSViewRepresentable {
         var overlayVersion = 0
     }
 
-    static let previewColor = RGBA(0.95, 0.45, 0.10)
-    static let snapColor = RGBA(0.10, 0.45, 0.95)
-
-    /// Overlay items for the sketch preview: rubber-band geometry and the snap marker.
-    static func overlay(_ preview: SketchPreview?, plane: SketchPlane?, markerSize: Double) -> [RenderItem] {
+    /// Overlay items for the sketch preview: rubber-band geometry and the snap marker (a ring,
+    /// as in the design).
+    static func overlay(_ preview: SketchPreview?, plane: SketchPlane?, markerSize: Double, dark: Bool) -> [RenderItem] {
         guard let pv = preview, let plane else { return [] }
+        let color = Theme.sketchRGBA(dark: dark).preview
         var lines = ReferenceGeometry.LineBuilder()
         for pl in pv.polylines {
-            lines.add(pl.map { plane.point($0.u, $0.v) }, previewColor)
+            lines.add(pl.map { plane.point($0.u, $0.v) }, color)
         }
         if let m = pv.marker {
-            let h = markerSize
-            lines.add([(-h, -h), (h, -h), (h, h), (-h, h), (-h, -h)].map { plane.point(m.u + $0.0, m.v + $0.1) }, snapColor)
+            let r = markerSize * 1.4
+            lines.add((0...24).map { i in
+                let t = 2 * Double.pi * Double(i) / 24
+                return plane.point(m.u + r * cos(t), m.v + r * sin(t))
+            }, color)
         }
         return [lines.item(objectID: ReferenceGeometry.firstObjectID + 1)]
     }
@@ -106,6 +118,9 @@ final class ForgeMTKView: MTKView {
     /// A sketch tool press in progress (for click-drag drawing).
     private var toolPress: NSPoint?
     var onCancel: (() -> Void)?
+    /// Called (asynchronously) whenever the camera or the view size changes.
+    var onCamera: ((Camera, Double, Double) -> Void)?
+    private var history: [Camera] = []
     private var dragStart: NSPoint?
     private var dragged = false
 
@@ -115,13 +130,46 @@ final class ForgeMTKView: MTKView {
 
     func fit() {
         guard let r = renderer, let b = documentScene?.scene.bounds else { return }
+        remember()
         r.camera.fit(b, aspect: Double(bounds.width / max(bounds.height, 1)))
-        needsDisplay = true
+        cameraChanged()
     }
 
     func orient(_ o: ViewOrientation) {
+        remember()
         renderer?.camera.setOrientation(o)
         fit()
+    }
+
+    func previousView() {
+        guard let r = renderer, let last = history.popLast() else { return }
+        r.camera = last
+        cameraChanged()
+    }
+
+    func setProjection(_ kind: ProjectionKind) {
+        guard let r = renderer, r.camera.projection != kind else { return }
+        r.camera.projection = kind
+        fit()
+    }
+
+    /// Keeps views for "Previous View" (the last 20).
+    private func remember() {
+        guard let cam = renderer?.camera, history.last != cam else { return }
+        history.append(cam)
+        if history.count > 20 { history.removeFirst() }
+    }
+
+    func cameraChanged() {
+        needsDisplay = true
+        guard let cam = renderer?.camera else { return }
+        let (w, h) = (Double(bounds.width), Double(bounds.height))
+        DispatchQueue.main.async { [weak self] in self?.onCamera?(cam, w, h) }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        cameraChanged()
     }
 
     /// Model units per view point at the camera target (for marker sizes and snap tolerance).
@@ -186,7 +234,7 @@ final class ForgeMTKView: MTKView {
     override func otherMouseDragged(with event: NSEvent) {
         // Middle-drag orbits even while a sketch tool is active.
         renderer?.camera.orbit(dx: Double(event.deltaX) * 0.01, dy: Double(event.deltaY) * 0.01)
-        needsDisplay = true
+        cameraChanged()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -201,7 +249,7 @@ final class ForgeMTKView: MTKView {
         } else {
             renderer?.camera.orbit(dx: Double(event.deltaX) * 0.01, dy: Double(event.deltaY) * 0.01)
         }
-        needsDisplay = true
+        cameraChanged()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -230,7 +278,7 @@ final class ForgeMTKView: MTKView {
 
     override func rightMouseDragged(with event: NSEvent) {
         pan(event)
-        needsDisplay = true
+        cameraChanged()
     }
 
     private func pan(_ event: NSEvent) {
@@ -247,19 +295,19 @@ final class ForgeMTKView: MTKView {
             let factor = pow(1.1, Double(event.scrollingDeltaY) / (event.hasPreciseScrollingDeltas ? 10 : 1))
             r.camera.zoom(factor: factor, anchor: anchor(for: event))
         }
-        needsDisplay = true
+        cameraChanged()
     }
 
     override func magnify(with event: NSEvent) {
         renderer?.camera.zoom(factor: 1 + Double(event.magnification), anchor: anchor(for: event))
-        needsDisplay = true
+        cameraChanged()
     }
 
     override func rotate(with event: NSEvent) {
         guard let r = renderer else { return }
         let q = Quat(axis: r.camera.back, angle: Double(event.rotation) * .pi / 180)
         r.camera.orientation = (q * r.camera.orientation).normalized
-        needsDisplay = true
+        cameraChanged()
     }
 
     /// World point under the cursor on the plane through the camera target.

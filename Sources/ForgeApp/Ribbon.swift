@@ -1,5 +1,6 @@
-// Command ribbon (SolidWorks' CommandManager): tabs of icon-over-label buttons. Every button
-// either starts an operation (options in the property panel) or runs a command directly.
+// CommandManager ribbon (docs/design, "Part" and "Sketch" artboards): labelled groups of large
+// icon-over-label buttons and stacks of small buttons. Every button starts an operation (its
+// options appear in the PropertyManager), picks a sketch tool, or runs a command directly.
 
 import ForgeCommands
 import ForgeCore
@@ -9,204 +10,309 @@ struct RibbonView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("", selection: $model.ribbonTab) {
-                ForEach(RibbonTab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .padding(.leading, 8)
-            HStack(alignment: .top, spacing: 2) {
-                FileGroup()
-                RibbonDivider()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 4) {
                 switch model.ribbonTab {
-                case .features: FeaturesGroup()
-                case .sketch: SketchGroup()
-                case .evaluate: EvaluateGroup()
+                case .features: FeaturesTab()
+                case .sketch: SketchTab()
+                case .evaluate: EvaluateTab()
                 }
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
         }
-        .padding(.vertical, 6)
-        .background(.bar)
-        .onChange(of: model.activeSketch) { _, now in
+        .frame(height: 92, alignment: .top)
+        .background(Theme.chrome2)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .onChange(of: model.activeSketch) { old, now in
             // Entering a sketch shows the sketch tools; leaving it goes back to features.
-            model.ribbonTab = now == nil ? .features : .sketch
+            if (old == nil) != (now == nil) { model.ribbonTab = now == nil ? .features : .sketch }
         }
     }
 }
 
-private struct FileGroup: View {
-    @Environment(AppModel.self) private var model
+// MARK: tabs
 
-    var body: some View {
-        RibbonButton("New", "doc.badge.plus", help: "New part (⌘N)") { Task { await model.run("document.new", ["name": "Part1"]) } }
-        RibbonButton("Open", "folder", help: "Open a .forgepart (⌘O)") { model.openDocument() }
-        RibbonButton("Save", "square.and.arrow.down", help: "Save (⌘S)") { model.saveDocument(as: false) }
-    }
-}
-
-private struct FeaturesGroup: View {
+private struct FeaturesTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let hasSketch = !model.sketches.isEmpty
-        RibbonButton("Extruded\nBoss/Base", "square.stack.3d.up.fill", help: "Extrude a closed sketch profile", active: model.operation == .extrude, enabled: hasSketch) {
-            model.begin(.extrude)
+        let hasBody = !model.bodies.isEmpty
+        RibbonGroup("Boss / Base") {
+            RibbonLarge(.extrude, "Extruded\nBoss/Base", active: model.operation == .extrude, enabled: hasSketch,
+                        help: "Extrude a closed sketch profile into a new body") { model.begin(.extrude) }
+            RibbonLarge(.revolve, "Revolved\nBoss/Base", active: model.operation == .revolve, enabled: hasSketch,
+                        help: "Revolve a sketch profile about a sketch line") { model.begin(.revolve) }
         }
-        RibbonButton("Revolved\nBoss/Base", "arrow.triangle.2.circlepath", help: "Revolve a sketch profile about a sketch line", active: model.operation == .revolve, enabled: hasSketch) {
-            model.begin(.revolve)
+        RibbonSeparator()
+        RibbonGroup("Cut") {
+            RibbonLarge(.cutExtrude, "Extruded\nCut", active: model.operation == .cutExtrude, enabled: hasSketch && hasBody,
+                        help: "Extrude a sketch profile and remove it from a body") { model.begin(.cutExtrude) }
         }
-        RibbonButton("Fillet", "roundedbottom.horizontal", help: "Round the selected edges", active: model.operation == .fillet, enabled: !model.bodies.isEmpty) {
-            model.begin(.fillet)
-        }
-        RibbonButton("Combine", "square.on.square", help: "Add, subtract or intersect bodies", active: model.operation == .combine, enabled: model.bodies.count >= 2) {
-            model.begin(.combine)
-        }
-        RibbonDivider()
-        ForEach(Primitive.allCases) { p in
-            RibbonButton(p.title, p.systemImage, help: "Insert a \(p.rawValue)", active: model.operation == .primitive(p)) {
-                model.begin(.primitive(p))
+        RibbonSeparator()
+        RibbonGroup("Modify") {
+            RibbonLarge(.fillet, "Fillet", active: model.operation == .fillet, enabled: hasBody,
+                        help: "Round the selected edges") { model.begin(.fillet) }
+            RibbonStack {
+                RibbonSmall(.combine, "Combine", active: model.operation == .combine, enabled: model.bodies.count >= 2) { model.begin(.combine) }
+                RibbonSmall(.trash, "Delete Body", enabled: !model.selectedBodies.isEmpty) {
+                    let bodies = model.selectedBodies
+                    Task { for b in bodies { await model.run("body.delete", ["body": .string(b)]) } }
+                }
             }
         }
-        RibbonDivider()
-        RibbonButton("Delete", "trash", help: "Delete the selected bodies", enabled: !model.selectedBodies.isEmpty) {
-            let bodies = model.selectedBodies
-            Task { for b in bodies { await model.run("body.delete", ["body": .string(b)]) } }
+        RibbonSeparator()
+        RibbonGroup("Primitives") {
+            RibbonStack {
+                ForEach([Primitive.box, .cylinder, .sphere]) { p in
+                    RibbonSmall(p.icon, p.title, active: model.operation == .primitive(p)) { model.begin(.primitive(p)) }
+                }
+            }
+            RibbonStack {
+                ForEach([Primitive.cone, .torus]) { p in
+                    RibbonSmall(p.icon, p.title, active: model.operation == .primitive(p)) { model.begin(.primitive(p)) }
+                }
+            }
+        }
+        RibbonSeparator()
+        RibbonGroup("Evaluate") {
+            RibbonLarge(.measure, "Measure", active: model.operation == .measure, enabled: hasBody) { model.begin(.measure) }
+            RibbonLarge(.massProps, "Mass\nProperties", active: model.operation == .massProperties, enabled: hasBody) { model.begin(.massProperties) }
         }
     }
 }
 
-private struct SketchGroup: View {
+private struct SketchTab: View {
     @Environment(AppModel.self) private var model
-    @State private var showDimension = false
-    @State private var dimensionValue = ""
 
     var body: some View {
         let editing = model.activeSketch != nil
-        if editing {
-            RibbonButton("Exit\nSketch", "checkmark.rectangle", help: "Finish editing the sketch") { Task { await model.exitSketch() } }
-        } else {
-            Menu {
-                ForEach(StandardPlane.allCases, id: \.self) { p in
-                    Button("\(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
+        let picked = !model.sketchSelection.isEmpty
+        RibbonGroup("Sketch") {
+            if editing {
+                RibbonLarge(.exitSketch, "Exit\nSketch", help: "Finish editing the sketch") { Task { await model.exitSketch() } }
+            } else {
+                Menu {
+                    ForEach(StandardPlane.allCases, id: \.self) { p in
+                        Button("\(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
+                    }
+                } label: {
+                    RibbonLargeLabel(icon: .sketch, title: "Sketch", chevron: true)
                 }
-            } label: {
-                RibbonLabel(title: "Sketch", systemImage: "pencil.and.ruler")
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(ToolButtonStyle(cornerRadius: 8))
+                .fixedSize()
+                .help("Start a sketch on a plane")
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help("Start a sketch on a plane")
-        }
-        RibbonDivider()
-        ForEach(SketchTool.allCases) { tool in
-            RibbonButton(tool.title, tool.systemImage, help: tool.hint, active: model.sketchState.tool == tool, enabled: editing) {
-                model.chooseTool(model.sketchState.tool == tool ? nil : tool)
+            RibbonLarge(.smartDimension, "Smart\nDimension", active: model.operation == .dimension, enabled: editing,
+                        help: "Dimension the selected curves: line → length, circle → diameter, arc → radius, two lines → angle") {
+                model.begin(.dimension)
             }
         }
-        RibbonDivider()
-        RibbonButton("Smart\nDimension", "ruler", help: "Dimension the selected sketch curves (length, diameter, radius, angle, distance)", enabled: editing) {
-            showDimension = true
+        RibbonSeparator()
+        RibbonGroup("Draw") {
+            toolLarge(.line)
+            toolLarge(.rectangle)
+            toolLarge(.circle)
+            RibbonStack { toolSmall(.arc); toolSmall(.slot); toolSmall(.polygon) }
+            RibbonStack { toolSmall(.spline); toolSmall(.ellipse); toolSmall(.point) }
+            RibbonStack { toolSmall(.centerline) }
         }
-        .popover(isPresented: $showDimension, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Smart Dimension").font(.headline)
-                Text("Applies to the selected curves: one line → length, circle → diameter, arc → radius, two lines → angle, two points → distance.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                TextField("Value, e.g. 25 or 1 in (empty = current)", text: $dimensionValue)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { applyDimension() }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { showDimension = false }
-                    Button("Add Dimension") { applyDimension() }.keyboardShortcut(.defaultAction)
+        RibbonSeparator()
+        RibbonGroup("Modify") {
+            toolLarge(.trim)
+            RibbonStack { toolSmall(.extend); toolSmall(.fillet); toolSmall(.chamfer) }
+            RibbonStack {
+                RibbonSmall(.offset, "Offset", active: model.operation == .sketchOffset, enabled: editing && picked) { model.begin(.sketchOffset) }
+                RibbonSmall(.mirror, "Mirror", active: model.operation == .sketchMirror, enabled: editing && picked) { model.begin(.sketchMirror) }
+                RibbonSmall(.construction, "Construction", enabled: editing && picked) { Task { await model.toggleConstruction() } }
+            }
+        }
+        RibbonSeparator()
+        RibbonGroup("Pattern") {
+            RibbonStack {
+                RibbonSmall(.linearPattern, "Linear", active: model.operation == .sketchLinearPattern, enabled: editing && picked) {
+                    model.begin(.sketchLinearPattern)
+                }
+                RibbonSmall(.circularPattern, "Circular", active: model.operation == .sketchCircularPattern, enabled: editing && picked) {
+                    model.begin(.sketchCircularPattern)
                 }
             }
-            .padding(12)
-            .frame(width: 300)
+        }
+        RibbonSeparator()
+        RibbonGroup("Relations") {
+            RibbonLarge(.addRelation, "Add\nRelation", active: model.operation == .addRelation, enabled: editing && picked,
+                        help: "Relate the selected sketch entities") { model.begin(.addRelation) }
+            RibbonStack {
+                RibbonSmall(.hideShow, "Show Relations", active: model.display.relations) { model.display.relations.toggle() }
+                RibbonSmall(.smartDimension, "Show Dimensions", active: model.display.dimensions) { model.display.dimensions.toggle() }
+                RibbonSmall(.trash, "Delete", enabled: editing && picked) { Task { await model.deleteSketchSelection() } }
+            }
         }
     }
 
-    private func applyDimension() {
-        let v = dimensionValue
-        showDimension = false
-        dimensionValue = ""
-        Task { await model.smartDimension(value: v) }
+    private func toolLarge(_ t: SketchTool) -> some View {
+        RibbonLarge(t.icon, t.title, active: model.sketchState.tool == t, enabled: model.activeSketch != nil, help: t.hint) {
+            model.chooseTool(model.sketchState.tool == t ? nil : t)
+        }
+    }
+
+    private func toolSmall(_ t: SketchTool) -> some View {
+        RibbonSmall(t.icon, t.title.replacingOccurrences(of: "\n", with: " "), active: model.sketchState.tool == t,
+                    enabled: model.activeSketch != nil, help: t.hint) {
+            model.chooseTool(model.sketchState.tool == t ? nil : t)
+        }
     }
 }
 
-private struct EvaluateGroup: View {
+private struct EvaluateTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        RibbonButton("Mass\nProperties", "scalemass", help: "Volume, surface area and centre of mass of a body", active: model.operation == .massProperties, enabled: !model.bodies.isEmpty) {
-            model.begin(.massProperties)
+        let hasBody = !model.bodies.isEmpty
+        RibbonGroup("Evaluate") {
+            RibbonLarge(.measure, "Measure", active: model.operation == .measure, enabled: hasBody,
+                        help: "Distance between two selected entities") { model.begin(.measure) }
+            RibbonLarge(.massProps, "Mass\nProperties", active: model.operation == .massProperties, enabled: hasBody,
+                        help: "Volume, surface area and centre of mass") { model.begin(.massProperties) }
+            RibbonLarge(.check, "Check", active: model.operation == .check, enabled: hasBody,
+                        help: "Validate body geometry and topology") { model.begin(.check) }
         }
-        RibbonButton("Command\nPalette", "command", help: "Run any command by name (⌘K)") { model.showPalette = true }
+        RibbonSeparator()
+        RibbonGroup("Export") {
+            RibbonStack {
+                RibbonSmall(.save, "STEP…", enabled: hasBody) { model.export("step") }
+                RibbonSmall(.save, "STL…", enabled: hasBody) { model.export("stl") }
+            }
+        }
+        RibbonSeparator()
+        RibbonGroup("Commands") {
+            RibbonLarge(.command, "All\nCommands", help: "Search every command (⌘K)") { model.showPalette = true }
+        }
     }
 }
 
-struct RibbonDivider: View {
-    var body: some View {
-        Divider().frame(height: 46).padding(.horizontal, 4)
-    }
-}
+// MARK: building blocks
 
-struct RibbonLabel: View {
+struct RibbonGroup<Content: View>: View {
     let title: String
-    let systemImage: String
+    @ViewBuilder let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(spacing: 3) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18))
-                .frame(height: 22)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 2) { content }
+            Spacer(minLength: 0)
             Text(title)
-                .font(.caption2)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.text2)
+                .tracking(0.2)
+        }
+        .frame(height: 82)
+        .padding(.horizontal, 6)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+struct RibbonSeparator: View {
+    var body: some View {
+        Rectangle().fill(Theme.line).frame(width: 1, height: 70).padding(.top, 4)
+    }
+}
+
+struct RibbonStack<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+    }
+}
+
+struct RibbonLargeLabel: View {
+    let icon: ForgeIcon
+    let title: String
+    var chevron = false
+
+    var body: some View {
+        VStack(spacing: 5) {
+            IconView(icon: icon, size: 26, accent: Theme.accent)
+            Text(title)
+                .font(.system(size: 11))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(width: 68, height: 50)
-        .contentShape(Rectangle())
+        .padding(.top, 7)
+        .frame(width: 66, height: 64, alignment: .top)
+        .overlay(alignment: .topTrailing) {
+            if chevron {
+                IconView(icon: .chevronDown, size: 10).foregroundStyle(Theme.text3).padding(.top, 24).padding(.trailing, 3)
+            }
+        }
     }
 }
 
-struct RibbonButton: View {
+struct RibbonLarge: View {
+    let icon: ForgeIcon
     let title: String
-    let systemImage: String
-    var help: String = ""
     var active = false
     var enabled = true
+    var help = ""
     let action: () -> Void
-    @State private var hovering = false
 
-    init(_ title: String, _ systemImage: String, help: String = "", active: Bool = false, enabled: Bool = true, action: @escaping () -> Void) {
+    init(_ icon: ForgeIcon, _ title: String, active: Bool = false, enabled: Bool = true, help: String = "", action: @escaping () -> Void) {
+        self.icon = icon
         self.title = title
-        self.systemImage = systemImage
-        self.help = help
         self.active = active
         self.enabled = enabled
+        self.help = help
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) { RibbonLargeLabel(icon: icon, title: title) }
+            .buttonStyle(ToolButtonStyle(active: active, cornerRadius: 8))
+            .disabled(!enabled)
+            .help(help.isEmpty ? title.replacingOccurrences(of: "\n", with: " ") : help)
+            .accessibilityLabel(title.replacingOccurrences(of: "\n", with: " "))
+    }
+}
+
+struct RibbonSmall: View {
+    let icon: ForgeIcon
+    let title: String
+    var active = false
+    var enabled = true
+    var help = ""
+    let action: () -> Void
+
+    init(_ icon: ForgeIcon, _ title: String, active: Bool = false, enabled: Bool = true, help: String = "", action: @escaping () -> Void) {
+        self.icon = icon
+        self.title = title
+        self.active = active
+        self.enabled = enabled
+        self.help = help
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            RibbonLabel(title: title, systemImage: systemImage)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(active ? Color.accentColor.opacity(0.22) : hovering && enabled ? Color.primary.opacity(0.07) : .clear))
-                .foregroundStyle(active ? Color.accentColor : Color.primary)
+            HStack(spacing: 6) {
+                IconView(icon: icon, size: 16, accent: Theme.accent)
+                Text(title).font(.system(size: 12)).lineLimit(1)
+            }
+            .padding(.leading, 5)
+            .padding(.trailing, 8)
+            .frame(height: 21)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolButtonStyle(active: active, cornerRadius: 5))
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
-        .onHover { hovering = $0 }
-        .help(help)
+        .help(help.isEmpty ? title : help)
     }
 }

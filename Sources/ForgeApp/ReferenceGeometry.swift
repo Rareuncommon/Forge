@@ -11,14 +11,13 @@ import ForgeSketch
 enum ReferenceGeometry {
     static let firstObjectID: UInt32 = 1_000_000
 
-    static let planeColor = RGBA(0.42, 0.55, 0.78)
-    static let gridColor = RGBA(0.80, 0.83, 0.88)
-    static let gridAxisColor = RGBA(0.60, 0.65, 0.75)
-    static let pointColor = RGBA(0.10, 0.10, 0.12)
+    static func planeColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.40, 0.52, 0.72) : RGBA(0.42, 0.55, 0.78) }
+    static func gridColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.17, 0.19, 0.22) : RGBA(0.80, 0.83, 0.88) }
+    static func gridAxisColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.25, 0.28, 0.33) : RGBA(0.60, 0.65, 0.75) }
 
     /// Items for the current state. `size` is the model's extent (mm) used to scale planes,
     /// axes and the grid; `sketch` is the sketch being edited, if any.
-    static func items(size: Double, sketch: Sketch?, allSketches: [Sketch]) -> [RenderItem] {
+    static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, dark: Bool = false) -> [RenderItem] {
         var out: [RenderItem] = []
         var lines = LineBuilder()
         let s = size
@@ -28,16 +27,16 @@ enum ReferenceGeometry {
             let n = Int((s / step).rounded(.up))
             for i in -n...n {
                 let t = Double(i) * step
-                let c = i == 0 ? gridAxisColor : gridColor
+                let c = i == 0 ? gridAxisColor(dark) : gridColor(dark)
                 lines.add([sk.plane.point(t, -Double(n) * step), sk.plane.point(t, Double(n) * step)], c)
                 lines.add([sk.plane.point(-Double(n) * step, t), sk.plane.point(Double(n) * step, t)], c)
             }
-        } else {
+        } else if planes {
             // Front (XY), Top (XZ) and Right (YZ) plane outlines.
             let h = s / 2
-            lines.add([Vec3(-h, -h, 0), Vec3(h, -h, 0), Vec3(h, h, 0), Vec3(-h, h, 0), Vec3(-h, -h, 0)], planeColor)
-            lines.add([Vec3(-h, 0, -h), Vec3(h, 0, -h), Vec3(h, 0, h), Vec3(-h, 0, h), Vec3(-h, 0, -h)], planeColor)
-            lines.add([Vec3(0, -h, -h), Vec3(0, h, -h), Vec3(0, h, h), Vec3(0, -h, h), Vec3(0, -h, -h)], planeColor)
+            lines.add([Vec3(-h, -h, 0), Vec3(h, -h, 0), Vec3(h, h, 0), Vec3(-h, h, 0), Vec3(-h, -h, 0)], planeColor(dark))
+            lines.add([Vec3(-h, 0, -h), Vec3(h, 0, -h), Vec3(h, 0, h), Vec3(-h, 0, h), Vec3(-h, 0, -h)], planeColor(dark))
+            lines.add([Vec3(0, -h, -h), Vec3(0, h, -h), Vec3(0, h, h), Vec3(0, -h, h), Vec3(0, -h, -h)], planeColor(dark))
         }
         // Origin axes: X red, Y green, Z blue.
         let a = s * 0.25
@@ -49,7 +48,7 @@ enum ReferenceGeometry {
         for sk in allSketches {
             for e in sk.orderedEntities where e.kind == .point && e.id != Sketch.originID {
                 let (u, v) = sk.point(e.id)
-                let color = e.construction ? RGBA.sketchConstruction : pointColor
+                let color = e.construction ? RGBA.sketchConstruction : Theme.sketchRGBA(dark: dark).point
                 lines.add([sk.plane.point(u - m, v - m), sk.plane.point(u + m, v + m)], color)
                 lines.add([sk.plane.point(u - m, v + m), sk.plane.point(u + m, v - m)], color)
             }

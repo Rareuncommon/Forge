@@ -23,6 +23,8 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     public var camera = Camera()
     public var style: RenderStyle = .shadedWithEdges
     public var background = RGBA.background
+    /// Clear to transparent so the view behind (e.g. a gradient) shows through.
+    public var transparentBackground = false
     private var items: [GPUItem] = []
     private var overlay: [GPUItem] = []
     private var sceneBounds: BoundingBox?
@@ -153,7 +155,10 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         guard let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
             let cmd = queue.makeCommandBuffer()
         else { return }
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: Double(background.r), green: Double(background.g), blue: Double(background.b), alpha: 1)
+        pass.colorAttachments[0].clearColor =
+            transparentBackground
+            ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            : MTLClearColor(red: Double(background.r), green: Double(background.g), blue: Double(background.b), alpha: 1)
         pass.depthAttachment.clearDepth = 1
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = Double(view.drawableSize.width / max(view.drawableSize.height, 1))

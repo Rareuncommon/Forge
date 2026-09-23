@@ -20,6 +20,24 @@ struct CameraTests {
         #expect((front.right - .unitX).length < 1e-9 && (front.up - .unitY).length < 1e-9)
     }
 
+    @Test(arguments: [ProjectionKind.orthographic, .perspective])
+    func projectInvertsRay(_ kind: ProjectionKind) {
+        var c = Camera(target: Vec3(3, -2, 1), distance: 80, orthoHalfHeight: 25)
+        c.projection = kind
+        c.setOrientation(.isometric)
+        c.orbit(dx: 0.4, dy: 0.1)
+        let (w, h) = (900.0, 600.0)
+        for (px, py) in [(0.0, 0.0), (450.0, 300.0), (812.5, 77.25), (13.0, 590.0)] {
+            let (o, d) = c.ray(pixelX: px, pixelY: py, width: w, height: h)
+            let p = c.project(o + d * 37, width: w, height: h)
+            #expect(p != nil)
+            #expect(abs(p!.x - px) < 1e-6 && abs(p!.y - py) < 1e-6, "\(kind) (\(px), \(py)) → \(String(describing: p))")
+        }
+        // The target is always at the centre of the view.
+        let centre = c.project(c.target, width: w, height: h)!
+        #expect(abs(centre.x - 450) < 1e-9 && abs(centre.y - 300) < 1e-9)
+    }
+
     @Test func orbitPreservesDistanceAndPanMovesTarget() {
         var c = Camera(target: Vec3(1, 2, 3), distance: 50)
         c.setOrientation(.isometric)

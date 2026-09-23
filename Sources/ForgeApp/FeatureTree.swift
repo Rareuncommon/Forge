@@ -1,6 +1,6 @@
-// Feature tree (SolidWorks' FeatureManager): origin planes, sketches and bodies. Until the M2
-// feature tree exists (docs/adr/0011) this lists the document's sketches and bodies; every
-// row action is a command.
+// Feature tree (SolidWorks' FeatureManager; docs/design): the part, its solid bodies, the
+// origin planes and the sketches with their state. Until the M2 feature tree exists
+// (docs/adr/0011) it lists the document's sketches and bodies; every row action is a command.
 
 import ForgeCommands
 import ForgeCore
@@ -9,112 +9,174 @@ import SwiftUI
 
 struct FeatureTreeView: View {
     @Environment(AppModel.self) private var model
+    @State private var bodiesOpen = true
+    @State private var rootOpen = true
 
     var body: some View {
-        List {
-            Label(model.documentName, systemImage: "shippingbox")
-                .font(.headline)
-            Section("Origin") {
-                ForEach(StandardPlane.allCases, id: \.self) { p in
-                    TreeRow(title: "\(p.rawValue.capitalized) Plane", systemImage: "square.dashed", selected: false)
-                        .contextMenu {
-                            Button("Sketch on \(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
-                        }
-                        .onTapGesture(count: 2) { Task { await model.newSketch(on: p) } }
-                        .help("Double-click or right-click to sketch on this plane")
-                }
+        @Bindable var model = model
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                IconView(icon: .search, size: 14).foregroundStyle(Theme.text3)
+                TextField("Filter features", text: $model.treeFilter)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
             }
-            if !model.sketches.isEmpty {
-                Section("Sketches") {
-                    ForEach(model.sketches) { s in
-                        let editing = model.activeSketch == s.id
-                        TreeRow(
-                            title: s.name + (editing ? "  (editing)" : ""), systemImage: "pencil.and.outline",
-                            subtitle: "\(s.plane) · \(statusText(s))", tint: statusColor(s), selected: model.selection.contains(s.id)
-                        )
-                        .onTapGesture(count: 2) { Task { await model.editSketch(s.id) } }
-                        .onTapGesture { Task { await model.select(s.id, extend: NSEvent.modifierFlags.contains(.shift)) } }
-                        .contextMenu {
-                            if editing {
-                                Button("Exit Sketch") { Task { await model.exitSketch() } }
-                            } else {
-                                Button("Edit Sketch") { Task { await model.editSketch(s.id) } }
-                            }
-                            Button("Extrude…") {
-                                model.operationSketch = s.id
-                                model.begin(.extrude)
-                            }
-                            Divider()
-                            Button("Delete", role: .destructive) { Task { await model.run("sketch.remove", ["sketch": .string(s.id)]) } }
-                        }
-                    }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.field))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line))
+            .padding(10)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    TreeRow(icon: .part, title: model.documentName, disclosure: rootOpen, bold: true) { rootOpen.toggle() }
+                    if rootOpen { rows }
                 }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 12)
             }
-            if !model.bodies.isEmpty {
-                Section("Bodies") {
-                    ForEach(model.bodies, id: \.id) { b in
-                        TreeRow(
-                            title: b.name, systemImage: "cube.fill",
-                            subtitle: "\(b.topology.faces) faces · \(String(format: "%.1f", b.volumeMM3)) mm³",
-                            selected: model.selection.contains(b.id)
-                        )
-                        .onTapGesture { Task { await model.select(b.id, extend: NSEvent.modifierFlags.contains(.shift)) } }
-                        .contextMenu {
-                            Button("Mass Properties") {
-                                Task {
-                                    await model.select(b.id, extend: false)
-                                    model.begin(.massProperties)
-                                }
-                            }
-                            Divider()
-                            Button("Delete", role: .destructive) { Task { await model.run("body.delete", ["body": .string(b.id)]) } }
-                        }
-                        .accessibilityLabel("\(b.name), \(b.topology.faces) faces")
+        }
+        .background(Theme.panel)
+    }
+
+    private func matches(_ name: String) -> Bool {
+        let f = model.treeFilter.trimmingCharacters(in: .whitespaces)
+        return f.isEmpty || name.localizedCaseInsensitiveContains(f)
+    }
+
+    @ViewBuilder private var rows: some View {
+        if !model.bodies.isEmpty {
+            TreeRow(icon: .folder, title: "Solid Bodies (\(model.bodies.count))", depth: 1, disclosure: bodiesOpen) { bodiesOpen.toggle() }
+            if bodiesOpen {
+                ForEach(model.bodies.filter { matches($0.name) }, id: \.id) { b in
+                    TreeRow(icon: .part, title: b.name, depth: 2, selected: model.selection.contains(b.id),
+                            trailing: "\(b.topology.faces) faces") {
+                        Task { await model.select(b.id, extend: NSEvent.modifierFlags.contains(.shift)) }
                     }
+                    .contextMenu {
+                        Button("Mass Properties") {
+                            Task {
+                                await model.select(b.id, extend: false)
+                                model.begin(.massProperties)
+                            }
+                        }
+                        Button("Export STEP…") {
+                            Task {
+                                await model.select(b.id, extend: false)
+                                model.export("step")
+                            }
+                        }
+                        Divider()
+                        Button("Delete", role: .destructive) { Task { await model.run("body.delete", ["body": .string(b.id)]) } }
+                    }
+                    .help("\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³")
                 }
             }
         }
-        .listStyle(.sidebar)
-    }
-
-    private func statusText(_ s: SketchRow) -> String {
-        switch s.status {
-        case .fullyDefined: "fully defined"
-        case .underDefined: "under defined (\(s.dof))"
-        case .redundant, .conflicting: "over defined"
-        case .failed: "cannot solve"
-        case nil: ""
+        ForEach(StandardPlane.allCases.filter { matches($0.rawValue + " plane") }, id: \.self) { p in
+            TreeRow(icon: .plane, title: "\(p.rawValue.capitalized) Plane", depth: 1, iconTint: Theme.text3,
+                    doubleAction: { Task { await model.newSketch(on: p) } }) {}
+                .contextMenu {
+                    Button("Sketch on \(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
+                }
+                .help("Double-click to sketch on this plane")
         }
-    }
-
-    private func statusColor(_ s: SketchRow) -> Color {
-        switch s.status {
-        case .fullyDefined: .primary
-        case .underDefined: .blue
-        default: .red
+        if matches("origin") {
+            TreeRow(icon: .origin, title: "Origin", depth: 1, iconTint: Theme.axisX) {}
+        }
+        ForEach(model.sketches.filter { matches($0.name) }) { s in
+            let editing = model.activeSketch == s.id
+            TreeRow(icon: .sketch, title: s.name, depth: 1, selected: model.selection.contains(s.id) || editing,
+                    status: SketchStatusBadge.color(s.status), statusLabel: SketchStatusBadge.text(s),
+                    doubleAction: { Task { await model.editSketch(s.id) } }) {
+                Task { await model.select(s.id, extend: NSEvent.modifierFlags.contains(.shift)) }
+            }
+            .contextMenu {
+                if editing {
+                    Button("Exit Sketch") { Task { await model.exitSketch() } }
+                } else {
+                    Button("Edit Sketch") { Task { await model.editSketch(s.id) } }
+                }
+                Button("Extruded Boss/Base…") {
+                    model.operationSketch = s.id
+                    model.begin(.extrude)
+                }
+                Button("Revolved Boss/Base…") {
+                    model.operationSketch = s.id
+                    model.begin(.revolve)
+                }
+                Divider()
+                Button("Delete", role: .destructive) { Task { await model.run("sketch.remove", ["sketch": .string(s.id)]) } }
+            }
+            .help("\(s.name) on \(s.plane) · \(SketchStatusBadge.text(s)). Double-click to edit.")
         }
     }
 }
 
 struct TreeRow: View {
+    let icon: ForgeIcon
     let title: String
-    let systemImage: String
-    var subtitle: String? = nil
-    var tint: Color = .primary
-    var selected: Bool
+    var depth = 0
+    var disclosure: Bool? = nil
+    var selected = false
+    var bold = false
+    var muted = false
+    var iconTint: Color? = nil
+    var trailing: String? = nil
+    var status: Color? = nil
+    var statusLabel = ""
+    var doubleAction: (() -> Void)? = nil
+    let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage).foregroundStyle(tint).frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).lineLimit(1)
-                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-            }
-            Spacer(minLength: 0)
+        clickable
+            .onHover { hovering = $0 }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
+    }
+
+    /// Double-click handling delays single clicks, so only rows with a double action have it.
+    @ViewBuilder private var clickable: some View {
+        if let doubleAction {
+            label.onTapGesture(count: 2) { doubleAction() }.onTapGesture { action() }
+        } else {
+            label.onTapGesture { action() }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(selected ? Color.accentColor.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private var label: some View {
+        HStack(spacing: 6) {
+            Group {
+                if let open = disclosure {
+                    IconView(icon: open ? .chevronDown : .chevronRight, size: 11)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 11, height: 11)
+            .foregroundStyle(Theme.text3)
+            IconView(icon: icon, size: 17, accent: iconTint ?? Theme.accent)
+                .foregroundStyle(selected ? Theme.accentText : Theme.text2)
+            Text(title)
+                .font(.system(size: 12.5, weight: bold ? .semibold : .regular))
+                .foregroundStyle(muted ? Theme.text3 : selected ? Theme.accentText : Theme.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if let trailing {
+                Text(trailing).font(.system(size: 11)).foregroundStyle(Theme.text3)
+            }
+            if let status {
+                Circle().fill(status).frame(width: 7, height: 7).accessibilityLabel(statusLabel)
+            }
+        }
+        .padding(.leading, 6 + CGFloat(depth) * 16)
+        .padding(.trailing, 8)
+        .frame(height: 25)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(selected ? Theme.accentSoft : hovering ? Theme.hover.opacity(0.6) : .clear))
         .contentShape(Rectangle())
     }
 }
