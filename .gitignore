@@ -1,0 +1,11 @@
+.build/
+.build-*/
+build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+Vendor/src/
+Vendor/occt/
+.DS_Store
+__pycache__/
