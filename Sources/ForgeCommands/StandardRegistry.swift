@@ -11,6 +11,8 @@ extension CommandRegistry {
         r.register(DocumentActivate.self)
         r.register(DocumentClose.self)
         r.register(DocumentState.self)
+        r.register(DocumentSave.self)
+        r.register(DocumentOpen.self)
         r.register(EditUndo.self)
         r.register(EditRedo.self)
         r.register(TransactionBegin.self)

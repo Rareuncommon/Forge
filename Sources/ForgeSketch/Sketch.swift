@@ -16,6 +16,12 @@ public struct SketchPlane: Codable, Sendable, Hashable {
         self.yAxis = yAxis.normalized
     }
 
+    enum CodingKeys: String, CodingKey {
+        case name, origin
+        case xAxis = "x_axis"
+        case yAxis = "y_axis"
+    }
+
     public var normal: Vec3 { xAxis.cross(yAxis).normalized }
 
     /// Front plane: XY, viewed from +Z.
@@ -82,6 +88,11 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
     /// For tangency between curves that share an endpoint: the endpoint (of a circular curve)
     /// where the tangency holds. Endpoint tangency uses a first-order formulation.
     public var at: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, entities, value, driven, side, at
+        case isInternal = "is_internal"
+    }
 }
 
 /// A 2D sketch: geometry, constraints, and the last solver report. A value type, so undo,
@@ -97,6 +108,15 @@ public struct Sketch: Codable, Sendable, Hashable {
     public internal(set) var report: SolveReport?
     var nextEntity = 1
     var nextConstraint = 1
+
+    /// Persisted form (document files): everything except the derived solver report, which
+    /// is recomputed on load.
+    enum CodingKeys: String, CodingKey {
+        case id, name, plane, params, entities, constraints
+        case entityOrder = "entity_order"
+        case nextEntity = "next_entity"
+        case nextConstraint = "next_constraint"
+    }
 
     public static let originID = "point-0"
 

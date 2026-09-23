@@ -78,6 +78,25 @@ public struct Document: Sendable {
         pruneSelection()
     }
 
+    /// Rebuild a document from persisted parts (document.open).
+    public static func restore(
+        id: String, name: String, units: UnitSystem, bodies: [Body], sketches: [Sketch], nextBody: Int, nextSketch: Int
+    ) -> Document {
+        var d = Document(id: id, name: name, units: units)
+        for b in bodies {
+            d.bodies[b.id] = b
+            d.bodyOrder.append(b.id)
+        }
+        for var s in sketches {
+            s.resolve()
+            d.sketches[s.id] = s
+            d.sketchOrder.append(s.id)
+        }
+        d.nextBodyNumber = nextBody
+        d.nextSketchNumber = nextSketch
+        return d
+    }
+
     // MARK: sketches
 
     public var orderedSketches: [Sketch] { sketchOrder.compactMap { sketches[$0] } }

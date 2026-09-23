@@ -49,4 +49,39 @@ struct GoldenModelTests {
         #expect(a.keys.sorted() == b.keys.sorted())
         for k in a.keys { #expect(a[k] == b[k], "\(url.lastPathComponent) \(k) differs between regenerations") }
     }
+
+    /// Save → open in a fresh engine → spec still passes → save again gives identical bytes.
+    @Test(arguments: modelURLs)
+    func saveOpenRoundTrip(_ url: URL) async throws {
+        let script = try ForgeScript.load(url)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("forge-rt-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = dir.appendingPathComponent("a.forgepart"), second = dir.appendingPathComponent("b.forgepart")
+
+        let e = Engine()
+        _ = try await e.run(script)
+        try await e.execute("document.save", ["path": .string(first.path)])
+
+        let reopened = Engine()
+        try await reopened.execute("document.open", ["path": .string(first.path)])
+        if let spec = script.expect {
+            let report = try QueryCompareToSpec.evaluate(spec, document: try #require(await reopened.activeDocument))
+            for c in report.checks where !c.passed {
+                Issue.record("\(url.lastPathComponent) after reopen: \(c.subject).\(c.property) expected \(c.expected) got \(c.actual)")
+            }
+        }
+        try await reopened.execute("document.save", ["path": .string(second.path)])
+        func files(_ root: URL) throws -> [String: Data] {
+            var out: [String: Data] = [:]
+            let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!
+            for case let f as URL in en where !f.hasDirectoryPath {
+                out[String(f.path.dropFirst(root.path.count))] = try Data(contentsOf: f)
+            }
+            return out
+        }
+        let a = try files(first), b = try files(second)
+        #expect(a.keys.sorted() == b.keys.sorted())
+        for k in a.keys where a[k] != b[k] { Issue.record("\(url.lastPathComponent): \(k) differs after save → open → save") }
+    }
 }

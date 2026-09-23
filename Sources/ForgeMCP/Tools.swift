@@ -90,6 +90,8 @@ public enum ToolCatalog {
             alias("list_documents", "List documents", "document.list"),
             alias("activate_document", "Activate document", "document.activate"),
             alias("get_document_state", "Document state", "document.state"),
+            alias("open", "Open document", "document.open"),
+            alias("save", "Save document", "document.save"),
             // ---- sketch
             alias("create_sketch", "Create sketch", "sketch.create"),
             alias("get_sketch", "Get sketch", "sketch.get"),

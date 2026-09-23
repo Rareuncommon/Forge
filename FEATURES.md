@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 889 · in progress: 84 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 887 · in progress: 86 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -37,7 +37,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/mcp-socket` | MCP server over local Unix socket (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | 0600 permissions |
 | `P/mcp-discovery` | MCP tools: list_commands, describe_command, search_commands (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | list_commands, describe_command, search_commands |  |
 | `P/mcp-document` | MCP tools: new_document, list_documents, get_document_state (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | new_document, list_documents, activate_document, get_document_state |  |
-| `P/mcp-open-save` | MCP tools: open, save (§5.2) | not started | — | — | — |  |
+| `P/mcp-open-save` | MCP tools: open, save (§5.2) | in progress | ForgeMCP | Tests/ForgeCommandsTests/FileTests.swift | open, save | bodies + sketches; no feature tree yet |
 | `P/mcp-export` | MCP tools: export (§5.2) | done | ForgeMCP | Tests/ForgeCommandsTests/EngineTests.swift | export_step, export_stl |  |
 | `P/mcp-mutate` | MCP tools: execute, execute_batch, undo, redo, transactions (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | execute, execute_batch, undo, redo, *_transaction | edit_feature/edit_dimension/set_parameter/delete need the feature tree (M2) |
 | `P/mcp-feature-tools` | MCP tools: get_feature_tree, get_feature, get_sketch, edit_feature, edit_dimension, set_parameter, get_parameters, get_errors, explain_error (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | get_sketch, edit_dimension | get_sketch and edit_dimension done; feature-tree tools need M2 |
@@ -55,7 +55,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/persistent-naming` | Persistent naming (§4.2) | not started | — | — | — |  |
 | `P/semantic-refs` | Semantic references (§4.3) | not started | — | — | — |  |
 | `P/parameters` | Global variables, equations, linked dims, design tables, configurations (§4.4) | not started | — | — | — |  |
-| `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | not started | — | — | — |  |
+| `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | in progress | ForgeData | Tests/ForgeCommandsTests/FileTests.swift, Tests/GoldenModelTests/GoldenModelTests.swift | execute:document.save, execute:document.open | v1 package (ADR 0004): manifest, model.json, BREP bodies, thumbnail; byte-identical save→open→save; migration table empty; Quick Look/Spotlight NOT IMPLEMENTED |
 | `P/background-regen` | Background regeneration with cancellation (§3) | in progress | ForgeCommands | — | — | Engine actor keeps work off the main thread; cancellation pending (M2) |
 | `P/metal-viewport` | Metal viewport: shaded+edges, orbit/pan/zoom, GPU picking (§2, M0) | in progress | ForgeRender | — | — | unverified: written, never compiled (Linux session). See PROGRESS.md |
 | `P/headless-render` | Headless software renderer + PNG (render_view backend) | done | ForgeRender | Tests/ForgeRenderTests/RenderTests.swift | render_view |  |
@@ -75,10 +75,10 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `7.1/entities/line` | Entities: line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line | no save/load until the file format (M2) |
-| `7.1/entities/centerline` | Entities: centerline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(construction) | no save/load until the file format (M2) |
-| `7.1/entities/midpoint-line` | Entities: midpoint line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(midpoint) | no save/load until the file format (M2) |
-| `7.1/entities/rectangle` | Entities: rectangle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | no save/load until the file format (M2) |
+| `7.1/entities/line` | Entities: line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/entities/centerline` | Entities: centerline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(construction) | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/entities/midpoint-line` | Entities: midpoint line | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_line(midpoint) | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/entities/rectangle` | Entities: rectangle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/entities/rectangle/corner` | ↳ corner | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 4 tested |
 | `7.1/entities/rectangle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | construction diagonal + midpoint centre |
 | `7.1/entities/rectangle/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 5 tested |
@@ -88,10 +88,10 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/slot/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot |  |
 | `7.1/entities/slot/arc` | ↳ arc | not started | ForgeSketch | — | — |  |
 | `7.1/entities/slot/3-point-arc` | ↳ 3-point arc | not started | ForgeSketch | — | — |  |
-| `7.1/entities/circle` | Entities: circle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle | no save/load until the file format (M2) |
+| `7.1/entities/circle` | Entities: circle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/entities/circle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle |  |
 | `7.1/entities/circle/perimeter` | ↳ perimeter | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle(through) |  |
-| `7.1/entities/arc` | Entities: arc | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc | no save/load until the file format (M2) |
+| `7.1/entities/arc` | Entities: arc | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/entities/arc/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc |  |
 | `7.1/entities/arc/tangent` | ↳ tangent | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc(tangent) | first-order endpoint tangency |
 | `7.1/entities/arc/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc(three_point) |  |
@@ -105,7 +105,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/spline/style-spline` | ↳ style spline | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/equation-driven-curve` | ↳ equation-driven curve | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/fit-spline` | ↳ fit spline | not started | ForgeSketch | — | — |  |
-| `7.1/entities/point` | Entities: point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_point | no save/load until the file format (M2) |
+| `7.1/entities/point` | Entities: point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_point | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/entities/text` | Entities: text | not started | ForgeSketch | — | — |  |
 | `7.1/entities/text/with-fonts` | ↳ with fonts | not started | ForgeSketch | — | — |  |
 | `7.1/entities/construction-geometry` | Entities: construction geometry | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.set_construction | excluded from profiles, drawn grey |
@@ -158,19 +158,19 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/sketch-contours-regions-selection` | Tools: sketch contours/regions selection | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | check_sketch | loop/region detection done; picking a region for a feature lands with extrude (M2) |
 | `7.1/tools/sketch-ink-equivalent` | Tools: Sketch Ink equivalent | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-ink-equivalent/pencil` | ↳ pencil | not started | ForgeSketch | — | — |  |
-| `7.1/relations/coincident` | Relations: coincident | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/collinear` | Relations: collinear | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/coradial` | Relations: coradial | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/concentric` | Relations: concentric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/horizontal` | Relations: horizontal | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/vertical` | Relations: vertical | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/parallel` | Relations: parallel | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/perpendicular` | Relations: perpendicular | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/coincident` | Relations: coincident | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/collinear` | Relations: collinear | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/coradial` | Relations: coradial | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/concentric` | Relations: concentric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/horizontal` | Relations: horizontal | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/vertical` | Relations: vertical | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/parallel` | Relations: parallel | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/perpendicular` | Relations: perpendicular | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/relations/tangent` | Relations: tangent | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | line–circle/arc and circle–circle, distance or endpoint form |
 | `7.1/relations/equal` | Relations: equal | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | lines and radii |
-| `7.1/relations/symmetric` | Relations: symmetric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/midpoint` | Relations: midpoint | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
-| `7.1/relations/fix` | Relations: fix | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | no save/load until the file format (M2) |
+| `7.1/relations/symmetric` | Relations: symmetric | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/midpoint` | Relations: midpoint | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
+| `7.1/relations/fix` | Relations: fix | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/relations/merge` | Relations: merge | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation(coincident) | modelled as coincident points |
 | `7.1/relations/pierce` | Relations: pierce | not started | ForgeSketch | — | — |  |
 | `7.1/relations/intersection` | Relations: intersection | not started | ForgeSketch | — | — |  |

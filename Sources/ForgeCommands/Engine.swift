@@ -89,6 +89,8 @@ public struct DocumentSession: Sendable {
     var transaction: OpenTransaction?
     /// Every successfully committed mutating/session invocation, replayable as a script.
     public internal(set) var journal: [Invocation] = []
+    /// Where the document was last saved or opened from.
+    public internal(set) var path: String?
 
     public var undoLabels: [String] { undoStack.map(\.label) }
     public var redoLabels: [String] { redoStack.map(\.label) }
@@ -104,6 +106,19 @@ public struct SessionState: Sendable {
     public static let undoLimit = 200
 
     public init() {}
+
+    public mutating func adopt(_ doc: Document, path: String?) {
+        var s = DocumentSession(document: doc)
+        s.path = path
+        documents[doc.id] = s
+        documentOrder.append(doc.id)
+        activeDocumentID = doc.id
+    }
+
+    public mutating func nextDocumentID() -> String {
+        defer { nextDocumentNumber += 1 }
+        return "doc-\(nextDocumentNumber)"
+    }
 
     public mutating func createDocument(name: String?, units: UnitSystem) -> Document {
         let id = "doc-\(nextDocumentNumber)"

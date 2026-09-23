@@ -29,7 +29,15 @@
 - **Tests:** 105 test functions incl. 40 seeded property tests of the solver; golden suite is
   now 22 models (16 body, 6 sketch), each regenerated twice for bit-identical results.
 
+- **File format v1** (ADR 0004, new `ForgeData` module): `.forgepart` package with
+  `manifest.json`, `model.json` (bodies + sketches, canonical sorted JSON), `bodies/*.brep`
+  and a rendered thumbnail; atomic writes, schema-version check and a migration table.
+  `document.save` / `document.open` commands and MCP `save` / `open` tools. Every golden
+  model now does save → open → re-check spec → save and requires byte-identical files.
+
 ### Findings
+- JSONEncoder wrote `-0` for a plane axis that decodes to `0`, so the second save differed.
+  model.json is now written through `JSONValue` canonicalisation.
 - Distance-form tangency is only second-order when the curves also share the tangent point,
   so the Jacobian lost rank and a legitimate slot was flagged over-defined. Fixed with a
   first-order endpoint-tangency form (recorded in ADR 0003).
@@ -45,13 +53,14 @@
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
 - `body.extrude`/`body.revolve` are kernel-level (no feature tree yet), so nothing in §7 is
-  "done": save/load does not exist until the file format (M2).
+  "done" even though bodies and sketches now round-trip through the file format.
+- Quick Look / Spotlight importers for the package are not written.
 
 ### Next steps
 1. Read macOS CI results; fix whatever the first real compile of ForgeApp/Metal reports.
 2. Sketch UI on macOS (drawing tools through the command bus, canvas dimension editing).
-3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002) + file format v1
-   (ADR 0004), turning extrude/revolve/fillet into parametric features.
+3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
+   v1 file format, turning extrude/revolve/fillet into parametric features.
 
 ## Session 1 — 2026-09-23 — Milestone 0 (foundations)
 

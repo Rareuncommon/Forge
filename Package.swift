@@ -70,7 +70,8 @@ var targets: [Target] = [
     .target(name: "ForgeCore", swiftSettings: strictSwift),
     .target(name: "ForgeKernel", dependencies: ["CForgeKernel", "ForgeCore"], swiftSettings: strictSwift),
     .target(name: "ForgeSketch", dependencies: ["ForgeCore"], swiftSettings: strictSwift),
-    .target(name: "ForgeCommands", dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeRender"], swiftSettings: strictSwift),
+    .target(name: "ForgeData", dependencies: ["ForgeCore", "ForgeSketch"], swiftSettings: strictSwift),
+    .target(name: "ForgeCommands", dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeData", "ForgeRender"], swiftSettings: strictSwift),
     .target(name: "ForgeRender", dependencies: ["ForgeCore", "ForgeKernel"], swiftSettings: strictSwift),
     .target(name: "ForgeMCP", dependencies: ["ForgeCore", "ForgeCommands", "ForgeRender"], swiftSettings: strictSwift),
     .executableTarget(
@@ -94,7 +95,7 @@ var targets: [Target] = [
 
 var products: [Product] = [
     .executable(name: "forge-cli", targets: ["forge-cli"]),
-    .library(name: "ForgeEngine", targets: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender", "ForgeMCP"]),
+    .library(name: "ForgeEngine", targets: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeData", "ForgeCommands", "ForgeRender", "ForgeMCP"]),
 ]
 
 #if os(macOS)
