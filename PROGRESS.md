@@ -71,8 +71,15 @@
   the circular-segment formula), rendering, mirror/move/scale, and an elliptical-arc edge in the
   kernel bridge (`FK_SEG_ELLIPSE_ARC`; `FKSegment` grew to 13 doubles). Golden model 021: half
   ellipse extruded (volume 1000π, centroid height 40/3π).
+- **Ellipse trim/split/extend:** intersections with ellipses are found along the ellipse's
+  parameter from the other carrier's implicit form; pieces of one ellipse share its axis and
+  rotation unknowns (so they stay one ellipse without extra relations) and are concentric.
+  Golden model 022: ellipse trimmed by a chord (area and x-centroid analytic, DOF 6).
 
 ### Findings
+- The ellipse root-finder mishandled a sample lying exactly on the other curve (bisection
+  from a zero end); a line along the major axis extended to (19.9992, 0.087) instead of
+  (20, 0). Exact zeros are now recorded directly.
 - The AD Jacobian seeded one SIMD16 lane per parameter a row touches, so any row over 16
   parameters (a spline with 7+ control points in a tangency) would have trapped. Rows are
   now differentiated in 16-parameter chunks; a 10-pole spline test covers it.
@@ -99,7 +106,7 @@
   palette can already drive every sketch command.
 - Pattern instances are placed exactly and tied to the seed's size, but spacing/angle are
   not yet dimensions that drive them; dynamic mirror is not implemented.
-- Ellipses cannot be trimmed/extended (no partial ellipse yet); trim is one pick per call.
+- Splines cannot be trimmed/split yet; trim is one pick per call.
 - Offset: ellipses and arc-joined corners/arc caps are not implemented.
 - Not started in 7.1: spline tools (tangency/curvature handles, fit, simplify), parabola, conic, text,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
@@ -111,7 +118,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1: ellipse/partial-ellipse trim/split, stretch, spline tools (fit/simplify/curvature), conics/parabola, text; planegcs oracle harness.
+2. Remaining M1: stretch, spline tools (fit/simplify/curvature), conics/parabola, text; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

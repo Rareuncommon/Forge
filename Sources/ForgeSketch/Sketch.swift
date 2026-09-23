@@ -236,6 +236,14 @@ public struct Sketch: Codable, Sendable, Hashable {
     public mutating func addEllipseArc(
         center: (Double, Double), major: Double, minor: Double, rotation: Double, from: Double, to: Double, construction: Bool = false
     ) -> String {
+        insertEllipseArc(center: center, shape: addParams([major, minor, rotation]), from: from, to: to, construction: construction)
+    }
+
+    /// Partial ellipse on the ellipse whose [major, minor, rotation] live at `shape` (indices,
+    /// possibly shared with another piece of the same ellipse, so they stay one ellipse).
+    @discardableResult
+    mutating func insertEllipseArc(center: (Double, Double), shape: [Int], from: Double, to: Double, construction: Bool) -> String {
+        let (major, minor, rotation) = (params[shape[0]], params[shape[1]], params[shape[2]])
         let id = newID(.ellipseArc)
         func at(_ phi: Double) -> (Double, Double) {
             let u = major * cos(phi), w = minor * sin(phi)
@@ -245,7 +253,7 @@ public struct Sketch: Codable, Sendable, Hashable {
         let a = at(from), b = at(to)
         let sp = addPoint(a.0, a.1, construction: construction, owner: id)
         let ep = addPoint(b.0, b.1, construction: construction, owner: id)
-        insert(SketchEntity(id: id, kind: .ellipseArc, construction: construction, owner: nil, points: [c, sp, ep], params: addParams([major, minor, rotation])))
+        insert(SketchEntity(id: id, kind: .ellipseArc, construction: construction, owner: nil, points: [c, sp, ep], params: shape))
         for (tag, p) in [("start", sp), ("end", ep)] {
             constraints.append(SketchConstraint(id: "\(id)#\(tag)", kind: .onEntity, entities: [p, id], value: nil, driven: false, side: 1, isInternal: true))
         }

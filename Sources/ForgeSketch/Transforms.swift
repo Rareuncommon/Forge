@@ -292,11 +292,15 @@ extension Sketch {
         for id in moved where s.entities[id]!.kind == .point {
             s.setPoint(id, map.apply(point(id)))
         }
+        // Pieces of one ellipse share their shape parameters: transform each index once.
+        var shaped = Set<Int>()
         for id in set {
             let e = s.entities[id]!
             switch e.kind {
             case .circle: s.params[e.params[0]] *= map.k
             case .ellipse, .ellipseArc:
+                guard !shaped.contains(e.params[0]) else { continue }
+                shaped.formUnion(e.params)
                 s.params[e.params[0]] *= map.k
                 s.params[e.params[1]] *= map.k
                 s.params[e.params[2]] = map.apply(angle: s.params[e.params[2]])

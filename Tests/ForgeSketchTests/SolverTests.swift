@@ -680,11 +680,11 @@ struct TrimExtendTests {
         #expect(near(t.point(t.entities[arc]!.points[2]), (-6, 8)))
     }
 
-    @Test func ellipsesAreNotTrimmedYet() throws {
+    @Test func splinesAreNotTrimmedYet() throws {
         var s = newSketch()
-        let e = s.addEllipse(center: (0, 0), major: 5, minor: 3, rotation: 0)
+        let e = try s.addSpline(poles: [(0, 0), (5, 5), (10, 0)], degree: 2)
         do {
-            _ = try s.trim(e, at: (5, 0))
+            _ = try s.trim(e, at: (5, 2))
             Issue.record("expected not_implemented")
         } catch let err as ForgeError {
             #expect(err.code == .notImplemented)
@@ -1088,5 +1088,57 @@ struct EllipseArcTests {
         #expect(near(s.point(m.points[1]), me, 1e-9))
         #expect(near(s.point(m.points[2]), ms, 1e-9))
         #expect(near(s.ellipseArcSpan(created[0]).sweep, s.ellipseArcSpan(arc).sweep, 1e-9))
+    }
+}
+
+@Suite("Ellipse trim and split")
+struct EllipseTrimTests {
+    @Test func trimEllipseToTheLeftOfAChord() throws {
+        var s = newSketch()
+        let el = s.addEllipse(center: (0, 0), major: 20, minor: 10, rotation: 0)
+        let l = s.addLine(from: (10, -20), to: (10, 20))
+        let r = try s.trim(el, at: (20, 0))
+        #expect(r.deleted == [el] && r.created.count == 1)
+        let arc = s.entities[r.created[0]]!
+        #expect(arc.kind == .ellipseArc)
+        // x = 10 meets the ellipse where cos φ = 1/2: (10, ±5√3).
+        let h = 5 * 3.0.squareRoot()
+        #expect(near(s.point(arc.points[1]), (10, h), 1e-9) && near(s.point(arc.points[2]), (10, -h), 1e-9))
+        _ = try s.trim(l, at: (10, 15))
+        _ = try s.trim(l, at: (10, -15))
+        let rep = s.profiles()
+        #expect(rep.valid)
+        // Major segment of the ellipse: ab/2 · (Δ − sin Δ) with Δ = 4π/3.
+        let expected: Double = 400 * Double.pi / 3 + 50 * 3.0.squareRoot()
+        #expect(near(rep.regionAreaMM2, expected, 1e-9))
+        let solve = s.resolve()
+        #expect(solve.redundant.isEmpty && solve.conflicting.isEmpty)
+    }
+
+    @Test func splitEllipseAndPartialEllipse() throws {
+        var s = newSketch()
+        let el = s.addEllipse(center: (0, 0), major: 20, minor: 10, rotation: 0.3)
+        let dof = s.resolve().dof
+        let r = try s.split(el, at: [(25, 5), (-25, -5)])
+        #expect(r.created.count == 2 && r.created.allSatisfy { s.entities[$0]!.kind == .ellipseArc })
+        // The pieces share axes and rotation; each split point slides along the ellipse.
+        #expect(s.entities[r.created[0]]!.params == s.entities[r.created[1]]!.params)
+        let rep = s.resolve()
+        #expect(rep.dof == dof + 2 && rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        #expect(near(abs(s.profiles().loops[0].signedAreaMM2), 200 * Double.pi, 1e-9))
+
+        let dof2 = rep.dof
+        let r2 = try s.split(r.created[0], at: [s.ellipsePoint(r.created[0], s.ellipseArcSpan(r.created[0]).phi0 + 0.5)])
+        #expect(r2.created.count == 1)
+        let rep2 = s.resolve()
+        #expect(rep2.dof == dof2 + 1 && rep2.redundant.isEmpty && rep2.conflicting.isEmpty)
+    }
+
+    @Test func extendALineToAnEllipse() throws {
+        var s = newSketch()
+        s.addEllipse(center: (0, 0), major: 20, minor: 10, rotation: 0)
+        let l = s.addLine(from: (0, 0), to: (5, 0))
+        _ = try s.extend(l, near: (5, 0))
+        #expect(near(s.point(ends(s, l).1), (20, 0), 1e-9))
     }
 }

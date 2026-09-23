@@ -65,14 +65,85 @@ extension Sketch {
             let (a0, sweep) = arcSpan(id)
             let s = Self.wrap(atan2(q.1 - c.1, q.0 - c.0) - a0)
             return s <= sweep + tol / r || s >= 2 * .pi - tol / r
+        case .ellipseArc:
+            let r = max(params[e.params[0]], params[e.params[1]])
+            let (phi0, sweep) = ellipseArcSpan(id)
+            let s = Self.wrap(ellipseParam(id, q) - phi0)
+            return s <= sweep + tol / r || s >= 2 * .pi - tol / r
         default:
             return true
         }
     }
 
-    /// Intersections of two carriers (infinite line or full circle).
+    static func isElliptic(_ k: SketchEntityKind) -> Bool { k == .ellipse || k == .ellipseArc }
+
+    /// Point of an ellipse (or partial ellipse's carrier) at parametric angle phi.
+    func ellipsePoint(_ id: String, _ phi: Double) -> (Double, Double) {
+        let e = entities[id]!
+        let (cx, cy) = point(e.points[0])
+        let a = params[e.params[0]], b = params[e.params[1]], rot = params[e.params[2]]
+        let u = a * cos(phi), w = b * sin(phi)
+        return (cx + u * cos(rot) - w * sin(rot), cy + u * sin(rot) + w * cos(rot))
+    }
+
+    /// Signed implicit function of a carrier: zero on it (line: signed distance; circle/arc:
+    /// distance − radius; ellipse: normalised level − 1).
+    func carrierLevel(_ id: String, _ q: (Double, Double)) -> Double {
+        let e = entities[id]!
+        switch e.kind {
+        case .line:
+            let a = point(e.points[0]), b = point(e.points[1])
+            let dx = b.0 - a.0, dy = b.1 - a.1
+            return (dx * (q.1 - a.1) - dy * (q.0 - a.0)) / hypot(dx, dy)
+        case .circle, .arc:
+            let (c, r) = circleOf(id)
+            return hypot(q.0 - c.0, q.1 - c.1) - r
+        default:
+            let (cx, cy) = point(e.points[0])
+            let a = params[e.params[0]], b = params[e.params[1]], rot = params[e.params[2]]
+            let dx = q.0 - cx, dy = q.1 - cy
+            let u = dx * cos(rot) + dy * sin(rot), w = -dx * sin(rot) + dy * cos(rot)
+            return (u / a) * (u / a) + (w / b) * (w / b) - 1
+        }
+    }
+
+    /// Where an ellipse's carrier meets another carrier: sign changes of the other carrier's
+    /// level along the ellipse, refined by bisection. (Tangential touches are not cuts.)
+    func ellipseIntersections(_ ellipse: String, _ other: String) -> [(Double, Double)] {
+        let n = 720
+        var out: [(Double, Double)] = []
+        func f(_ phi: Double) -> Double { carrierLevel(other, ellipsePoint(ellipse, phi)) }
+        func record(_ phi: Double) {
+            let q = ellipsePoint(ellipse, phi)
+            if !out.contains(where: { hypot($0.0 - q.0, $0.1 - q.1) < lengthTolerance * 100 }) { out.append(q) }
+        }
+        var prev = f(0)
+        if prev == 0 { record(0) }
+        for i in 1...n {
+            let phi = 2 * Double.pi * Double(i) / Double(n)
+            let cur = f(phi)
+            if cur == 0 {
+                record(phi)  // a sample exactly on the other carrier
+            } else if prev != 0 && (prev < 0) != (cur < 0) {
+                var lo = 2 * Double.pi * Double(i - 1) / Double(n), hi = phi
+                let negativeAtLo = prev < 0
+                for _ in 0..<80 {
+                    let mid = (lo + hi) / 2, fm = f(mid)
+                    if fm == 0 { (lo, hi) = (mid, mid); break }
+                    if (fm < 0) == negativeAtLo { lo = mid } else { hi = mid }
+                }
+                record((lo + hi) / 2)
+            }
+            prev = cur
+        }
+        return out
+    }
+
+    /// Intersections of two carriers (infinite line, full circle or full ellipse).
     func carrierIntersections(_ a: String, _ b: String) -> [(Double, Double)] {
         let ea = entities[a]!, eb = entities[b]!
+        if Self.isElliptic(ea.kind) { return ellipseIntersections(a, b) }
+        if Self.isElliptic(eb.kind) { return ellipseIntersections(b, a) }
         func line(_ e: SketchEntity) -> ((Double, Double), (Double, Double)) { (point(e.points[0]), point(e.points[1])) }
         switch (ea.kind, eb.kind) {
         case (.line, .line):
@@ -120,6 +191,10 @@ extension Sketch {
         case .arc:
             let (c, _) = circleOf(id)
             return Self.wrap(atan2(q.1 - c.1, q.0 - c.0) - arcSpan(id).a0)
+        case .ellipseArc:
+            return Self.wrap(ellipseParam(id, q) - ellipseArcSpan(id).phi0)
+        case .ellipse:
+            return Self.wrap(ellipseParam(id, q))
         default:
             let (c, _) = circleOf(id)
             return Self.wrap(atan2(q.1 - c.1, q.0 - c.0))
@@ -133,7 +208,7 @@ extension Sketch {
         let e = entities[id]!
         var out: [Crossing] = []
         for other in entityOrder where other != id {
-            guard let o = entities[other], o.kind != .point, o.kind != .ellipse, o.kind != .ellipseArc, o.kind != .spline else { continue }
+            guard let o = entities[other], o.kind != .point, o.kind != .spline else { continue }
             for q in carrierIntersections(id, other) where withinExtent(other, q, tol: tol) && withinExtent(id, q, tol: tol) {
                 let t = curveParam(id, q)
                 switch e.kind {
@@ -142,6 +217,9 @@ extension Sketch {
                     guard t * l > tol, (1 - t) * l > tol else { continue }
                 case .arc:
                     let (_, r) = circleOf(id), sweep = arcSpan(id).sweep
+                    guard t * r > tol, (sweep - t) * r > tol else { continue }
+                case .ellipseArc:
+                    let r = max(params[e.params[0]], params[e.params[1]]), sweep = ellipseArcSpan(id).sweep
                     guard t * r > tol, (sweep - t) * r > tol else { continue }
                 default: break
                 }
@@ -208,7 +286,7 @@ extension Sketch {
         let tol = lengthTolerance * 10
         let q = point(p)
         let ce = entities[cutter]!
-        let ends = ce.kind == .line ? ce.points : ce.kind == .arc ? Array(ce.points.dropFirst()) : []
+        let ends = ce.kind == .line ? ce.points : ce.kind == .arc || ce.kind == .ellipseArc ? Array(ce.points.dropFirst()) : []
         if let end = ends.first(where: { let r = point($0); return hypot(r.0 - q.0, r.1 - q.1) <= tol }) {
             if let owner = entities[p]?.owner {
                 result.removedConstraints += removeConstraints(
@@ -227,9 +305,8 @@ extension Sketch {
     public mutating func trim(_ id: String, at pick: (Double, Double)) throws -> TrimResult {
         let e = try entity(id)
         guard e.kind != .point else { throw ForgeError(.invalidParams, "trim needs a curve", entities: [id]) }
-        guard e.kind != .ellipse, e.kind != .ellipseArc, e.kind != .spline else {
-            // NOT IMPLEMENTED: ellipse trimming (needs partial ellipses) and spline trimming (needs
-            // curve–curve intersection and knot insertion).
+        guard e.kind != .spline else {
+            // NOT IMPLEMENTED: spline trimming (needs curve–curve intersection and knot insertion).
             throw ForgeError(.notImplemented, "trimming \(e.kind.rawValue)s is not implemented yet", entities: [id])
         }
         var s = self
@@ -237,15 +314,17 @@ extension Sketch {
         let xs = s.crossings(id)
         let t = s.curveParam(id, pick)
 
-        if e.kind == .circle {
+        if e.kind == .circle || e.kind == .ellipse {
             guard !xs.isEmpty else { return try deleteWhole(id) }
             guard xs.count >= 2 else {
-                throw ForgeError(.invalidParams, "a circle crossed only once cannot be trimmed (a closed curve needs two cut points)", entities: [id])
+                throw ForgeError(.invalidParams, "a closed curve crossed only once cannot be trimmed (it needs two cut points)", entities: [id])
             }
             // The removed piece runs counter-clockwise from `lo` to `hi` around the pick.
             let hiIndex = xs.firstIndex { $0.param > t } ?? 0
             let hi = xs[hiIndex], lo = xs[(hiIndex + xs.count - 1) % xs.count]
-            let arc = s.replaceCircle(id, withArcFrom: hi.point, to: lo.point, &result)
+            let arc = e.kind == .circle
+                ? s.replaceCircle(id, withArcFrom: hi.point, to: lo.point, &result)
+                : s.replaceEllipse(id, withArcFrom: hi.point, to: lo.point, &result)
             let ae = s.entities[arc]!
             try s.attach(ae.points[1], to: hi.cutter, &result)
             try s.attach(ae.points[2], to: lo.cutter, &result)
@@ -258,7 +337,8 @@ extension Sketch {
         let lo = xs.last { $0.param < t }, hi = xs.first { $0.param > t }
         if lo == nil && hi == nil { return try deleteWhole(id) }
         result.removedConstraints += s.removeConstraints(s.extentConstraints(id))
-        let (start, end) = (e.points[e.kind == .arc ? 1 : 0], e.points[e.kind == .arc ? 2 : 1])
+        let curved = e.kind == .arc || e.kind == .ellipseArc
+        let (start, end) = (e.points[curved ? 1 : 0], e.points[curved ? 2 : 1])
         switch (lo, hi) {
         case (nil, let hi?):
             result.removedConstraints += s.removeConstraints(s.constraintsOn(start))
@@ -272,19 +352,20 @@ extension Sketch {
             // Split: the original keeps start → lo, a new curve takes hi → end.
             let farEnd = s.point(end)
             let piece: String
-            if e.kind == .line {
-                piece = s.addLine(from: hi.point, to: farEnd, construction: e.construction)
-            } else {
-                piece = s.addArc(center: s.circleOf(id).c, start: hi.point, end: farEnd, construction: e.construction)
+            switch e.kind {
+            case .line: piece = s.addLine(from: hi.point, to: farEnd, construction: e.construction)
+            case .arc: piece = s.addArc(center: s.circleOf(id).c, start: hi.point, end: farEnd, construction: e.construction)
+            default: piece = s.ellipsePiece(of: id, from: hi.point, to: farEnd)
             }
             let pe = s.entities[piece]!
-            let newEnd = pe.points[e.kind == .arc ? 2 : 1], newStart = pe.points[e.kind == .arc ? 1 : 0]
+            let newEnd = pe.points[curved ? 2 : 1], newStart = pe.points[curved ? 1 : 0]
             s.retarget(s.constraintsOn(end), from: end, to: newEnd)
             s.setPoint(end, lo.point)
             try s.attach(end, to: lo.cutter, &result)
             try s.attach(newStart, to: hi.cutter, &result)
-            // The two pieces stay on one carrier.
-            if let k = try s.addUnlessImplied(e.kind == .line ? .collinear : .coradial, [id, piece]) { result.constraints.append(k) }
+            // The two pieces stay on one carrier (ellipse pieces already share axes and rotation).
+            let same: ConstraintKind = e.kind == .line ? .collinear : e.kind == .arc ? .coradial : .concentric
+            if let k = try s.addUnlessImplied(same, [id, piece]) { result.constraints.append(k) }
             result.created = [piece]
         default:
             break
@@ -314,6 +395,29 @@ extension Sketch {
         return arc
     }
 
+    /// Replaces an ellipse by a partial ellipse on it (sharing its axes and rotation), which
+    /// takes over the ellipse's relations and its centre's.
+    mutating func replaceEllipse(_ id: String, withArcFrom a: (Double, Double), to b: (Double, Double), _ result: inout TrimResult) -> String {
+        let e = entities[id]!
+        let arc = insertEllipseArc(center: point(e.points[0]), shape: e.params, from: ellipseParam(id, a), to: ellipseParam(id, b), construction: e.construction)
+        let ae = entities[arc]!
+        let keep = userConstraints.filter { $0.entities.contains(id) || $0.entities.contains(e.points[0]) }.map(\.id)
+        retarget(keep, from: id, to: arc)
+        retarget(keep, from: e.points[0], to: ae.points[0])
+        constraints.removeAll { $0.entities.contains(id) }
+        entities.removeValue(forKey: e.points[0])
+        entities.removeValue(forKey: id)
+        entityOrder.removeAll { $0 == id || $0 == e.points[0] }
+        result.deleted.append(id)
+        return arc
+    }
+
+    /// A new partial ellipse on the same ellipse as `id` (shared axes and rotation).
+    mutating func ellipsePiece(of id: String, from a: (Double, Double), to b: (Double, Double)) -> String {
+        let e = entities[id]!
+        return insertEllipseArc(center: point(e.points[0]), shape: e.params, from: ellipseParam(id, a), to: ellipseParam(id, b), construction: e.construction)
+    }
+
     // MARK: split
 
     /// Split entities (SPEC 7.1 "split entities"): a line or arc at one point into two pieces
@@ -331,29 +435,40 @@ extension Sketch {
                 let t = s.curveParam(id, q)
                 return (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1))
             }
+            if Self.isElliptic(e.kind) { return s.ellipsePoint(id, s.ellipseParam(id, q)) }
             let (c, r) = s.circleOf(id)
             let l = hypot(q.0 - c.0, q.1 - c.1)
             guard l > 0 else { return q }
             return (c.0 + (q.0 - c.0) * r / l, c.1 + (q.1 - c.1) * r / l)
         }
         switch e.kind {
-        case .line, .arc:
+        case .line, .arc, .ellipseArc:
             guard pts.count == 1 else { throw ForgeError(.invalidParams, "split a line or arc at exactly one point", entities: [id]) }
             let p = project(pts[0])
             let t = s.curveParam(id, p)
-            let span = e.kind == .line ? hypot(s.point(e.points[1]).0 - s.point(e.points[0]).0, s.point(e.points[1]).1 - s.point(e.points[0]).1) : s.circleOf(id).r
-            let limit = e.kind == .line ? 1.0 : s.arcSpan(id).sweep
+            let span: Double, limit: Double
+            switch e.kind {
+            case .line:
+                span = hypot(s.point(e.points[1]).0 - s.point(e.points[0]).0, s.point(e.points[1]).1 - s.point(e.points[0]).1)
+                limit = 1
+            case .arc: (span, limit) = (s.circleOf(id).r, s.arcSpan(id).sweep)
+            default: (span, limit) = (max(s.params[e.params[0]], s.params[e.params[1]]), s.ellipseArcSpan(id).sweep)
+            }
             guard t * span > tol, (limit - t) * span > tol else {
                 throw ForgeError(.invalidParams, "the split point must lie inside \(id), not at or beyond its ends", entities: [id])
             }
             result.removedConstraints += s.removeConstraints(s.extentConstraints(id))
-            let end = e.points[e.kind == .arc ? 2 : 1]
+            let curved = e.kind != .line
+            let end = e.points[curved ? 2 : 1]
             let farEnd = s.point(end)
-            let piece = e.kind == .line
-                ? s.addLine(from: p, to: farEnd, construction: e.construction)
-                : s.addArc(center: s.circleOf(id).c, start: p, end: farEnd, construction: e.construction)
+            let piece: String
+            switch e.kind {
+            case .line: piece = s.addLine(from: p, to: farEnd, construction: e.construction)
+            case .arc: piece = s.addArc(center: s.circleOf(id).c, start: p, end: farEnd, construction: e.construction)
+            default: piece = s.ellipsePiece(of: id, from: p, to: farEnd)
+            }
             let pe = s.entities[piece]!
-            let (newStart, newEnd) = (pe.points[e.kind == .arc ? 1 : 0], pe.points[e.kind == .arc ? 2 : 1])
+            let (newStart, newEnd) = (pe.points[curved ? 1 : 0], pe.points[curved ? 2 : 1])
             s.retarget(s.constraintsOn(end), from: end, to: newEnd)
             s.setPoint(end, p)
             if let k = try s.addUnlessImplied(.coincident, [end, newStart]) { result.constraints.append(k) }
@@ -366,13 +481,18 @@ extension Sketch {
                 result.constraints.append(k)
             }
             result.created = [piece]
-        case .circle:
-            guard pts.count == 2 else { throw ForgeError(.invalidParams, "split a circle at exactly two points", entities: [id]) }
+        case .circle, .ellipse:
+            guard pts.count == 2 else { throw ForgeError(.invalidParams, "split a closed curve at exactly two points", entities: [id]) }
             let p1 = project(pts[0]), p2 = project(pts[1])
             guard hypot(p1.0 - p2.0, p1.1 - p2.1) > tol else { throw ForgeError(.invalidParams, "the two split points coincide", entities: [id]) }
-            let a1 = s.replaceCircle(id, withArcFrom: p1, to: p2, &result)
-            let c = s.circleOf(a1).c
-            let a2 = s.addArc(center: c, start: p2, end: p1, construction: e.construction)
+            let a1: String, a2: String
+            if e.kind == .circle {
+                a1 = s.replaceCircle(id, withArcFrom: p1, to: p2, &result)
+                a2 = s.addArc(center: s.circleOf(a1).c, start: p2, end: p1, construction: e.construction)
+            } else {
+                a1 = s.replaceEllipse(id, withArcFrom: p1, to: p2, &result)
+                a2 = s.ellipsePiece(of: a1, from: p2, to: p1)
+            }
             let (e1, e2) = (s.entities[a1]!, s.entities[a2]!)
             for (x, y) in [(e1.points[2], e2.points[1]), (e2.points[2], e1.points[1])] {
                 if let k = try s.addUnlessImplied(.coincident, [x, y]) { result.constraints.append(k) }
@@ -382,8 +502,8 @@ extension Sketch {
             if let k = try s.addUnlessImplied(.concentric, [a1, a2]) { result.constraints.append(k) }
             result.created = [a1, a2]
         default:
-            // NOT IMPLEMENTED: splitting points is meaningless; ellipses need partial ellipses.
-            let later = e.kind == .ellipse || e.kind == .ellipseArc || e.kind == .spline
+            // NOT IMPLEMENTED: spline splitting (knot insertion); splitting a point is meaningless.
+            let later = e.kind == .spline
             throw ForgeError(later ? .notImplemented : .invalidParams, "\(e.kind.rawValue)s cannot be split\(later ? " yet" : "")", entities: [id])
         }
         try s.commitTrim(id)
@@ -424,7 +544,7 @@ extension Sketch {
         // Candidates: carrier intersections beyond the chosen end, within the other curve.
         var best: (d: Double, q: (Double, Double), cutter: String)?
         for other in s.entityOrder where other != id {
-            guard let o = s.entities[other], o.kind != .point, o.kind != .ellipse, o.kind != .ellipseArc, o.kind != .spline else { continue }
+            guard let o = s.entities[other], o.kind != .point, o.kind != .spline else { continue }
             for q in s.carrierIntersections(id, other) where s.withinExtent(other, q, tol: tol) {
                 let d: Double
                 if e.kind == .line {
