@@ -210,12 +210,22 @@ public enum SketchSolver {
                 // the best point found.
             }
 
-            // Diagnosis: Gram–Schmidt over rows in creation order.
+            // Diagnosis: Gram–Schmidt over rows in creation order, internal (structural) rows
+            // last: when user relations imply an arc's own radius equality, the internal row is
+            // the one dropped instead of the user relation being reported redundant.
             var basis: [[Double]] = []
-            var rowIndex = 0
+            var offsets: [(ri: Int, start: Int)] = []
+            var next = 0
             for ri in compRows {
+                offsets.append((ri, next))
+                next += rows[ri].count
+            }
+            let ordered = offsets.filter { !sketch.constraints[rows[$0.ri].constraint].isInternal }
+                + offsets.filter { sketch.constraints[rows[$0.ri].constraint].isInternal }
+            for (ri, start) in ordered {
                 let c = sketch.constraints[rows[ri].constraint]
                 var dependent = false
+                var rowIndex = start
                 for _ in 0..<rows[ri].count {
                     var v = J[rowIndex]
                     rowIndex += 1

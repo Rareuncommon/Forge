@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 876 · in progress: 97 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 875 · in progress: 98 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -127,7 +127,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/mirror/static-dynamic` | ↳ static + dynamic | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.mirror | static mirror only; dynamic mirror (mirror while sketching) NOT IMPLEMENTED |
 | `7.1/tools/linear-circular-sketch-patterns` | Tools: linear/circular sketch patterns | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.pattern_linear, execute:sketch.pattern_circular | instances tied to the seed by equal/parallel; spacing/angle not yet driven by dimensions |
 | `7.1/tools/move-copy-rotate-scale-stretch` | Tools: move/copy/rotate/scale/stretch | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.move, execute:sketch.rotate, execute:sketch.scale | move/copy/rotate/scale done at sketch level; stretch NOT IMPLEMENTED |
-| `7.1/tools/split-entities` | Tools: split entities | not started | ForgeSketch | — | — |  |
+| `7.1/tools/split-entities` | Tools: split entities | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.split | lines, arcs, circles; ellipses NOT IMPLEMENTED; not yet a feature-tree item (M2) |
 | `7.1/tools/jog-line` | Tools: jog line | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-picture` | Tools: sketch picture | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-picture/with-scale-calibration` | ↳ with scale calibration | not started | ForgeSketch | — | — |  |

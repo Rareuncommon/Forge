@@ -56,8 +56,14 @@
   dropped unless `keep_relations`; rotation drops horizontal/vertical relations (a half turn
   keeps them and flips signed distances); scaling scales the dimensions among the scaled
   geometry. Stretch is not implemented.
+- **Split:** `sketch.split` — a line or arc at one point, a circle at two points (into two
+  concentric arcs). The solver's rank analysis now considers internal (structural) rows last,
+  so relations that imply an arc's own radius equality are not reported redundant (ADR 0003).
 
 ### Findings
+- Relation choice matters for rank: after a split the pieces share a point, which makes
+  collinear's first row (line) and equal radius at diametral split points (circle)
+  degenerate; the tests' exact DOF expectations caught both.
 - Two of my new tests assumed an under-defined original stays put when a dimension changes;
   the minimum-norm solver moves both (correct). Tests now fully define the original or check
   the dimensioned quantity itself.
@@ -90,7 +96,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1 tools: splines, split, stretch, partial ellipse; planegcs oracle harness.
+2. Remaining M1 tools: splines, stretch, partial ellipse; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

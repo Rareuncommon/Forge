@@ -457,3 +457,35 @@ public enum SketchScale: Command {
         return finishTransform(&ctx, doc, s, r)
     }
 }
+
+public enum SketchSplit: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var entity: String
+        public var at: [Point2]
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "entity": "The line, arc or circle to split",
+            "at": "Split points (projected onto the curve): one for a line or arc, two for a circle",
+        ]
+        public func validate() throws {
+            guard at.count == 1 || at.count == 2 else { throw ForgeError(.invalidParams, "give one split point (line/arc) or two (circle)") }
+        }
+    }
+    public typealias Output = SketchTrimOutput
+
+    public static let name = "sketch.split"
+    public static let summary = "Split a line or arc at a point, or a circle at two points, into pieces joined by coincident relations"
+    public static let discussion = "Line pieces stay on one line, arc/circle pieces stay concentric; the far end's relations move to the new piece; length-type relations of the original are removed and listed. Ellipses: not implemented."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .notImplemented, .solverFailed]
+    public static let examples: [JSONValue] = [["entity": "line-4", "at": [[10, 0]]], ["entity": "circle-7", "at": [[5, 0], [-5, 0]]]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let r = try s.split(try localID(p.entity, in: s), at: p.at.map(\.tuple))
+        ctx.commit(doc, s)
+        return Output(ctx, s, r)
+    }
+}

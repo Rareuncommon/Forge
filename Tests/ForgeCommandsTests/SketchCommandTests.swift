@@ -279,4 +279,18 @@ struct SketchCommandTests {
         try await e.execute("edit.undo")
         #expect(try await e.execute("sketch.get").result["entities"]!.arrayValue!.count == 4)
     }
+    @Test func splitThroughTheBus() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_circle", ["center": [0, 0], "radius": 5])  // circle-1
+        let r = try await e.execute("sketch.split", ["entity": "circle-1", "at": [[5, 0], [-5, 0]]]).result
+        #expect(r["created"]?.arrayValue?.count == 2 && r["deleted"] == ["circle-1"])
+        try await e.execute("edit.undo")
+        #expect(try await entity(e, "circle-1")["radius"] == 5)
+        do {
+            try await e.execute("sketch.split", ["entity": "circle-1", "at": [[5, 0]]])
+            Issue.record("expected error")
+        } catch let err as ForgeError {
+            #expect(err.code == .invalidParams)
+        }
+    }
 }

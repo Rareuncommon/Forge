@@ -855,3 +855,50 @@ struct MoveRotateScaleTests {
         #expect(near(s.point(a), (0, 10)) && near(s.point(b), (0, 20)))
     }
 }
+
+@Suite("Sketch split")
+struct SplitTests {
+    @Test func splitLineKeepsFreedomAndRelations() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (0, 0), to: (30, 0))
+        try s.addConstraint(.horizontal, [l])
+        let (_, b) = ends(s, l)
+        try s.addConstraint(.fix, [b])
+        let len = try s.addConstraint(.distance, [l], value: 30)
+        let dof = s.resolve().dof
+        let r = try s.split(l, at: [(10, 0.5)])
+        #expect(r.removedConstraints == [len])
+        let piece = r.created[0]
+        #expect(near(s.point(ends(s, l).1), (10, 0)) && near(s.point(ends(s, piece).0), (10, 0)))
+        #expect(s.constraints.contains { $0.kind == .fix && $0.entities == [ends(s, piece).1] })
+        let rep = s.resolve()
+        // The removed length gives back 1; the split point adds 1 (it slides along the line).
+        #expect(rep.dof == dof + 2)
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        #expect(throws: ForgeError.self) { try s.split(l, at: [(0, 0)]) }
+    }
+
+    @Test func splitArcAndCircleStayDefined() throws {
+        var s = newSketch()
+        let arc = s.addArc(center: (0, 0), start: (10, 0), end: (-10, 0))
+        let dof = s.resolve().dof
+        let r = try s.split(arc, at: [(0, 20)])
+        #expect(near(s.point(s.entities[arc]!.points[2]), (0, 10)))
+        let rep = s.resolve()
+        #expect(rep.dof == dof + 1)  // the split point slides along the arc
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        _ = r
+
+        var t = newSketch()
+        let c = t.addCircle(center: (0, 0), radius: 5)
+        let d = try t.addConstraint(.diameter, [c], value: 10)
+        let dofC = t.resolve().dof
+        let rc = try t.split(c, at: [(5, 0), (-5, 0)])
+        #expect(rc.created.count == 2 && rc.deleted == [c])
+        #expect(t.constraints.first { $0.id == d }?.entities == [rc.created[0]])
+        let rep2 = t.resolve()
+        #expect(rep2.dof == dofC + 2)  // two split points, each sliding on the circle
+        #expect(rep2.redundant.isEmpty && rep2.conflicting.isEmpty)
+        #expect(near(abs(t.profiles().loops[0].signedAreaMM2), 25 * .pi, 1e-9))
+    }
+}

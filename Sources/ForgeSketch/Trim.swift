@@ -244,24 +244,11 @@ extension Sketch {
             // The removed piece runs counter-clockwise from `lo` to `hi` around the pick.
             let hiIndex = xs.firstIndex { $0.param > t } ?? 0
             let hi = xs[hiIndex], lo = xs[(hiIndex + xs.count - 1) % xs.count]
-            let (c, _) = s.circleOf(id)
-            let arc = s.addArc(center: c, start: hi.point, end: lo.point, construction: e.construction)
+            let arc = s.replaceCircle(id, withArcFrom: hi.point, to: lo.point, &result)
             let ae = s.entities[arc]!
-            // The arc replaces the circle in every relation; the circle's centre becomes the arc's.
-            let refs = s.userConstraints.filter { $0.entities.contains(id) || $0.entities.contains(e.points[0]) }
-            let whole = refs.filter { $0.kind == .symmetric && $0.entities.count == 3 && $0.entities[2] != id }.map(\.id)
-            result.removedConstraints += s.removeConstraints(whole)
-            let keep = refs.map(\.id).filter { !whole.contains($0) }
-            s.retarget(keep, from: id, to: arc)
-            s.retarget(keep, from: e.points[0], to: ae.points[0])
-            s.constraints.removeAll { $0.entities.contains(id) }
-            s.entities.removeValue(forKey: e.points[0])
-            s.entities.removeValue(forKey: id)
-            s.entityOrder.removeAll { $0 == id || $0 == e.points[0] }
             try s.attach(ae.points[1], to: hi.cutter, &result)
             try s.attach(ae.points[2], to: lo.cutter, &result)
             result.created = [arc]
-            result.deleted = [id]
             try s.commitTrim(id)
             self = s
             return result
@@ -300,6 +287,102 @@ extension Sketch {
             result.created = [piece]
         default:
             break
+        }
+        try s.commitTrim(id)
+        self = s
+        return result
+    }
+
+    /// Replaces a circle by a counter-clockwise arc on it; the arc takes over the circle's
+    /// relations (and its centre's). Whole-circle symmetry cannot carry over and is removed.
+    mutating func replaceCircle(_ id: String, withArcFrom a: (Double, Double), to b: (Double, Double), _ result: inout TrimResult) -> String {
+        let e = entities[id]!
+        let arc = addArc(center: circleOf(id).c, start: a, end: b, construction: e.construction)
+        let ae = entities[arc]!
+        let refs = userConstraints.filter { $0.entities.contains(id) || $0.entities.contains(e.points[0]) }
+        let whole = refs.filter { $0.kind == .symmetric && $0.entities.count == 3 && $0.entities[2] != id }.map(\.id)
+        result.removedConstraints += removeConstraints(whole)
+        let keep = refs.map(\.id).filter { !whole.contains($0) }
+        retarget(keep, from: id, to: arc)
+        retarget(keep, from: e.points[0], to: ae.points[0])
+        constraints.removeAll { $0.entities.contains(id) }
+        entities.removeValue(forKey: e.points[0])
+        entities.removeValue(forKey: id)
+        entityOrder.removeAll { $0 == id || $0 == e.points[0] }
+        result.deleted.append(id)
+        return arc
+    }
+
+    // MARK: split
+
+    /// Split entities (SPEC 7.1 "split entities"): a line or arc at one point into two pieces
+    /// joined by a coincidence (and kept collinear / coradial); a circle at two points into two
+    /// arcs. Length-type relations of the original are removed; the far end's relations move
+    /// to the new piece.
+    public mutating func split(_ id: String, at pts: [(Double, Double)]) throws -> TrimResult {
+        let e = try entity(id)
+        var s = self
+        var result = TrimResult()
+        let tol = s.lengthTolerance * 10
+        func project(_ q: (Double, Double)) -> (Double, Double) {
+            if e.kind == .line {
+                let (a, b) = (s.point(e.points[0]), s.point(e.points[1]))
+                let t = s.curveParam(id, q)
+                return (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1))
+            }
+            let (c, r) = s.circleOf(id)
+            let l = hypot(q.0 - c.0, q.1 - c.1)
+            guard l > 0 else { return q }
+            return (c.0 + (q.0 - c.0) * r / l, c.1 + (q.1 - c.1) * r / l)
+        }
+        switch e.kind {
+        case .line, .arc:
+            guard pts.count == 1 else { throw ForgeError(.invalidParams, "split a line or arc at exactly one point", entities: [id]) }
+            let p = project(pts[0])
+            let t = s.curveParam(id, p)
+            let span = e.kind == .line ? hypot(s.point(e.points[1]).0 - s.point(e.points[0]).0, s.point(e.points[1]).1 - s.point(e.points[0]).1) : s.circleOf(id).r
+            let limit = e.kind == .line ? 1.0 : s.arcSpan(id).sweep
+            guard t * span > tol, (limit - t) * span > tol else {
+                throw ForgeError(.invalidParams, "the split point must lie inside \(id), not at or beyond its ends", entities: [id])
+            }
+            result.removedConstraints += s.removeConstraints(s.extentConstraints(id))
+            let end = e.points[e.kind == .arc ? 2 : 1]
+            let farEnd = s.point(end)
+            let piece = e.kind == .line
+                ? s.addLine(from: p, to: farEnd, construction: e.construction)
+                : s.addArc(center: s.circleOf(id).c, start: p, end: farEnd, construction: e.construction)
+            let pe = s.entities[piece]!
+            let (newStart, newEnd) = (pe.points[e.kind == .arc ? 1 : 0], pe.points[e.kind == .arc ? 2 : 1])
+            s.retarget(s.constraintsOn(end), from: end, to: newEnd)
+            s.setPoint(end, p)
+            if let k = try s.addUnlessImplied(.coincident, [end, newStart]) { result.constraints.append(k) }
+            // The pieces share a point, so what is left to say is: the piece's far end stays on
+            // the original line (collinear's first row would be degenerate), or the centres
+            // coincide (the equal radius then follows).
+            if e.kind == .line {
+                if let k = try s.addUnlessImplied(.onEntity, [newEnd, id]) { result.constraints.append(k) }
+            } else if let k = try s.addUnlessImplied(.concentric, [id, piece]) {
+                result.constraints.append(k)
+            }
+            result.created = [piece]
+        case .circle:
+            guard pts.count == 2 else { throw ForgeError(.invalidParams, "split a circle at exactly two points", entities: [id]) }
+            let p1 = project(pts[0]), p2 = project(pts[1])
+            guard hypot(p1.0 - p2.0, p1.1 - p2.1) > tol else { throw ForgeError(.invalidParams, "the two split points coincide", entities: [id]) }
+            let a1 = s.replaceCircle(id, withArcFrom: p1, to: p2, &result)
+            let c = s.circleOf(a1).c
+            let a2 = s.addArc(center: c, start: p2, end: p1, construction: e.construction)
+            let (e1, e2) = (s.entities[a1]!, s.entities[a2]!)
+            for (x, y) in [(e1.points[2], e2.points[1]), (e2.points[2], e1.points[1])] {
+                if let k = try s.addUnlessImplied(.coincident, [x, y]) { result.constraints.append(k) }
+            }
+            // Concentric + both joints; the second arc's own radius equality is then implied.
+            // (Equal radii would be singular when the split points are diametrically opposite.)
+            if let k = try s.addUnlessImplied(.concentric, [a1, a2]) { result.constraints.append(k) }
+            result.created = [a1, a2]
+        default:
+            // NOT IMPLEMENTED: splitting points is meaningless; ellipses need partial ellipses.
+            throw ForgeError(e.kind == .ellipse ? .notImplemented : .invalidParams, "\(e.kind.rawValue)s cannot be split\(e.kind == .ellipse ? " yet" : "")", entities: [id])
         }
         try s.commitTrim(id)
         self = s

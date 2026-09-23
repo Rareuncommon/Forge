@@ -86,6 +86,12 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
 - **Whole-curve symmetry:** `symmetric` also relates two lines (4 rows), circles (3) or arcs
   (5: centres, start↔end, and the remaining end's angle as a cross product, which stays
   regular where a perpendicular-projection or midpoint form becomes singular).
+- **Internal rows last in the rank analysis:** an arc's internal radius equality is
+  structural. When user relations imply it (e.g. a circle split into two concentric arcs
+  sharing both ends), the internal row is the one dropped as dependent, instead of a user
+  relation being reported redundant. DOF is unchanged (rank is order-independent); the
+  trade-off is that a user relation that merely restates an arc's own radius equality is not
+  flagged.
 - **Tests:** unit tests with analytic answers, 40 seeded property tests (random closed
   polygons + circle, dimensions measured from a known configuration, parameters perturbed,
   re-solved), and golden sketch models. The planegcs oracle harness is still to do.
