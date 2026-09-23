@@ -587,3 +587,107 @@ struct MirrorPatternTests {
         #expect(near(s.point(m), (10 * cos(.pi / 4), 10 * sin(.pi / 4))))
     }
 }
+
+@Suite("Sketch trim and extend")
+struct TrimExtendTests {
+    @Test func trimAnEndBackToACrossingLine() throws {
+        var s = newSketch()
+        let h = s.addLine(from: (0, 0), to: (20, 0))
+        let v = s.addLine(from: (10, -5), to: (10, 5))
+        let len = try s.addConstraint(.distance, [h], value: 20)
+        let dof = s.resolve().dof
+        let r = try s.trim(h, at: (15, 0.1))
+        #expect(r.removedConstraints == [len])
+        #expect(r.constraints.count == 1)
+        #expect(s.constraints.first { $0.id == r.constraints[0] }?.kind == .onEntity)
+        let (a, b) = ends(s, h)
+        #expect(near(s.point(a), (0, 0)) && near(s.point(b), (10, 0)))
+        #expect(s.resolve().dof == dof + 1 - 1)  // length dimension gone, end held on the vertical
+        _ = v
+    }
+
+    @Test func trimTheMiddleSplitsTheLine() throws {
+        var s = newSketch()
+        let h = s.addLine(from: (0, 0), to: (30, 0))
+        s.addLine(from: (10, -5), to: (10, 5))
+        s.addLine(from: (20, -5), to: (20, 5))
+        try s.addConstraint(.horizontal, [h])
+        let (_, oldEnd) = ends(s, h)
+        try s.addConstraint(.fix, [oldEnd])
+        let r = try s.trim(h, at: (15, 0))
+        #expect(r.created.count == 1)
+        let piece = r.created[0]
+        let (a, b) = ends(s, h), (c, d) = ends(s, piece)
+        #expect(near(s.point(a), (0, 0)) && near(s.point(b), (10, 0)))
+        #expect(near(s.point(c), (20, 0)) && near(s.point(d), (30, 0)))
+        // The fix on the old far end moved to the piece's end; the pieces are collinear.
+        #expect(s.constraints.contains { $0.kind == .fix && $0.entities == [d] })
+        #expect(s.constraints.contains { $0.kind == .collinear && Set($0.entities) == [h, piece] })
+        let rep = s.resolve()
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+    }
+
+    @Test func trimmingACircleLeavesAnArcThatKeepsItsDimension() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (0, 0), radius: 10)
+        s.addLine(from: (-20, 0), to: (20, 0))
+        let dia = try s.addConstraint(.diameter, [c], value: 20)
+        let r = try s.trim(c, at: (0, 10))
+        #expect(r.deleted == [c] && r.created.count == 1)
+        let arc = s.entities[r.created[0]]!
+        #expect(arc.kind == .arc)
+        // Lower half remains: counter-clockwise from (-10, 0) to (10, 0).
+        #expect(near(s.point(arc.points[1]), (-10, 0)) && near(s.point(arc.points[2]), (10, 0)))
+        #expect(s.constraints.first { $0.id == dia }?.entities == [arc.id])
+        let rep = s.resolve()
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+    }
+
+    @Test func trimmingAnUncrossedCurveDeletesIt() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (0, 0), to: (5, 5))
+        let r = try s.trim(l, at: (2, 2))
+        #expect(r.deleted == [l])
+        #expect(s.entities[l] == nil)
+    }
+
+    @Test func trimTheMiddleOfAnArc() throws {
+        var s = newSketch()
+        let arc = s.addArc(center: (0, 0), start: (10, 0), end: (-10, 0))
+        s.addLine(from: (0, 0), to: (0, 20))
+        s.addLine(from: (5, 0), to: (5, 20))
+        // Pick at 75°: between the crossings at 60° (x = 5) and 90° (x = 0).
+        let r = try s.trim(arc, at: (10 * cos(75 * .pi / 180), 10 * sin(75 * .pi / 180)))
+        let a = s.entities[arc]!, p = s.entities[r.created[0]]!
+        #expect(near(s.point(a.points[2]), (5, 75.0.squareRoot())))
+        #expect(near(s.point(p.points[1]), (0, 10)) && near(s.point(p.points[2]), (-10, 0)))
+        let rep = s.resolve()
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+    }
+
+    @Test func extendLinesAndArcs() throws {
+        var s = newSketch()
+        let h = s.addLine(from: (0, 0), to: (5, 0))
+        s.addLine(from: (10, -5), to: (10, 5))
+        _ = try s.extend(h, near: (4, 0))
+        #expect(near(s.point(ends(s, h).1), (10, 0)))
+        #expect(throws: ForgeError.self) { try s.extend(h, near: (0.5, 0)) }
+
+        var t = newSketch()
+        let arc = t.addArc(center: (0, 0), start: (10, 0), end: (0, 10))
+        t.addLine(from: (-6, 0), to: (-6, 20))
+        _ = try t.extend(arc, near: (0, 10))
+        #expect(near(t.point(t.entities[arc]!.points[2]), (-6, 8)))
+    }
+
+    @Test func ellipsesAreNotTrimmedYet() throws {
+        var s = newSketch()
+        let e = s.addEllipse(center: (0, 0), major: 5, minor: 3, rotation: 0)
+        do {
+            _ = try s.trim(e, at: (5, 0))
+            Issue.record("expected not_implemented")
+        } catch let err as ForgeError {
+            #expect(err.code == .notImplemented)
+        }
+    }
+}

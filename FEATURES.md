@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 884 · in progress: 89 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 881 · in progress: 92 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -111,11 +111,11 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/construction-geometry` | Entities: construction geometry | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.set_construction | excluded from profiles, drawn grey |
 | `7.1/entities/fillet-chamfer` | Entities: fillet/chamfer | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, golden 106 | execute:sketch.fillet, execute:sketch.chamfer | fillet and chamfer (distance–distance, distance–angle) with virtual sharps |
 | `7.1/entities/fillet-chamfer/sketch` | ↳ sketch | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift | execute:sketch.fillet | see parent |
-| `7.1/tools/trim` | Tools: trim | not started | ForgeSketch | — | — |  |
-| `7.1/tools/trim/power` | ↳ power | not started | ForgeSketch | — | — |  |
+| `7.1/tools/trim` | Tools: trim | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift, Tests/GoldenModelTests/Models/018_trimmed_circle_segment.json | execute:sketch.trim | lines, arcs, circles; ellipses NOT IMPLEMENTED; not yet a feature-tree item (M2) |
+| `7.1/tools/trim/power` | ↳ power | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift, Tests/GoldenModelTests/Models/018_trimmed_circle_segment.json | execute:sketch.trim | one pick per call (no drag-across-curves gesture in the UI yet) |
 | `7.1/tools/trim/corner` | ↳ corner | not started | ForgeSketch | — | — |  |
 | `7.1/tools/trim/inside-outside` | ↳ inside/outside | not started | ForgeSketch | — | — |  |
-| `7.1/tools/extend` | Tools: extend | not started | ForgeSketch | — | — |  |
+| `7.1/tools/extend` | Tools: extend | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.extend | lines and arcs |
 | `7.1/tools/offset` | Tools: offset | not started | ForgeSketch | — | — |  |
 | `7.1/tools/offset/bi-directional` | ↳ bi-directional | not started | ForgeSketch | — | — |  |
 | `7.1/tools/offset/cap-ends` | ↳ cap ends | not started | ForgeSketch | — | — |  |

@@ -222,4 +222,23 @@ struct SketchCommandTests {
             #expect(err.code == .invalidParams)
         }
     }
+    @Test func trimAndExtendThroughTheBus() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_line", ["start": [0, 0], "end": [5, 0], "infer": false])  // line-1
+        try await e.execute("sketch.add_line", ["start": [10, -5], "end": [10, 5], "infer": false])  // line-4
+        let ext = try await e.execute("sketch.extend", ["entity": "line-1", "near": [4, 0]]).result
+        #expect(ext["constraints"]?.arrayValue?.count == 1)
+        #expect(try await entity(e, "point-3")["at"] == [10, 0])
+        let t = try await e.execute("sketch.trim", ["entity": "line-4", "at": [10, 3]]).result
+        #expect(t["created"] == [] && t["deleted"] == [])
+        #expect(try await entity(e, "point-6")["at"] == [10, 0])
+        try await e.execute("edit.undo")
+        #expect(try await entity(e, "point-6")["at"] == [10, 5])
+        do {
+            try await e.execute("sketch.extend", ["entity": "line-1", "near": [0, 0]])
+            Issue.record("expected error")
+        } catch let err as ForgeError {
+            #expect(err.code == .invalidParams)
+        }
+    }
 }

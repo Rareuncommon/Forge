@@ -154,3 +154,82 @@ public enum SketchPatternCircular: Command {
         return SketchPatternResult(sketch: r.sketch, created: r.created, instances: instances, constraints: r.constraints)
     }
 }
+
+public struct SketchTrimOutput: Codable, Sendable {
+    public var sketch: SketchSummary
+    public var created: [String]
+    public var deleted: [String]
+    public var removedConstraints: [String]
+    public var constraints: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case sketch, created, deleted, constraints
+        case removedConstraints = "removed_constraints"
+    }
+
+    init(_ ctx: CommandContext, _ s: Sketch, _ r: TrimResult) {
+        sketch = SketchSummary(s, active: ctx.document.activeSketch == s.id)
+        created = r.created
+        deleted = r.deleted
+        removedConstraints = r.removedConstraints
+        constraints = r.constraints
+    }
+}
+
+public enum SketchTrim: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented {
+        public var sketch: String?
+        public var entity: String
+        public var at: Point2
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "entity": "The line, arc or circle to trim",
+            "at": "A point on (or near) the piece to remove, in sketch coordinates",
+        ]
+    }
+    public typealias Output = SketchTrimOutput
+
+    public static let name = "sketch.trim"
+    public static let summary = "Power trim: remove the piece of a curve between the curves crossing it on either side of a point"
+    public static let discussion = "An end piece moves the curve's end to the crossing; a middle piece splits the curve (the pieces stay collinear/coradial); a circle becomes an arc; a curve with no crossings is deleted. New ends are held on the crossing curves. Relations that depended on the removed extent (length, midpoint, equal length, whole-curve symmetry) or on a removed end are deleted and listed. Ellipses: not implemented."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .notImplemented, .solverFailed]
+    public static let examples: [JSONValue] = [["entity": "line-4", "at": [15, 0]], ["entity": "circle-7", "at": [0, 10]]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let r = try s.trim(try localID(p.entity, in: s), at: p.at.tuple)
+        ctx.commit(doc, s)
+        return Output(ctx, s, r)
+    }
+}
+
+public enum SketchExtend: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented {
+        public var sketch: String?
+        public var entity: String
+        public var near: Point2
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "entity": "The line or arc to extend",
+            "near": "A point near the end to extend, in sketch coordinates",
+        ]
+    }
+    public typealias Output = SketchTrimOutput
+
+    public static let name = "sketch.extend"
+    public static let summary = "Extend the nearer end of a line or arc to the next curve it reaches"
+    public static let discussion = "Relations on the moved end and extent-dependent dimensions are deleted and listed; the new end is held on the reached curve."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .solverFailed]
+    public static let examples: [JSONValue] = [["entity": "line-4", "near": [4, 0]]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let r = try s.extend(try localID(p.entity, in: s), near: p.near.tuple)
+        ctx.commit(doc, s)
+        return Output(ctx, s, r)
+    }
+}

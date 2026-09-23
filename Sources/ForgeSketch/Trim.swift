@@ -1,0 +1,362 @@
+import ForgeCore
+import Foundation
+
+/// A point where a curve is crossed by another sketch curve.
+struct Crossing {
+    /// Parameter along the target: t ∈ [0, 1] for a line (start → end), counter-clockwise
+    /// angle from the start for an arc, absolute angle for a circle.
+    var param: Double
+    var point: (Double, Double)
+    var cutter: String
+}
+
+/// What a trim or extend did.
+public struct TrimResult: Sendable {
+    /// Curves created (the far piece of a split, or the arc left from a trimmed circle).
+    public var created: [String] = []
+    /// Curves deleted entirely.
+    public var deleted: [String] = []
+    /// Constraints removed because they described geometry that no longer exists.
+    public var removedConstraints: [String] = []
+    /// Relations added to hold new endpoints on the cutting curves.
+    public var constraints: [String] = []
+}
+
+extension Sketch {
+    // MARK: geometry helpers (current values)
+
+    func circleOf(_ id: String) -> (c: (Double, Double), r: Double) {
+        let e = entities[id]!
+        let c = point(e.points[0])
+        if e.kind == .circle { return (c, params[e.params[0]]) }
+        let s = point(e.points[1])
+        return (c, hypot(s.0 - c.0, s.1 - c.1))
+    }
+
+    /// Start angle and counter-clockwise sweep of an arc, sweep ∈ (0, 2π].
+    func arcSpan(_ id: String) -> (a0: Double, sweep: Double) {
+        let e = entities[id]!
+        let c = point(e.points[0]), s = point(e.points[1]), t = point(e.points[2])
+        let a0 = atan2(s.1 - c.1, s.0 - c.0)
+        var sweep = atan2(t.1 - c.1, t.0 - c.0) - a0
+        while sweep <= 1e-12 { sweep += 2 * .pi }
+        return (a0, sweep)
+    }
+
+    static func wrap(_ a: Double) -> Double {
+        var x = a.truncatingRemainder(dividingBy: 2 * .pi)
+        if x < 0 { x += 2 * .pi }
+        return x
+    }
+
+    var lengthTolerance: Double { 1e-9 * max(1, params.map(abs).max() ?? 1) }
+
+    /// Does point q (known to lie on the entity's carrier line/circle) lie within its extent?
+    func withinExtent(_ id: String, _ q: (Double, Double), tol: Double) -> Bool {
+        let e = entities[id]!
+        switch e.kind {
+        case .line:
+            let a = point(e.points[0]), b = point(e.points[1])
+            let dx = b.0 - a.0, dy = b.1 - a.1, l = hypot(dx, dy)
+            let t = ((q.0 - a.0) * dx + (q.1 - a.1) * dy) / (l * l)
+            return t >= -tol / l && t <= 1 + tol / l
+        case .arc:
+            let (c, r) = circleOf(id)
+            let (a0, sweep) = arcSpan(id)
+            let s = Self.wrap(atan2(q.1 - c.1, q.0 - c.0) - a0)
+            return s <= sweep + tol / r || s >= 2 * .pi - tol / r
+        default:
+            return true
+        }
+    }
+
+    /// Intersections of two carriers (infinite line or full circle).
+    func carrierIntersections(_ a: String, _ b: String) -> [(Double, Double)] {
+        let ea = entities[a]!, eb = entities[b]!
+        func line(_ e: SketchEntity) -> ((Double, Double), (Double, Double)) { (point(e.points[0]), point(e.points[1])) }
+        switch (ea.kind, eb.kind) {
+        case (.line, .line):
+            let (p, p2) = line(ea), (q, q2) = line(eb)
+            let r = (p2.0 - p.0, p2.1 - p.1), s = (q2.0 - q.0, q2.1 - q.1)
+            let den = r.0 * s.1 - r.1 * s.0
+            guard abs(den) > 1e-12 * hypot(r.0, r.1) * hypot(s.0, s.1) else { return [] }
+            let t = ((q.0 - p.0) * s.1 - (q.1 - p.1) * s.0) / den
+            return [(p.0 + t * r.0, p.1 + t * r.1)]
+        case (.line, .circle), (.line, .arc):
+            let (p, p2) = line(ea)
+            let (c, rad) = circleOf(b)
+            let d = (p2.0 - p.0, p2.1 - p.1), f = (p.0 - c.0, p.1 - c.1)
+            let A = d.0 * d.0 + d.1 * d.1, B = 2 * (f.0 * d.0 + f.1 * d.1), C = f.0 * f.0 + f.1 * f.1 - rad * rad
+            var disc = B * B - 4 * A * C
+            if disc < 0 && disc > -1e-9 * B * B { disc = 0 }
+            guard disc >= 0 else { return [] }
+            let sq = disc.squareRoot()
+            let ts = sq == 0 ? [-B / (2 * A)] : [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]
+            return ts.map { (p.0 + $0 * d.0, p.1 + $0 * d.1) }
+        case (.circle, .line), (.arc, .line):
+            return carrierIntersections(b, a)
+        case (.circle, .circle), (.circle, .arc), (.arc, .circle), (.arc, .arc):
+            let (c1, r1) = circleOf(a), (c2, r2) = circleOf(b)
+            let dx = c2.0 - c1.0, dy = c2.1 - c1.1, d = hypot(dx, dy)
+            guard d > 1e-12, d <= r1 + r2 + 1e-12, d >= abs(r1 - r2) - 1e-12 else { return [] }
+            let x = (d * d + r1 * r1 - r2 * r2) / (2 * d)
+            let h = max(0, r1 * r1 - x * x).squareRoot()
+            let m = (c1.0 + x * dx / d, c1.1 + x * dy / d)
+            if h == 0 { return [m] }
+            return [(m.0 - h * dy / d, m.1 + h * dx / d), (m.0 + h * dy / d, m.1 - h * dx / d)]
+        default:
+            return []  // ellipses are not cutters/targets yet
+        }
+    }
+
+    /// Parameter of a point on the target curve (see `Crossing.param`).
+    func curveParam(_ id: String, _ q: (Double, Double)) -> Double {
+        let e = entities[id]!
+        switch e.kind {
+        case .line:
+            let a = point(e.points[0]), b = point(e.points[1])
+            let dx = b.0 - a.0, dy = b.1 - a.1
+            return ((q.0 - a.0) * dx + (q.1 - a.1) * dy) / (dx * dx + dy * dy)
+        case .arc:
+            let (c, _) = circleOf(id)
+            return Self.wrap(atan2(q.1 - c.1, q.0 - c.0) - arcSpan(id).a0)
+        default:
+            let (c, _) = circleOf(id)
+            return Self.wrap(atan2(q.1 - c.1, q.0 - c.0))
+        }
+    }
+
+    /// Where other curves cross `id`, sorted along it. Crossings at the target's own ends are
+    /// excluded (they are connections, not cut points).
+    func crossings(_ id: String) -> [Crossing] {
+        let tol = lengthTolerance * 10
+        let e = entities[id]!
+        var out: [Crossing] = []
+        for other in entityOrder where other != id {
+            guard let o = entities[other], o.kind != .point, o.kind != .ellipse else { continue }
+            for q in carrierIntersections(id, other) where withinExtent(other, q, tol: tol) && withinExtent(id, q, tol: tol) {
+                let t = curveParam(id, q)
+                switch e.kind {
+                case .line:
+                    let l = hypot(point(e.points[1]).0 - point(e.points[0]).0, point(e.points[1]).1 - point(e.points[0]).1)
+                    guard t * l > tol, (1 - t) * l > tol else { continue }
+                case .arc:
+                    let (_, r) = circleOf(id), sweep = arcSpan(id).sweep
+                    guard t * r > tol, (sweep - t) * r > tol else { continue }
+                default: break
+                }
+                if !out.contains(where: { abs($0.param - t) < 1e-12 && $0.cutter == other }) {
+                    out.append(Crossing(param: t, point: q, cutter: other))
+                }
+            }
+        }
+        return out.sorted { $0.param < $1.param }
+    }
+
+    // MARK: constraint bookkeeping
+
+    /// Constraints whose meaning depends on a curve's extent (length, midpoint, whole-curve
+    /// symmetry, equal length) — they cannot survive a trim.
+    func extentConstraints(_ curve: String) -> [String] {
+        userConstraints.filter { c in
+            guard c.entities.contains(curve) else { return false }
+            switch c.kind {
+            case .distance, .horizontalDistance, .verticalDistance: return c.entities == [curve]
+            case .midpoint: return true
+            case .equal: return entities[curve]?.kind == .line
+            case .symmetric: return c.entities.count == 3 && c.entities[2] != curve
+            default: return false
+            }
+        }.map(\.id)
+    }
+
+    mutating func removeConstraints(_ ids: [String]) -> [String] {
+        let set = Set(ids)
+        let removed = constraints.filter { set.contains($0.id) && !$0.isInternal }.map(\.id)
+        constraints.removeAll { set.contains($0.id) && !$0.isInternal }
+        return removed
+    }
+
+    /// Constraints that reference a point, or use it as a tangency point.
+    func constraintsOn(_ pointID: String) -> [String] {
+        userConstraints.filter { $0.entities.contains(pointID) || $0.at == pointID }.map(\.id)
+    }
+
+    mutating func retarget(_ constraintIDs: [String], from old: String, to new: String) {
+        for i in constraints.indices where constraintIDs.contains(constraints[i].id) {
+            constraints[i].entities = constraints[i].entities.map { $0 == old ? new : $0 }
+            if constraints[i].at == old { constraints[i].at = new }
+        }
+    }
+
+    mutating func setPoint(_ id: String, _ q: (Double, Double)) {
+        let e = entities[id]!
+        params[e.params[0]] = q.0
+        params[e.params[1]] = q.1
+    }
+
+    /// Hold a new endpoint on the curve that cut it: coincident with the cutter's endpoint if
+    /// the cut is there, otherwise on the cutter. A relation holding that cutter endpoint on
+    /// this point's curve is replaced (the coincidence implies it and makes it degenerate).
+    mutating func attach(_ p: String, to cutter: String, _ result: inout TrimResult) throws {
+        let tol = lengthTolerance * 10
+        let q = point(p)
+        let ce = entities[cutter]!
+        let ends = ce.kind == .line ? ce.points : ce.kind == .arc ? Array(ce.points.dropFirst()) : []
+        if let end = ends.first(where: { let r = point($0); return hypot(r.0 - q.0, r.1 - q.1) <= tol }) {
+            if let owner = entities[p]?.owner {
+                result.removedConstraints += removeConstraints(
+                    userConstraints.filter { $0.kind == .onEntity && $0.entities == [end, owner] }.map(\.id))
+            }
+            if let k = try addUnlessImplied(.coincident, [p, end]) { result.constraints.append(k) }
+            return
+        }
+        if let k = try addUnlessImplied(.onEntity, [p, cutter]) { result.constraints.append(k) }
+    }
+
+    // MARK: trim
+
+    /// Power trim (SPEC 7.1 "trim"): removes the piece of `id` between the crossings on either
+    /// side of `pick`. A curve with no crossings is deleted; a middle piece splits the curve.
+    public mutating func trim(_ id: String, at pick: (Double, Double)) throws -> TrimResult {
+        let e = try entity(id)
+        guard e.kind != .point else { throw ForgeError(.invalidParams, "trim needs a curve", entities: [id]) }
+        guard e.kind != .ellipse else {
+            // NOT IMPLEMENTED: ellipse trimming (needs partial ellipses, SPEC 7.1 entities).
+            throw ForgeError(.notImplemented, "trimming ellipses is not implemented yet", entities: [id])
+        }
+        var s = self
+        var result = TrimResult()
+        let xs = s.crossings(id)
+        let t = s.curveParam(id, pick)
+
+        if e.kind == .circle {
+            guard !xs.isEmpty else { return try deleteWhole(id) }
+            guard xs.count >= 2 else {
+                throw ForgeError(.invalidParams, "a circle crossed only once cannot be trimmed (a closed curve needs two cut points)", entities: [id])
+            }
+            // The removed piece runs counter-clockwise from `lo` to `hi` around the pick.
+            let hiIndex = xs.firstIndex { $0.param > t } ?? 0
+            let hi = xs[hiIndex], lo = xs[(hiIndex + xs.count - 1) % xs.count]
+            let (c, _) = s.circleOf(id)
+            let arc = s.addArc(center: c, start: hi.point, end: lo.point, construction: e.construction)
+            let ae = s.entities[arc]!
+            // The arc replaces the circle in every relation; the circle's centre becomes the arc's.
+            let refs = s.userConstraints.filter { $0.entities.contains(id) || $0.entities.contains(e.points[0]) }
+            let whole = refs.filter { $0.kind == .symmetric && $0.entities.count == 3 && $0.entities[2] != id }.map(\.id)
+            result.removedConstraints += s.removeConstraints(whole)
+            let keep = refs.map(\.id).filter { !whole.contains($0) }
+            s.retarget(keep, from: id, to: arc)
+            s.retarget(keep, from: e.points[0], to: ae.points[0])
+            s.constraints.removeAll { $0.entities.contains(id) }
+            s.entities.removeValue(forKey: e.points[0])
+            s.entities.removeValue(forKey: id)
+            s.entityOrder.removeAll { $0 == id || $0 == e.points[0] }
+            try s.attach(ae.points[1], to: hi.cutter, &result)
+            try s.attach(ae.points[2], to: lo.cutter, &result)
+            result.created = [arc]
+            result.deleted = [id]
+            try s.commitTrim(id)
+            self = s
+            return result
+        }
+
+        let lo = xs.last { $0.param < t }, hi = xs.first { $0.param > t }
+        if lo == nil && hi == nil { return try deleteWhole(id) }
+        result.removedConstraints += s.removeConstraints(s.extentConstraints(id))
+        let (start, end) = (e.points[e.kind == .arc ? 1 : 0], e.points[e.kind == .arc ? 2 : 1])
+        switch (lo, hi) {
+        case (nil, let hi?):
+            result.removedConstraints += s.removeConstraints(s.constraintsOn(start))
+            s.setPoint(start, hi.point)
+            try s.attach(start, to: hi.cutter, &result)
+        case (let lo?, nil):
+            result.removedConstraints += s.removeConstraints(s.constraintsOn(end))
+            s.setPoint(end, lo.point)
+            try s.attach(end, to: lo.cutter, &result)
+        case (let lo?, let hi?):
+            // Split: the original keeps start → lo, a new curve takes hi → end.
+            let farEnd = s.point(end)
+            let piece: String
+            if e.kind == .line {
+                piece = s.addLine(from: hi.point, to: farEnd, construction: e.construction)
+            } else {
+                piece = s.addArc(center: s.circleOf(id).c, start: hi.point, end: farEnd, construction: e.construction)
+            }
+            let pe = s.entities[piece]!
+            let newEnd = pe.points[e.kind == .arc ? 2 : 1], newStart = pe.points[e.kind == .arc ? 1 : 0]
+            s.retarget(s.constraintsOn(end), from: end, to: newEnd)
+            s.setPoint(end, lo.point)
+            try s.attach(end, to: lo.cutter, &result)
+            try s.attach(newStart, to: hi.cutter, &result)
+            // The two pieces stay on one carrier.
+            if let k = try s.addUnlessImplied(e.kind == .line ? .collinear : .coradial, [id, piece]) { result.constraints.append(k) }
+            result.created = [piece]
+        default:
+            break
+        }
+        try s.commitTrim(id)
+        self = s
+        return result
+    }
+
+    mutating func deleteWhole(_ id: String) throws -> TrimResult {
+        let (ents, cons) = try delete(entities: [id])
+        resolve()
+        return TrimResult(created: [], deleted: ents.filter { $0 == id }, removedConstraints: cons, constraints: [])
+    }
+
+    mutating func commitTrim(_ id: String) throws {
+        refreshDriven()
+        let r = resolve()
+        if r.status == .failed || !r.conflicting.isEmpty {
+            throw ForgeError(
+                .solverFailed, "the sketch cannot be solved after trimming \(id); relations on the trimmed curve conflict with its new ends",
+                entities: [id] + r.conflicting)
+        }
+    }
+
+    // MARK: extend
+
+    /// Extend (SPEC 7.1 "extend"): moves the end of a line or arc nearest `pick` to the next
+    /// curve it would reach. Relations on that end are dropped, and the end is held on the
+    /// curve it reaches.
+    public mutating func extend(_ id: String, near pick: (Double, Double)) throws -> TrimResult {
+        let e = try entity(id)
+        guard e.kind == .line || e.kind == .arc else { throw ForgeError(.invalidParams, "extend needs a line or an arc", entities: [id]) }
+        var s = self
+        let tol = s.lengthTolerance * 10
+        let (startID, endID) = e.kind == .line ? (e.points[0], e.points[1]) : (e.points[1], e.points[2])
+        let (ps, pe) = (s.point(startID), s.point(endID))
+        let atEnd = hypot(pick.0 - pe.0, pick.1 - pe.1) <= hypot(pick.0 - ps.0, pick.1 - ps.1)
+        let moving = atEnd ? endID : startID
+        // Candidates: carrier intersections beyond the chosen end, within the other curve.
+        var best: (d: Double, q: (Double, Double), cutter: String)?
+        for other in s.entityOrder where other != id {
+            guard let o = s.entities[other], o.kind != .point, o.kind != .ellipse else { continue }
+            for q in s.carrierIntersections(id, other) where s.withinExtent(other, q, tol: tol) {
+                let d: Double
+                if e.kind == .line {
+                    let t = s.curveParam(id, q), l = hypot(pe.0 - ps.0, pe.1 - ps.1)
+                    d = atEnd ? (t - 1) * l : -t * l
+                } else {
+                    let (_, r) = s.circleOf(id), (_, sweep) = s.arcSpan(id)
+                    let a = s.curveParam(id, q)  // CCW from start
+                    guard a > sweep + tol / r else { continue }  // on the arc already
+                    d = atEnd ? (a - sweep) * r : (2 * .pi - a) * r
+                }
+                if d > tol, d < (best?.d ?? .infinity) { best = (d, q, other) }
+            }
+        }
+        guard let target = best else {
+            throw ForgeError(.invalidParams, "\(id) does not reach any other curve when extended from that end", entities: [id])
+        }
+        var result = TrimResult()
+        result.removedConstraints += s.removeConstraints(s.extentConstraints(id) + s.constraintsOn(moving))
+        s.setPoint(moving, target.q)
+        try s.attach(moving, to: target.cutter, &result)
+        try s.commitTrim(id)
+        self = s
+        return result
+    }
+}

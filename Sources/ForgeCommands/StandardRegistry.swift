@@ -48,6 +48,8 @@ extension CommandRegistry {
         r.register(SketchMirror.self)
         r.register(SketchPatternLinear.self)
         r.register(SketchPatternCircular.self)
+        r.register(SketchTrim.self)
+        r.register(SketchExtend.self)
         // bodies
         r.register(BodyCreateBox.self)
         r.register(BodyCreateCylinder.self)

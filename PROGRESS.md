@@ -41,8 +41,16 @@
   or partial angle, about coordinates or a point/circle). Copies keep the seed's topology
   (coincident / on-curve / tangent), dropping relations the symmetry already implies. Golden
   model 017: a mirrored half profile extruded (analytic area 198 mm², 10 faces).
+- **Trim and extend:** `sketch.trim` (power trim of lines, arcs and circles: end pieces,
+  middle pieces that split the curve into collinear/coradial pieces, circle → arc, uncrossed
+  curve deleted) and `sketch.extend` (lines and arcs to the next curve). New ends are held by
+  coincident/on-curve relations; relations that depended on the removed extent are deleted
+  and listed. Golden model 018: circle and chord trimmed to a segment and extruded.
 
 ### Findings
+- Trimming a line to an arc's end first left the two joined only by position: the arc end's
+  earlier on-line relation made the new coincidence look redundant. The trim now replaces
+  that relation with the coincidence; golden 018 checks the resulting DOF (4).
 - JSONEncoder wrote `-0` for a plane axis that decodes to `0`, so the second save differed.
   model.json is now written through `JSONValue` canonicalisation.
 - Distance-form tangency is only second-order when the curves also share the tangent point,
@@ -57,7 +65,8 @@
   palette can already drive every sketch command.
 - Pattern instances are placed exactly and tied to the seed's size, but spacing/angle are
   not yet dimensions that drive them; dynamic mirror is not implemented.
-- Not started in 7.1: splines, partial ellipse, parabola, conic, text, trim / extend / offset,
+- Ellipses cannot be trimmed/extended (no partial ellipse yet); trim is one pick per call.
+- Not started in 7.1: splines, partial ellipse, parabola, conic, text, offset,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
@@ -67,7 +76,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1 tools: trim/extend, offset, splines; planegcs oracle harness.
+2. Remaining M1 tools: offset, splines, move/copy/rotate; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 
