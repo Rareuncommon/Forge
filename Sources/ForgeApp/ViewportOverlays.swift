@@ -15,6 +15,9 @@ struct ViewportArea: View {
             ViewportView()
             SketchAnnotationsLayer()
             CursorTooltip()
+            ModifyBox()
+            ContextToolbar()
+            ShortcutBar()
             VStack {
                 HStack(alignment: .top) {
                     if let row = model.sketches.first(where: { $0.id == model.activeSketch }) {
@@ -41,6 +44,7 @@ struct ViewportArea: View {
             }
             VStack {
                 HeadsUpToolbar().padding(.top, 12)
+                if model.orientationPaletteShown { OrientationPalette().padding(.top, 6) }
                 Spacer()
             }
         }
@@ -145,6 +149,7 @@ struct ConfirmationCorner: View {
                 CornerButton(icon: .xmark, help: "Cancel") { model.cancelOperation() }
             } else if model.activeSketch != nil {
                 CornerButton(icon: .exitSketch, prominent: true, help: "Exit Sketch") { Task { await model.exitSketch() } }
+                CornerButton(icon: .xmark, help: "Cancel Sketch (discard changes)") { Task { await model.cancelSketch() } }
             }
         }
     }
@@ -197,8 +202,20 @@ struct AxisTriad: View {
                 }
             }
             .frame(width: 80, height: 80)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+            .contentShape(Rectangle())
+            .onTapGesture { location in
+                // Click an axis: view normal to it (SolidWorks' reference triad).
+                let c = CGPoint(x: 40, y: 40)
+                var best: (ViewOrientation, Double)?
+                for (v, o) in [(Vec3.unitX, ViewOrientation.right), (.unitY, .top), (.unitZ, .front)] {
+                    let d = proj.axis(v)
+                    let tip = CGPoint(x: c.x + d.dx * 28, y: c.y + d.dy * 28)
+                    let dist = hypot(tip.x - location.x, tip.y - location.y)
+                    if dist < 16 && (best == nil || dist < best!.1) { best = (o, dist) }
+                }
+                if let o = best?.0 { model.setOrientation(o) }
+            }
+            .help("Click an axis to view normal to it")
         }
     }
 }
@@ -320,5 +337,168 @@ struct CursorTooltip: View {
             }
             .allowsHitTesting(false)
         }
+    }
+}
+
+/// Context toolbar: common actions for the selection, next to where it was picked
+/// (docs/research §1.8).
+struct ContextToolbar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let at = model.contextToolbarAt, !model.selection.isEmpty, model.operation == nil, model.sketchState.tool == nil {
+            ZStack(alignment: .topLeading) {
+                Color.clear.allowsHitTesting(false)
+                HStack(spacing: 1) { buttons }
+                    .padding(3)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.hud))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line))
+                    .shadow(color: Theme.shadowColor, radius: 8, y: 3)
+                    .fixedSize()
+                    .offset(x: at.x + 14, y: at.y - 44)
+            }
+        }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        if model.activeSketch != nil && !model.sketchSelection.isEmpty {
+            ForEach(model.applicableRelations, id: \.self) { r in
+                Button { Task { await model.addRelation(r); model.contextToolbarAt = nil } } label: {
+                    Text(AppModel.glyph(r.kind) ?? String(r.title.prefix(2)))
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.relation)
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(ToolButtonStyle(cornerRadius: 5))
+                .help(r.title)
+            }
+            item(.smartDimension, "Smart Dimension") { model.dimensionSelection() }
+            item(.construction, "Construction Geometry") { Task { await model.toggleConstruction() } }
+            item(.trash, "Delete") { Task { await model.deleteSketchSelection() } }
+        } else {
+            if !model.selectedEdges.isEmpty { item(.fillet, "Fillet") { model.begin(.fillet) } }
+            if model.selection.count == 2 { item(.measure, "Measure") { model.begin(.measure) } }
+            if !model.selectedBodies.isEmpty { item(.massProps, "Mass Properties") { model.begin(.massProperties) } }
+            item(.zoomFit, "Zoom to Fit") { model.zoomToFit() }
+        }
+    }
+
+    private func item(_ icon: ForgeIcon, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            model.contextToolbarAt = nil
+        } label: {
+            IconView(icon: icon, size: 17, accent: Theme.accent).frame(width: 26, height: 26)
+        }
+        .buttonStyle(ToolButtonStyle(cornerRadius: 5))
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Shortcut bar (S key): the commands for the current context at the pointer, with search.
+struct ShortcutBar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let at = model.shortcutBarAt {
+            ZStack(alignment: .topLeading) {
+                Color.black.opacity(0.001).onTapGesture { model.shortcutBarAt = nil }
+                VStack(alignment: .leading, spacing: 4) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 2), count: 8), spacing: 2) {
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
+                            Button {
+                                model.shortcutBarAt = nil
+                                e.action()
+                            } label: {
+                                IconView(icon: e.icon, size: 18, accent: Theme.accent).frame(width: 30, height: 30)
+                            }
+                            .buttonStyle(ToolButtonStyle(cornerRadius: 5))
+                            .help(e.title)
+                            .accessibilityLabel(e.title)
+                        }
+                    }
+                    Button {
+                        model.shortcutBarAt = nil
+                        model.showPalette = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            IconView(icon: .search, size: 13)
+                            Text("Search All Commands").font(.system(size: 11.5))
+                            Spacer()
+                        }
+                        .foregroundStyle(Theme.text2)
+                        .padding(.horizontal, 6)
+                        .frame(height: 24)
+                    }
+                    .buttonStyle(ToolButtonStyle(cornerRadius: 5))
+                }
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+                .shadow(color: Theme.shadowColor, radius: 14, y: 5)
+                .fixedSize()
+                .offset(x: max(0, at.x - 120), y: max(0, at.y - 20))
+            }
+            .onExitCommand { model.shortcutBarAt = nil }
+        }
+    }
+
+    private struct Entry {
+        let icon: ForgeIcon
+        let title: String
+        let action: () -> Void
+    }
+
+    private var entries: [Entry] {
+        if model.activeSketch != nil {
+            let tools: [SketchTool] = [.line, .rectangle, .circle, .arc, .slot, .polygon, .spline, .ellipse, .point, .fillet, .chamfer, .trim, .extend, .dimension]
+            return tools.map { t in Entry(icon: t.icon, title: t.title) { model.chooseTool(t) } }
+                + [Entry(icon: .exitSketch, title: "Exit Sketch") { Task { await model.exitSketch() } }]
+        }
+        var out: [Entry] = [
+            Entry(icon: .sketch, title: "Sketch on Front Plane") { Task { await model.newSketch(on: .front) } },
+            Entry(icon: .extrude, title: "Extruded Boss/Base") { model.begin(.extrude) },
+            Entry(icon: .revolve, title: "Revolved Boss/Base") { model.begin(.revolve) },
+            Entry(icon: .cutExtrude, title: "Extruded Cut") { model.begin(.cutExtrude) },
+            Entry(icon: .fillet, title: "Fillet") { model.begin(.fillet) },
+            Entry(icon: .combine, title: "Combine") { model.begin(.combine) },
+            Entry(icon: .measure, title: "Measure") { model.begin(.measure) },
+            Entry(icon: .massProps, title: "Mass Properties") { model.begin(.massProperties) },
+        ]
+        out += Primitive.allCases.map { p in Entry(icon: p.icon, title: p.title) { model.begin(.primitive(p)) } }
+        return out
+    }
+}
+
+/// View Orientation palette (Space).
+struct OrientationPalette: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ViewOrientation.allCases, id: \.self) { o in
+                Button {
+                    model.setOrientation(o)
+                    model.orientationPaletteShown = false
+                } label: {
+                    Text(o.rawValue.capitalized).font(.system(size: 12)).padding(.horizontal, 8).frame(height: 26)
+                }
+                .buttonStyle(ToolButtonStyle(cornerRadius: 6))
+            }
+            if model.activeSketch != nil {
+                Button {
+                    model.normalToSketch()
+                    model.orientationPaletteShown = false
+                } label: {
+                    Text("Normal To").font(.system(size: 12)).padding(.horizontal, 8).frame(height: 26)
+                }
+                .buttonStyle(ToolButtonStyle(cornerRadius: 6))
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.hud))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+        .shadow(color: Theme.shadowColor, radius: 12, y: 4)
+        .fixedSize()
     }
 }

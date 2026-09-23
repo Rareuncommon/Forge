@@ -52,12 +52,19 @@ struct ForgeApp: App {
                 Button("Redo") { Task { await model.run("edit.redo") } }.keyboardShortcut("z", modifiers: [.command, .shift])
             }
             CommandMenu("View") {
-                ForEach(ViewOrientation.allCases, id: \.self) { o in
-                    Button(o.rawValue.capitalized) { model.setOrientation(o) }
-                }
-                Button("Normal To Sketch") { model.normalToSketch() }.disabled(model.activeSketch == nil)
+                // SolidWorks keys: Ctrl+1…7 standard views, Ctrl+8 Normal To.
+                Button("Front") { model.setOrientation(.front) }.keyboardShortcut("1", modifiers: .control)
+                Button("Back") { model.setOrientation(.back) }.keyboardShortcut("2", modifiers: .control)
+                Button("Left") { model.setOrientation(.left) }.keyboardShortcut("3", modifiers: .control)
+                Button("Right") { model.setOrientation(.right) }.keyboardShortcut("4", modifiers: .control)
+                Button("Top") { model.setOrientation(.top) }.keyboardShortcut("5", modifiers: .control)
+                Button("Bottom") { model.setOrientation(.bottom) }.keyboardShortcut("6", modifiers: .control)
+                Button("Isometric") { model.setOrientation(.isometric) }.keyboardShortcut("7", modifiers: .control)
+                Button("Dimetric") { model.setOrientation(.dimetric) }
+                Button("Trimetric") { model.setOrientation(.trimetric) }
+                Button("Normal To") { model.normalToSketch() }.keyboardShortcut("8", modifiers: .control).disabled(model.activeSketch == nil)
                 Divider()
-                Button("Zoom to Fit") { model.zoomToFit() }.keyboardShortcut("f", modifiers: [])
+                Button("Zoom to Fit (F)") { model.zoomToFit() }
                 Button("Previous View") { model.previousView() }
                 Divider()
                 Toggle("Perspective", isOn: Binding(get: { model.display.perspective }, set: { model.setPerspective($0) }))
@@ -82,7 +89,8 @@ enum Operation: Equatable {
     case extrude, cutExtrude, revolve, fillet, combine, massProperties, measure, check
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
-    case dimension, addRelation, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
+    case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
+    case sketchMove, sketchRotate, sketchScale
 
     var title: String {
         switch self {
@@ -95,8 +103,11 @@ enum Operation: Equatable {
         case .measure: "Measure"
         case .check: "Check"
         case .primitive(let p): p.title
-        case .dimension: "Dimension"
         case .addRelation: "Add Relations"
+        case .displayRelations: "Display/Delete Relations"
+        case .sketchMove: "Move Entities"
+        case .sketchRotate: "Rotate Entities"
+        case .sketchScale: "Scale Entities"
         case .sketchOffset: "Offset Entities"
         case .sketchMirror: "Mirror Entities"
         case .sketchLinearPattern: "Linear Sketch Pattern"
@@ -115,8 +126,11 @@ enum Operation: Equatable {
         case .measure: .measure
         case .check: .check
         case .primitive(let p): p.icon
-        case .dimension: .smartDimension
         case .addRelation: .addRelation
+        case .displayRelations: .hideShow
+        case .sketchMove: .move
+        case .sketchRotate: .circularPattern
+        case .sketchScale: .zoomArea
         case .sketchOffset: .offset
         case .sketchMirror: .mirror
         case .sketchLinearPattern: .linearPattern
@@ -125,7 +139,7 @@ enum Operation: Equatable {
     }
 
     /// Results-only panels (nothing to commit).
-    var isReport: Bool { self == .massProperties || self == .measure || self == .check }
+    var isReport: Bool { self == .massProperties || self == .measure || self == .check || self == .displayRelations }
 }
 
 enum Primitive: String, CaseIterable, Identifiable {
@@ -199,6 +213,21 @@ final class AppModel {
     var display = DisplayOptions()
     var isDark = false
     var treeFilter = ""
+    /// Undoable changes since the sketch was opened (Cancel Sketch undoes them).
+    var sketchEditCount = 0
+    /// For Enter = repeat last command.
+    var lastSketchTool: SketchTool?
+    var lastOperation: Operation?
+    /// Smart Dimension's Modify box, while open.
+    var dimensionEdit: DimensionEdit?
+    /// Live preview of the operation being set up (bodies it would create).
+    var preview = PreviewBox()
+    var previewVersion = 0
+    var previewError: String?
+    /// Context toolbar and shortcut bar (S key) positions in the viewport, when shown.
+    var contextToolbarAt: CGPoint?
+    var shortcutBarAt: CGPoint?
+    var orientationPaletteShown = false
 
     func bootstrap() async {
         await run("document.new", ["name": "Part1"])
@@ -210,6 +239,10 @@ final class AppModel {
             let o = try await engine.execute(command, params)
             log.append("\(command) ✓")
             lastError = nil
+            if activeSketch != nil || command == "sketch.create" {
+                if command == "edit.undo" { sketchEditCount = max(0, sketchEditCount - 1) }
+                else if command == "edit.redo" || !o.changes.isEmpty { sketchEditCount += 1 }
+            }
             await refresh()
             return o
         } catch {
@@ -273,6 +306,33 @@ final class AppModel {
     func setPerspective(_ on: Bool) {
         display.perspective = on
         viewportCommands.send(.projection(on ? .perspective : .orthographic))
+    }
+
+    /// SolidWorks keys in the graphics area (docs/research §1.8): F fit, Z / ⇧Z zoom,
+    /// S shortcut bar, Space view orientation, Return repeats the last command, Delete deletes
+    /// the selected sketch entities.
+    func viewportKey(_ key: String, at p: CGPoint) -> Bool {
+        switch key {
+        case "f": zoomToFit()
+        case "z": viewportCommands.send(.zoom(1 / 1.25))
+        case "Z": viewportCommands.send(.zoom(1.25))
+        case "s", "S": shortcutBarAt = p
+        case "space": orientationPaletteShown.toggle()
+        case "return":
+            if activeSketch != nil, sketchState.tool == nil, let t = lastSketchTool {
+                chooseTool(t)
+            } else if operation == nil, let op = lastOperation {
+                begin(op)
+            } else {
+                return false
+            }
+        case "delete":
+            guard activeSketch != nil, !sketchSelection.isEmpty else { return false }
+            Task { await deleteSketchSelection() }
+        default:
+            return false
+        }
+        return true
     }
 
     func normalToSketch() {
@@ -353,6 +413,11 @@ final class AppModel {
     }
 }
 
+/// The live preview's render items (not observed item by item).
+struct PreviewBox {
+    var items: [RenderItem] = []
+}
+
 /// Non-observable wrapper so large scene data doesn't participate in SwiftUI diffing.
 struct DocumentSceneBox {
     var value: DocumentScene?
@@ -361,7 +426,7 @@ struct DocumentSceneBox {
 /// Commands from menus to the viewport, consumed in order by the viewport coordinator
 /// (which remembers how many it has applied, so SwiftUI updates never mutate model state).
 struct ViewportCommandQueue {
-    enum Command { case orient(ViewOrientation), fit, previous, style(RenderStyle), projection(ProjectionKind) }
+    enum Command { case orient(ViewOrientation), fit, previous, style(RenderStyle), projection(ProjectionKind), zoom(Double) }
     private(set) var log: [Command] = []
     mutating func send(_ c: Command) { log.append(c) }
 }
@@ -469,6 +534,12 @@ struct StatusBar: View {
                     IconView(icon: .warning, size: 14, accent: Theme.overDefined).foregroundStyle(Theme.overDefined)
                     Text(e.message).lineLimit(1).truncationMode(.tail).foregroundStyle(Theme.text)
                         .help(([e.message] + e.suggestions.map { "Suggestion: \($0.description)" }).joined(separator: "\n"))
+                    // Executable fixes from the error (e.g. "make the dimension driven").
+                    ForEach(Array(e.suggestions.filter { !$0.command.hasPrefix("help.") && !$0.command.hasPrefix("query.") && $0.command != "sketch.get" }.prefix(2).enumerated()), id: \.offset) { _, fix in
+                        Button(fix.description) { Task { await model.run(fix.command, fix.params) } }
+                            .buttonStyle(PanelButtonStyle())
+                            .controlSize(.small)
+                    }
                     Button("Dismiss") { model.lastError = nil }.buttonStyle(.link).font(.system(size: 11.5))
                 } else {
                     if let icon = model.operation?.icon ?? model.sketchState.tool?.icon {

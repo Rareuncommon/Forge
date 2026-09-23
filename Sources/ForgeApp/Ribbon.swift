@@ -89,6 +89,7 @@ private struct SketchTab: View {
     var body: some View {
         let editing = model.activeSketch != nil
         let picked = !model.sketchSelection.isEmpty
+        let st = model.sketchState
         RibbonGroup("Sketch") {
             if editing {
                 RibbonLarge(.exitSketch, "Exit\nSketch", help: "Finish editing the sketch") { Task { await model.exitSketch() } }
@@ -106,64 +107,90 @@ private struct SketchTab: View {
                 .fixedSize()
                 .help("Start a sketch on a plane")
             }
-            RibbonLarge(.smartDimension, "Smart\nDimension", active: model.operation == .dimension, enabled: editing,
-                        help: "Dimension the selected curves: line → length, circle → diameter, arc → radius, two lines → angle") {
-                model.begin(.dimension)
+            RibbonLarge(.smartDimension, "Smart\nDimension", active: st.tool == .dimension, enabled: editing,
+                        help: "Dimension one or two entities; the value is typed in the Modify box") {
+                if model.sketchSelection.isEmpty { model.chooseTool(st.tool == .dimension ? nil : .dimension) } else { model.dimensionSelection() }
             }
         }
         RibbonSeparator()
-        RibbonGroup("Draw") {
-            toolLarge(.line)
-            toolLarge(.rectangle)
-            toolLarge(.circle)
-            RibbonStack { toolSmall(.arc); toolSmall(.slot); toolSmall(.polygon) }
-            RibbonStack { toolSmall(.spline); toolSmall(.ellipse); toolSmall(.point) }
-            RibbonStack { toolSmall(.centerline) }
-        }
-        RibbonSeparator()
-        RibbonGroup("Modify") {
-            toolLarge(.trim)
-            RibbonStack { toolSmall(.extend); toolSmall(.fillet); toolSmall(.chamfer) }
+        RibbonGroup("Entities") {
+            RibbonFlyout(icon: st.lineKind == .centerline ? .centerline : .line, title: st.lineKind == .line ? "Line" : st.lineKind.rawValue,
+                         active: st.tool == .line, enabled: editing, action: { tool(.line) }) {
+                ForEach(LineKind.allCases, id: \.self) { k in Button(k.rawValue) { model.sketchState.lineKind = k; model.chooseTool(.line) } }
+            }
+            RibbonFlyout(icon: .rectangle, title: "Rectangle", active: st.tool == .rectangle, enabled: editing, action: { tool(.rectangle) }) {
+                ForEach(RectangleType.allCases, id: \.self) { k in Button(k.rawValue) { model.sketchState.rectangleType = k; model.chooseTool(.rectangle) } }
+            }
+            RibbonFlyout(icon: .slot, title: "Slot", active: st.tool == .slot, enabled: editing, action: { tool(.slot) }) {
+                ForEach(SlotType.allCases, id: \.self) { k in Button(k.rawValue) { model.sketchState.slotType = k; model.chooseTool(.slot) } }
+            }
+            RibbonFlyout(icon: .circle, title: "Circle", active: st.tool == .circle, enabled: editing, action: { tool(.circle) }) {
+                ForEach(CircleType.allCases, id: \.self) { k in Button(k.rawValue) { model.sketchState.circleType = k; model.chooseTool(.circle) } }
+            }
+            RibbonFlyout(icon: st.arcType == .tangent ? .tangentArc : .arc, title: "Arc", active: st.tool == .arc, enabled: editing, action: { tool(.arc) }) {
+                ForEach(ArcType.allCases, id: \.self) { k in Button(k.rawValue) { model.sketchState.arcType = k; model.chooseTool(.arc) } }
+            }
             RibbonStack {
-                RibbonSmall(.offset, "Offset", active: model.operation == .sketchOffset, enabled: editing && picked) { model.begin(.sketchOffset) }
-                RibbonSmall(.mirror, "Mirror", active: model.operation == .sketchMirror, enabled: editing && picked) { model.begin(.sketchMirror) }
-                RibbonSmall(.construction, "Construction", enabled: editing && picked) { Task { await model.toggleConstruction() } }
+                RibbonSmall(.polygon, "Polygon", active: st.tool == .polygon, enabled: editing) { tool(.polygon) }
+                RibbonSmall(.spline, "Spline", active: st.tool == .spline, enabled: editing) { tool(.spline) }
+                RibbonSmall(.point, "Point", active: st.tool == .point, enabled: editing) { tool(.point) }
+            }
+            RibbonStack {
+                RibbonSmall(.ellipse, "Ellipse", active: st.tool == .ellipse && st.ellipseType == .full, enabled: editing) {
+                    model.sketchState.ellipseType = .full; tool(.ellipse)
+                }
+                RibbonSmall(.ellipse, "Partial Ellipse", active: st.tool == .ellipse && st.ellipseType == .partial, enabled: editing) {
+                    model.sketchState.ellipseType = .partial; tool(.ellipse)
+                }
+                RibbonSmall(.construction, "Construction", enabled: editing && picked, help: "Toggle construction geometry") {
+                    Task { await model.toggleConstruction() }
+                }
             }
         }
         RibbonSeparator()
-        RibbonGroup("Pattern") {
-            RibbonStack {
-                RibbonSmall(.linearPattern, "Linear", active: model.operation == .sketchLinearPattern, enabled: editing && picked) {
-                    model.begin(.sketchLinearPattern)
-                }
-                RibbonSmall(.circularPattern, "Circular", active: model.operation == .sketchCircularPattern, enabled: editing && picked) {
-                    model.begin(.sketchCircularPattern)
-                }
+        RibbonGroup("Tools") {
+            RibbonFlyout(icon: st.tool == .chamfer ? .sketchChamfer : .sketchFillet, title: "Sketch\nFillet", active: st.tool == .fillet || st.tool == .chamfer,
+                         enabled: editing, action: { tool(.fillet) }) {
+                Button("Sketch Fillet") { model.chooseTool(.fillet) }
+                Button("Sketch Chamfer") { model.chooseTool(.chamfer) }
+            }
+            RibbonFlyout(icon: st.tool == .extend ? .extend : .trim, title: "Trim\nEntities", active: st.tool == .trim || st.tool == .extend,
+                         enabled: editing, action: { tool(.trim) }) {
+                Button("Trim Entities") { model.chooseTool(.trim) }
+                Button("Extend Entities") { model.chooseTool(.extend) }
+            }
+            RibbonLarge(.offset, "Offset\nEntities", active: model.operation == .sketchOffset, enabled: editing && picked) { model.begin(.sketchOffset) }
+            RibbonLarge(.mirror, "Mirror\nEntities", active: model.operation == .sketchMirror, enabled: editing && picked) { model.begin(.sketchMirror) }
+            RibbonFlyout(icon: .linearPattern, title: "Linear Sketch\nPattern", active: model.operation == .sketchLinearPattern || model.operation == .sketchCircularPattern,
+                         enabled: editing && picked, action: { model.begin(.sketchLinearPattern) }) {
+                Button("Linear Sketch Pattern") { model.begin(.sketchLinearPattern) }
+                Button("Circular Sketch Pattern") { model.begin(.sketchCircularPattern) }
+            }
+            RibbonFlyout(icon: .move, title: "Move\nEntities", active: [Operation.sketchMove, .sketchRotate, .sketchScale].contains(model.operation ?? .check),
+                         enabled: editing && picked, action: { model.begin(.sketchMove) }) {
+                Button("Move Entities") { model.form.copy = false; model.begin(.sketchMove) }
+                Button("Copy Entities") { model.form.copy = true; model.begin(.sketchMove) }
+                Button("Rotate Entities") { model.begin(.sketchRotate) }
+                Button("Scale Entities") { model.begin(.sketchScale) }
             }
         }
         RibbonSeparator()
         RibbonGroup("Relations") {
-            RibbonLarge(.addRelation, "Add\nRelation", active: model.operation == .addRelation, enabled: editing && picked,
-                        help: "Relate the selected sketch entities") { model.begin(.addRelation) }
+            RibbonFlyout(icon: .hideShow, title: "Display/Delete\nRelations", active: model.operation == .displayRelations || model.operation == .addRelation,
+                         enabled: editing, action: { model.begin(.displayRelations) }) {
+                Button("Display/Delete Relations") { model.begin(.displayRelations) }
+                Button("Add Relation") { model.begin(.addRelation) }
+            }
             RibbonStack {
-                RibbonSmall(.hideShow, "Show Relations", active: model.display.relations) { model.display.relations.toggle() }
-                RibbonSmall(.smartDimension, "Show Dimensions", active: model.display.dimensions) { model.display.dimensions.toggle() }
-                RibbonSmall(.trash, "Delete", enabled: editing && picked) { Task { await model.deleteSketchSelection() } }
+                RibbonSmall(.addRelation, "Add Relation", active: model.operation == .addRelation, enabled: editing && picked) { model.begin(.addRelation) }
+                RibbonSmall(.hideShow, "View Relations", active: model.display.relations) { model.display.relations.toggle() }
+                RibbonSmall(.smartDimension, "View Dimensions", active: model.display.dimensions) { model.display.dimensions.toggle() }
             }
         }
     }
 
-    private func toolLarge(_ t: SketchTool) -> some View {
-        RibbonLarge(t.icon, t.title, active: model.sketchState.tool == t, enabled: model.activeSketch != nil, help: t.hint) {
-            model.chooseTool(model.sketchState.tool == t ? nil : t)
-        }
-    }
-
-    private func toolSmall(_ t: SketchTool) -> some View {
-        RibbonSmall(t.icon, t.title.replacingOccurrences(of: "\n", with: " "), active: model.sketchState.tool == t,
-                    enabled: model.activeSketch != nil, help: t.hint) {
-            model.chooseTool(model.sketchState.tool == t ? nil : t)
-        }
+    private func tool(_ t: SketchTool) {
+        model.chooseTool(model.sketchState.tool == t ? nil : t)
     }
 }
 
@@ -179,17 +206,6 @@ private struct EvaluateTab: View {
                         help: "Volume, surface area and centre of mass") { model.begin(.massProperties) }
             RibbonLarge(.check, "Check", active: model.operation == .check, enabled: hasBody,
                         help: "Validate body geometry and topology") { model.begin(.check) }
-        }
-        RibbonSeparator()
-        RibbonGroup("Export") {
-            RibbonStack {
-                RibbonSmall(.save, "STEP…", enabled: hasBody) { model.export("step") }
-                RibbonSmall(.save, "STL…", enabled: hasBody) { model.export("stl") }
-            }
-        }
-        RibbonSeparator()
-        RibbonGroup("Commands") {
-            RibbonLarge(.command, "All\nCommands", help: "Search every command (⌘K)") { model.showPalette = true }
         }
     }
 }
@@ -281,6 +297,31 @@ struct RibbonLarge: View {
             .disabled(!enabled)
             .help(help.isEmpty ? title.replacingOccurrences(of: "\n", with: " ") : help)
             .accessibilityLabel(title.replacingOccurrences(of: "\n", with: " "))
+    }
+}
+
+/// A large button with a flyout arrow (SolidWorks' flyout tool buttons): the button runs the
+/// variant shown, the arrow lists all variants.
+struct RibbonFlyout<Items: View>: View {
+    let icon: ForgeIcon
+    let title: String
+    var active = false
+    var enabled = true
+    let action: () -> Void
+    @ViewBuilder let items: Items
+
+    var body: some View {
+        HStack(spacing: 0) {
+            RibbonLarge(icon, title, active: active, enabled: enabled, action: action)
+            Menu { items } label: {
+                IconView(icon: .chevronDown, size: 10).foregroundStyle(Theme.text3).frame(width: 12, height: 64)
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(ToolButtonStyle(cornerRadius: 5))
+            .fixedSize()
+            .disabled(!enabled)
+        }
     }
 }
 

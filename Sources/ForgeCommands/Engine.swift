@@ -206,6 +206,23 @@ public actor Engine {
         return outcome
     }
 
+    /// Run commands against a scratch copy of the session and return the document they
+    /// produce, with the ids they created or modified. The session is left exactly as it was:
+    /// no undo entry, no journal line. Used for live previews (the extrude the user is
+    /// setting up, drawn before OK).
+    public func preview(_ items: [Invocation]) throws -> (document: Document?, changes: ChangeSet) {
+        let saved = state
+        defer { state = saved }
+        var changes = ChangeSet()
+        for i in items {
+            let o = try execute(i.command, i.params)
+            changes.created += o.changes.created.filter { !changes.created.contains($0) }
+            changes.modified += o.changes.modified.filter { !changes.modified.contains($0) && !changes.created.contains($0) }
+            changes.deleted += o.changes.deleted
+        }
+        return (activeDocument, changes)
+    }
+
     /// Execute a list of commands. With `atomic` (default) the batch is one transaction:
     /// if any command fails, everything is rolled back and one undo step results on success.
     public func executeBatch(_ items: [Invocation], atomic: Bool = true, dryRun: Bool = false) throws -> BatchOutcome {

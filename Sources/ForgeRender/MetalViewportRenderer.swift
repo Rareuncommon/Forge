@@ -18,6 +18,8 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     private let pickTrianglePipeline: any MTLRenderPipelineState
     private let pickLinePipeline: any MTLRenderPipelineState
     private let depthState: any MTLDepthStencilState
+    private let previewPipeline: any MTLRenderPipelineState
+    private let previewDepthState: any MTLDepthStencilState
     private let overlayDepthState: any MTLDepthStencilState
 
     public var camera = Camera()
@@ -27,7 +29,9 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     public var transparentBackground = false
     private var items: [GPUItem] = []
     private var overlay: [GPUItem] = []
+    private var preview: [GPUItem] = []
     private var sceneBounds: BoundingBox?
+    private var previewBounds: BoundingBox?
 
     struct GPUItem {
         var objectID: UInt32
@@ -50,16 +54,25 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         self.queue = queue
         do {
             let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
-            func pipeline(_ vfn: String, _ ffn: String, colors: [MTLPixelFormat]) throws -> any MTLRenderPipelineState {
+            func pipeline(_ vfn: String, _ ffn: String, colors: [MTLPixelFormat], blend: Bool = false) throws -> any MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vfn)
                 d.fragmentFunction = library.makeFunction(name: ffn)
                 for (i, f) in colors.enumerated() { d.colorAttachments[i].pixelFormat = f }
+                if blend {
+                    let a = d.colorAttachments[0]!
+                    a.isBlendingEnabled = true
+                    a.sourceRGBBlendFactor = .sourceAlpha
+                    a.destinationRGBBlendFactor = .oneMinusSourceAlpha
+                    a.sourceAlphaBlendFactor = .one
+                    a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+                }
                 d.depthAttachmentPixelFormat = .depth32Float
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             shadedPipeline = try pipeline("tri_vertex", "tri_fragment", colors: [colorFormat])
             linePipeline = try pipeline("line_vertex", "line_fragment", colors: [colorFormat])
+            previewPipeline = try pipeline("tri_vertex", "preview_fragment", colors: [colorFormat], blend: true)
             pickTrianglePipeline = try pipeline("tri_vertex", "pick_tri_fragment", colors: [.r32Uint, .r32Uint])
             pickLinePipeline = try pipeline("line_vertex", "pick_line_fragment", colors: [.r32Uint, .r32Uint])
         } catch {
@@ -75,6 +88,11 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         ods.isDepthWriteEnabled = false
         guard let odepth = device.makeDepthStencilState(descriptor: ods) else { return nil }
         overlayDepthState = odepth
+        let pds = MTLDepthStencilDescriptor()
+        pds.depthCompareFunction = .lessEqual
+        pds.isDepthWriteEnabled = false
+        guard let pdepth = device.makeDepthStencilState(descriptor: pds) else { return nil }
+        previewDepthState = pdepth
         super.init()
     }
 
@@ -83,6 +101,13 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     public func setScene(_ scene: RenderScene) {
         sceneBounds = scene.bounds
         items = scene.items.map(gpuItem)
+    }
+
+    /// Replace the preview: bodies an operation would create, drawn translucent in their
+    /// colour's alpha with their edges, depth-tested against the scene, not pickable.
+    public func setPreview(_ previewItems: [RenderItem]) {
+        preview = previewItems.map(gpuItem)
+        previewBounds = RenderScene(items: previewItems).bounds
     }
 
     /// Replace the overlay (drawn on top of everything, not pickable).
@@ -137,7 +162,8 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
 
     /// Uniforms: float4x4 viewProj; float4 color; float4 highlight; float4 lightDir; float4 viewDir; uint4 ids.
     private func uniforms(aspect: Double, item: GPUItem, lineColor: RGBA? = nil) -> [Float] {
-        let radius = sceneBounds.map { max(($0.center - camera.target).length + $0.diagonal / 2, 1e-3) } ?? 1
+        let bounds = [sceneBounds, previewBounds].compactMap { $0 }.reduce(BoundingBox?.none) { acc, b in acc.map { $0.union(b) } ?? b }
+        let radius = bounds.map { max(($0.center - camera.target).length + $0.diagonal / 2, 1e-3) } ?? 1
         let vp = camera.projectionMatrix(aspect: aspect, sceneRadius: radius) * camera.viewMatrix
         let light = (camera.back + camera.up * 0.25 + camera.right * 0.15).normalized
         let c = lineColor ?? (style == .hiddenLinesRemoved ? .white : item.color)
@@ -191,6 +217,27 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             enc.setVertexBytes(&u, length: u.count * 4, index: 1)
             enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
             enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
+        }
+        if !pick && !preview.isEmpty {
+            enc.setRenderPipelineState(linePipeline)
+            for item in preview {
+                guard let lines = item.lines else { continue }
+                var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
+                enc.setVertexBuffer(lines, offset: 0, index: 0)
+                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
+                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
+                enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
+            }
+            enc.setDepthStencilState(previewDepthState)
+            enc.setRenderPipelineState(previewPipeline)
+            for item in preview {
+                guard let tri = item.triangles else { continue }
+                var u = uniforms(aspect: aspect, item: item)
+                enc.setVertexBuffer(tri, offset: 0, index: 0)
+                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
+                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
+                enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
+            }
         }
         if !pick && !overlay.isEmpty {
             enc.setDepthStencilState(overlayDepthState)
@@ -310,6 +357,13 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             float3 h = normalize(u.lightDir.xyz + u.viewDir.xyz);
             float spec = pow(max(0.0, dot(n, h)), 40.0) * 0.25;
             return float4(min(float3(1.0), base * (0.3 + 0.7 * diffuse) + spec), 1.0);
+        }
+
+        fragment float4 preview_fragment(VOut in [[stage_in]], constant Uniforms& u [[buffer(1)]]) {
+            float3 n = normalize(in.normal);
+            if (dot(n, u.viewDir.xyz) < 0.0) { n = -n; }
+            float diffuse = max(0.0, dot(n, u.lightDir.xyz));
+            return float4(u.color.rgb * (0.55 + 0.45 * diffuse), u.color.a);
         }
 
         fragment float4 line_fragment(VOut in [[stage_in]], constant Uniforms& u [[buffer(1)]]) {

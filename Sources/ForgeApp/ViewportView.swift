@@ -36,10 +36,17 @@ struct ViewportView: NSViewRepresentable {
             let p = ViewProjection(camera: camera, width: width, height: height)
             if model.projection != p { model.projection = p }
         }
-        view.onPick = { ref, extend in Task { await model.select(ref, extend: extend) } }
-        view.onSketchClick = { point, tolerance, curve, count in
-            Task { await model.sketchClick(point, tolerance: tolerance, curve: curve, clickCount: count) }
+        view.onPick = { ref, extend, at in
+            Task {
+                await model.select(ref, extend: extend)
+                model.contextToolbarAt = ref == nil ? nil : at
+            }
         }
+        view.onSketchClick = { point, tolerance, curve, count, at in
+            Task { await model.sketchClick(point, tolerance: tolerance, curve: curve, clickCount: count, viewPoint: at) }
+        }
+        view.onSketchDrag = { point, curve in Task { await model.sketchDrag(point, curve: curve) } }
+        view.onKey = { key, at in model.viewportKey(key, at: at) }
         view.onSketchHover = { point, tolerance, at in model.sketchHover(point, tolerance: tolerance, viewPoint: at) }
         view.onCancel = { model.cancelSketchOperation() }
         view.setAccessibilityLabel("3D viewport")
@@ -55,6 +62,11 @@ struct ViewportView: NSViewRepresentable {
             view.renderer?.setScene(ds.scene)
             view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
             if first { view.fit() } else { view.cameraChanged() }
+            view.needsDisplay = true
+        }
+        if context.coordinator.previewVersion != model.previewVersion {
+            context.coordinator.previewVersion = model.previewVersion
+            view.renderer?.setPreview(model.preview.items)
             view.needsDisplay = true
         }
         if context.coordinator.overlayVersion != model.overlayVersion {
@@ -75,6 +87,7 @@ struct ViewportView: NSViewRepresentable {
                     view.renderer?.style = st
                     view.needsDisplay = true
                 case .projection(let kind): view.setProjection(kind)
+                case .zoom(let factor): view.zoom(factor)
                 }
             }
             context.coordinator.appliedCommands = commands.count
@@ -85,6 +98,7 @@ struct ViewportView: NSViewRepresentable {
         var sceneVersion = 0
         var appliedCommands = 0
         var overlayVersion = 0
+        var previewVersion = 0
     }
 
     /// Overlay items for the sketch preview: rubber-band geometry and the snap marker (a ring,
@@ -103,6 +117,29 @@ struct ViewportView: NSViewRepresentable {
                 return plane.point(m.u + r * cos(t), m.v + r * sin(t))
             }, color)
         }
+        // Inference lines, dotted (SolidWorks: blue = guide only, yellow = adds a relation).
+        let guideColor = dark ? RGBA(0.40, 0.62, 1.0) : RGBA(0.20, 0.45, 0.90)
+        func dotted(_ a: Point2, _ b: Point2, _ c: RGBA) {
+            let len = hypot(b.u - a.u, b.v - a.v)
+            let dash = markerSize * 0.9, gap = markerSize * 0.9
+            guard len > 0, dash > 0 else { return }
+            var t = 0.0
+            while t < len {
+                let t1 = min(len, t + dash)
+                lines.add([plane.point(a.u + (b.u - a.u) * t / len, a.v + (b.v - a.v) * t / len),
+                           plane.point(a.u + (b.u - a.u) * t1 / len, a.v + (b.v - a.v) * t1 / len)], c)
+                t = t1 + gap
+            }
+        }
+        for g in pv.guides { dotted(g.from, g.to, guideColor) }
+        if let g = pv.relationGuide {
+            // Extend the relation line past the cursor, as SolidWorks does.
+            let d = hypot(g.to.u - g.from.u, g.to.v - g.from.v)
+            if d > 0 {
+                let k = markerSize * 8 / d
+                dotted(g.to, Point2(g.to.u + (g.to.u - g.from.u) * k, g.to.v + (g.to.v - g.from.v) * k), color)
+            }
+        }
         return [lines.item(objectID: ReferenceGeometry.firstObjectID + 1)]
     }
 }
@@ -110,10 +147,14 @@ struct ViewportView: NSViewRepresentable {
 final class ForgeMTKView: MTKView {
     var renderer: MetalViewportRenderer?
     var documentScene: DocumentScene?
-    var onPick: ((String?, Bool) -> Void)?
+    var onPick: ((String?, Bool, CGPoint) -> Void)?
     /// Set while a sketch tool is active: clicks become sketch coordinates instead of picks.
     var sketchPlane: SketchPlane?
-    var onSketchClick: ((Point2, Double, String?, Int) -> Void)?
+    var onSketchClick: ((Point2, Double, String?, Int, CGPoint) -> Void)?
+    var onSketchDrag: ((Point2, String?) -> Void)?
+    /// Keys the viewport handles (SolidWorks shortcuts); returns false to pass it on.
+    var onKey: ((String, CGPoint) -> Bool)?
+    private var lastMouse = CGPoint.zero
     var onSketchHover: ((Point2?, Double, CGPoint) -> Void)?
     /// A sketch tool press in progress (for click-drag drawing).
     private var toolPress: NSPoint?
@@ -139,6 +180,13 @@ final class ForgeMTKView: MTKView {
         remember()
         renderer?.camera.setOrientation(o)
         fit()
+    }
+
+    /// Zoom about the view centre (Z / ⇧Z).
+    func zoom(_ factor: Double) {
+        guard let r = renderer else { return }
+        r.camera.zoom(factor: factor, anchor: r.camera.target)
+        cameraChanged()
     }
 
     func previousView() {
@@ -205,8 +253,9 @@ final class ForgeMTKView: MTKView {
     }
 
     private func hover(_ event: NSEvent) {
-        guard let plane = sketchPlane else { return }
         let p = convert(event.locationInWindow, from: nil)
+        lastMouse = CGPoint(x: p.x, y: bounds.height - p.y)
+        guard let plane = sketchPlane else { return }
         guard let sp = sketchPoint(at: p, plane: plane) else { return }
         onSketchHover?(sp.0, sp.1, CGPoint(x: p.x, y: bounds.height - p.y))
     }
@@ -217,7 +266,15 @@ final class ForgeMTKView: MTKView {
         let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
         let under = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
             .flatMap { documentScene?.reference(for: $0) }
-        onSketchClick?(q, tol, under, count)
+        onSketchClick?(q, tol, under, count, CGPoint(x: p.x, y: bounds.height - p.y))
+    }
+
+    private func sketchDrag(at p: NSPoint) {
+        guard let plane = sketchPlane, let r = renderer, let sp = sketchPoint(at: p, plane: plane) else { return }
+        let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
+        let under = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
+            .flatMap { documentScene?.reference(for: $0) }
+        if under != nil { onSketchDrag?(sp.0, under) }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -231,9 +288,20 @@ final class ForgeMTKView: MTKView {
         }
     }
 
+    /// SolidWorks middle button: drag rotates, Ctrl+drag pans, Shift+drag zooms; a double
+    /// click zooms to fit. Works while a sketch tool is active.
+    override func otherMouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { fit() }
+    }
+
     override func otherMouseDragged(with event: NSEvent) {
-        // Middle-drag orbits even while a sketch tool is active.
-        renderer?.camera.orbit(dx: Double(event.deltaX) * 0.01, dy: Double(event.deltaY) * 0.01)
+        if event.modifierFlags.contains(.control) {
+            pan(event)
+        } else if event.modifierFlags.contains(.shift) {
+            renderer?.camera.zoom(factor: pow(1.01, -Double(event.deltaY)), anchor: renderer?.camera.target)
+        } else {
+            renderer?.camera.orbit(dx: Double(event.deltaX) * 0.01, dy: Double(event.deltaY) * 0.01)
+        }
         cameraChanged()
     }
 
@@ -241,6 +309,7 @@ final class ForgeMTKView: MTKView {
         if sketchPlane != nil {
             dragged = true
             hover(event)
+            sketchDrag(at: convert(event.locationInWindow, from: nil))
             return
         }
         dragged = true
@@ -265,15 +334,23 @@ final class ForgeMTKView: MTKView {
         guard let ds = documentScene else { return }
         let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
         let hit = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
-        onPick?(hit.flatMap { ds.reference(for: $0) }, event.modifierFlags.contains(.shift))
+        onPick?(hit.flatMap { ds.reference(for: $0) }, event.modifierFlags.contains(.shift), CGPoint(x: p.x, y: bounds.height - p.y))
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {  // Escape
             onCancel?()
-        } else {
-            super.keyDown(with: event)
+            return
         }
+        let key: String
+        switch event.keyCode {
+        case 36, 76: key = "return"
+        case 51, 117: key = "delete"
+        case 49: key = "space"
+        default: key = event.characters ?? ""
+        }
+        if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, onKey?(key, lastMouse) == true { return }
+        super.keyDown(with: event)
     }
 
     override func rightMouseDragged(with event: NSEvent) {

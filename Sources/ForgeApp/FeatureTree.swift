@@ -85,8 +85,10 @@ struct FeatureTreeView: View {
         }
         ForEach(model.sketches.filter { matches($0.name) }) { s in
             let editing = model.activeSketch == s.id
-            TreeRow(icon: .sketch, title: s.name, depth: 1, selected: model.selection.contains(s.id) || editing,
-                    status: SketchStatusBadge.color(s.status), statusLabel: SketchStatusBadge.text(s),
+            // SolidWorks' status prefixes: (-) under defined, (+) over defined, (?) cannot solve.
+            let prefix = s.status == .underDefined ? "(-) " : s.status == .redundant || s.status == .conflicting ? "(+) " : s.status == .failed ? "(?) " : ""
+            TreeRow(icon: .sketch, title: prefix + s.name, depth: 1, selected: model.selection.contains(s.id) || editing,
+                    iconTint: SketchStatusBadge.color(s.status), statusLabel: SketchStatusBadge.text(s),
                     doubleAction: { Task { await model.editSketch(s.id) } }) {
                 Task { await model.select(s.id, extend: NSEvent.modifierFlags.contains(.shift)) }
             }

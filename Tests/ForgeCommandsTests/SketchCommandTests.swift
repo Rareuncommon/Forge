@@ -294,3 +294,36 @@ struct SketchCommandTests {
         }
     }
 }
+
+@Suite("Preview")
+struct PreviewTests {
+    @Test func previewReturnsTheResultAndLeavesTheSessionUntouched() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [40, 20]]])
+        let before = try #require(await e.activeDocument)
+        let journal = await e.journal()
+
+        let (doc, changes) = try await e.preview([Invocation("body.extrude", ["depth": 10])])
+        let created = try #require(changes.created.first { $0.hasPrefix("body-") })
+        let body = try #require(doc?.bodies[created])
+        let volume = try body.shape.massProperties().volume
+        #expect(abs(volume - 40 * 20 * 10) < 1e-6)
+
+        let after = try #require(await e.activeDocument)
+        #expect(after.bodies.isEmpty && before.bodies.isEmpty)
+        #expect(await e.journal() == journal)
+        // Undo still undoes the last real command (the rectangle), not the preview.
+        try await e.execute("edit.undo")
+        #expect(await e.activeDocument?.sketches.values.first?.orderedEntities.contains { $0.kind == .line } == false)
+    }
+
+    @Test func failingPreviewLeavesTheSessionUntouched() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        await #expect(throws: ForgeError.self) { try await e.preview([Invocation("body.extrude", ["depth": 10])]) }
+        #expect(await e.activeDocument?.bodies.isEmpty == true)
+    }
+}
