@@ -97,7 +97,13 @@ not shipped) compares solutions and DOF counts on the M1 regression corpus.
   `Geom_BSplineCurve` (same knots), so sketch and solid agree exactly. "Through points"
   interpolates once with chord-length parameters; afterwards the poles are what is edited.
   Loop areas use Green's theorem per span with p-point Gauss–Legendre (exact for the
-  degree-2p−1 integrand). Point-on-spline needs a parameter unknown per point and is not done.
+  degree-2p−1 integrand). Point-on-spline gives the relation its own unknown (`aux_params`:
+  the curve parameter t, found by closest-point projection when the relation is added):
+  2 rows, 1 unknown. End tangency compares the end control-point leg with the other curve's
+  direction at the shared end (first-order, like arc endpoint tangency).
+- **Wide rows:** forward-mode AD carries 16 derivatives (SIMD16). Rows touching more
+  parameters (a long spline has 2 per control point) are evaluated once per 16-parameter
+  chunk, so the Jacobian stays exact for any row width.
 - **Tests:** unit tests with analytic answers, 40 seeded property tests (random closed
   polygons + circle, dimensions measured from a known configuration, parameters perturbed,
   re-solved), and golden sketch models. The planegcs oracle harness is still to do.

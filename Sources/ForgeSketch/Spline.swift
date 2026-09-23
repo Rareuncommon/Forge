@@ -50,6 +50,54 @@ enum BSpline {
         return (x, y)
     }
 
+    /// q − S(t) for a point held on the curve, generic over the solver scalar so t and the
+    /// poles get exact derivatives. The span is chosen from t's value (clamped to [0, 1]).
+    static func residual<D: SolverScalar>(_ q: V2<D>, _ P: [V2<D>], degree p: Int, t: D) -> [D] {
+        let n = P.count
+        let U = knots(poles: n, degree: p)
+        let tv = min(max(t.value, 0), 1)
+        let k = span(tv, U, poles: n, degree: p)
+        // Cox–de Boor with scalar t (knots are constants).
+        var N = [D](repeating: D(constant: 0), count: p + 1)
+        var left = [D](repeating: D(constant: 0), count: p + 1), right = [D](repeating: D(constant: 0), count: p + 1)
+        N[0] = D(constant: 1)
+        if p >= 1 {
+            for j in 1...p {
+                left[j] = t - U[k + 1 - j]
+                right[j] = D(constant: U[k + j]) - t
+                var saved = D(constant: 0)
+                for r in 0..<j {
+                    let den = right[r + 1] + left[j - r]
+                    let tmp = den.value == 0 ? D(constant: 0) : N[r] / den
+                    N[r] = saved + right[r + 1] * tmp
+                    saved = left[j - r] * tmp
+                }
+                N[j] = saved
+            }
+        }
+        var x = D(constant: 0), y = D(constant: 0)
+        for j in 0...p {
+            x = x + N[j] * P[k - p + j].x
+            y = y + N[j] * P[k - p + j].y
+        }
+        return [q.x - x, q.y - y]
+    }
+
+    /// Parameter of the curve point nearest q (dense sampling, then golden-section refinement).
+    static func closestParam(_ q: (Double, Double), _ P: [(Double, Double)], degree p: Int) -> Double {
+        func d2(_ t: Double) -> Double { let s = point(P, degree: p, at: t); return (s.0 - q.0) * (s.0 - q.0) + (s.1 - q.1) * (s.1 - q.1) }
+        let n = 200 * max(1, P.count - p)
+        var best = 0
+        for i in 1...n where d2(Double(i) / Double(n)) < d2(Double(best) / Double(n)) { best = i }
+        var a = Double(max(best - 1, 0)) / Double(n), b = Double(min(best + 1, n)) / Double(n)
+        let g = (5.0.squareRoot() - 1) / 2
+        for _ in 0..<80 {
+            let c = b - g * (b - a), d = a + g * (b - a)
+            if d2(c) < d2(d) { b = d } else { a = c }
+        }
+        return (a + b) / 2
+    }
+
     /// Derivative control points (a clamped B-spline of degree p−1 on the inner knots).
     static func derivative(_ P: [(Double, Double)], degree p: Int) -> [(Double, Double)] {
         let U = knots(poles: P.count, degree: p)

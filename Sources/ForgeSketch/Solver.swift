@@ -53,6 +53,7 @@ public enum SketchSolver {
         // Parameters in use and fixed ones.
         var used = Set<Int>()
         for e in sketch.entities.values { used.formUnion(e.params) }
+        for c in sketch.constraints { used.formUnion(c.aux ?? []) }
         var fixed = Set(sketch.entities[Sketch.originID]!.params).union(extraFixed)
         for c in sketch.constraints where c.kind == .fix {
             for e in c.entities { fixed.formUnion(sketch.paramIndices(e) + (sketch.entities[e]?.params ?? [])) }
@@ -135,17 +136,27 @@ public enum SketchSolver {
                     let row = rows[ri]
                     let c = sketch.constraints[row.constraint]
                     if jacobian {
-                        let slot = Dictionary(uniqueKeysWithValues: row.params.enumerated().map { ($1, $0) })
-                        let res: [Dual] = sketch.residuals(c) { g in
-                            if let li = index[g] { return Dual(variable: values[li], index: slot[g]!) }
-                            return Dual(constant: sketch.params[g])
+                        // Forward-mode AD carries Dual.maxVariables derivatives at a time; rows
+                        // touching more parameters (e.g. a long spline) are seeded in chunks.
+                        var rowJ = [[Double]](repeating: [Double](repeating: 0, count: n), count: row.count)
+                        var values0: [Double] = []
+                        for chunk in stride(from: 0, to: max(row.params.count, 1), by: Dual.maxVariables) {
+                            let window = row.params[chunk..<min(chunk + Dual.maxVariables, row.params.count)]
+                            let slot = Dictionary(uniqueKeysWithValues: window.enumerated().map { ($1, $0) })
+                            let res: [Dual] = sketch.residuals(c) { g in
+                                if let li = index[g] {
+                                    if let k = slot[g] { return Dual(variable: values[li], index: k) }
+                                    return Dual(constant: values[li])
+                                }
+                                return Dual(constant: sketch.params[g])
+                            }
+                            if chunk == 0 { values0 = res.map(\.v) }
+                            for (i, d) in res.enumerated() {
+                                for (k, g) in window.enumerated() { if let li = index[g] { rowJ[i][li] = d.g[k] } }
+                            }
                         }
-                        for d in res {
-                            r.append(d.v)
-                            var jr = [Double](repeating: 0, count: n)
-                            for (k, g) in row.params.enumerated() { if let li = index[g] { jr[li] = d.g[k] } }
-                            J.append(jr)
-                        }
+                        r.append(contentsOf: values0)
+                        J.append(contentsOf: rowJ)
                     } else {
                         let res: [Double] = sketch.residuals(c) { g in index[g].map { values[$0] } ?? sketch.params[g] }
                         r.append(contentsOf: res)

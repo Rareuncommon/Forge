@@ -951,12 +951,78 @@ struct SplineTests {
         #expect(near(s.splinePoint(created[0], at: 0.5).0, -s.splinePoint(sp, at: 0.5).0, 1e-9))
     }
 
+    @Test func endTangencyWithLinesArcsAndSplines() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (0, 0), to: (10, 0))
+        let sp = try s.addSpline(poles: [(10, 0), (15, 5), (20, 0), (25, 3)], degree: 3)
+        let e = s.entities[sp]!
+        try s.addConstraint(.coincident, [ends(s, l).1, e.points[0]])
+        let dof = s.resolve().dof
+        try s.addConstraint(.tangent, [sp, l])  // either order
+        #expect(s.resolve().dof == dof - 1)
+        let (a, b) = ends(s, l), p0 = s.point(e.points[0]), p1 = s.point(e.points[1])
+        let d = (s.point(b).0 - s.point(a).0, s.point(b).1 - s.point(a).1), t = (p1.0 - p0.0, p1.1 - p0.1)
+        #expect(abs(d.0 * t.1 - d.1 * t.0) < 1e-9 * hypot(d.0, d.1) * hypot(t.0, t.1))
+
+        // An arc ending where the spline ends: the spline's last leg is perpendicular to the radius.
+        let arc = s.addArc(center: (25, -5), start: (33, -5), end: (25, 3))
+        try s.addConstraint(.coincident, [s.entities[arc]!.points[2], e.points[3]])
+        try s.addConstraint(.tangent, [arc, sp])
+        let c = s.point(s.entities[arc]!.points[0]), q = s.point(e.points[3]), p2 = s.point(e.points[2])
+        #expect(abs((q.0 - p2.0) * (q.0 - c.0) + (q.1 - p2.1) * (q.1 - c.1)) < 1e-9 * 100)
+
+        // Spline to spline at a shared end.
+        let sp2 = try s.addSpline(poles: [(0, 0), (-5, 4), (-10, 0)], degree: 2)
+        try s.addConstraint(.coincident, [s.entities[sp2]!.points[0], ends(s, l).0])
+        #expect(throws: ForgeError.self) { try s.addConstraint(.tangent, [sp2, sp]) }  // no shared end
+        try s.addConstraint(.tangent, [l, sp2])
+        let rep = s.resolve()
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+    }
+
+    @Test func pointOnSplineAddsOneRowNetAndFollowsTheCurve() throws {
+        var s = newSketch()
+        let sp = try s.addSpline(poles: [(0, 0), (10, 10), (20, -10), (30, 0)], degree: 3)
+        let p = s.addPoint(15, 1)
+        let dof = s.resolve().dof
+        let c = try s.addConstraint(.onEntity, [p, sp])
+        #expect(s.constraints.first { $0.id == c }?.aux?.count == 1)
+        #expect(s.resolve().dof == dof - 1)  // 2 rows, 1 new unknown (t)
+        // The point now lies on the curve at its own parameter.
+        let t = s.params[s.constraints.first { $0.id == c }!.aux![0]]
+        #expect(near(s.point(p), s.splinePoint(sp, at: t), 1e-9))
+        // Moving a control point carries the point along.
+        try s.drag(s.entities[sp]!.points[1], to: (10, 20))
+        let t2 = s.params[s.constraints.first { $0.id == c }!.aux![0]]
+        #expect(near(s.point(p), s.splinePoint(sp, at: t2), 1e-9))
+        #expect(s.resolve().conflicting.isEmpty)
+    }
+
+    @Test func longSplinesUseChunkedDerivatives() throws {
+        // 10 control points: a tangent row touches 24 parameters (> Dual.maxVariables).
+        var s = newSketch()
+        let l = s.addLine(from: (-10, 0), to: (0, 0))
+        let poles: [(Double, Double)] = (0..<10).map { (Double($0) * 5, $0 == 0 ? 0 : sin(Double($0)) * 4 + 1) }
+        let sp = try s.addSpline(poles: poles, degree: 3)
+        try s.addConstraint(.coincident, [ends(s, l).1, s.entities[sp]!.points[0]])
+        let dof = s.resolve().dof
+        try s.addConstraint(.tangent, [l, sp])
+        let q = s.addPoint(22, 3)
+        try s.addConstraint(.onEntity, [q, sp])
+        let rep = s.resolve()
+        #expect(rep.dof == dof - 1 + 2 - 1)  // tangent; new point (+2) held on the curve (−1)
+        #expect(rep.redundant.isEmpty && rep.conflicting.isEmpty)
+        let e = s.entities[sp]!, p0 = s.point(e.points[0]), p1 = s.point(e.points[1])
+        let (a, b) = ends(s, l)
+        let d = (s.point(b).0 - s.point(a).0, s.point(b).1 - s.point(a).1)
+        #expect(abs(d.0 * (p1.1 - p0.1) - d.1 * (p1.0 - p0.0)) < 1e-8 * hypot(d.0, d.1) * hypot(p1.0 - p0.0, p1.1 - p0.1))
+    }
+
     @Test func unsupportedOperationsSayNotImplemented() throws {
         var s = newSketch()
         let sp = try s.addSpline(poles: [(0, 0), (5, 5), (10, 0)], degree: 2)
         let p = s.addPoint(5, 2)
         for op in [
-            { (s: inout Sketch) throws in _ = try s.addConstraint(.onEntity, [p, sp]) },
             { (s: inout Sketch) throws in _ = try s.trim(sp, at: (5, 2)) },
             { (s: inout Sketch) throws in _ = try s.split(sp, at: [(5, 2)]) },
             { (s: inout Sketch) throws in _ = try s.offset([sp], distance: 1) },

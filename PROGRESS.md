@@ -63,10 +63,14 @@
   profiles (exact Green's-theorem areas), rendering, mirror/patterns/move, save/open, and a
   B-spline segment in the kernel bridge (`FK_SEG_BSPLINE`) so splines extrude and revolve.
   Golden model 020: spline profile extruded (area 360 mm², centroid ȳ = 45/7 derived with
-  exact fractions). Point-on-spline, spline trim/split/offset/end tangency are explicit
-  `not_implemented` errors.
+  exact fractions). Then point-on-spline (the curve parameter is an extra solver unknown
+  owned by the relation) and tangency at spline ends (with lines, arcs, splines). Spline
+  trim/split/offset and tangency away from the ends are explicit `not_implemented` errors.
 
 ### Findings
+- The AD Jacobian seeded one SIMD16 lane per parameter a row touches, so any row over 16
+  parameters (a spline with 7+ control points in a tangency) would have trapped. Rows are
+  now differentiated in 16-parameter chunks; a 10-pole spline test covers it.
 - Relation choice matters for rank: after a split the pieces share a point, which makes
   collinear's first row (line) and equal radius at diametral split points (circle)
   degenerate; the tests' exact DOF expectations caught both.
@@ -102,7 +106,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1: spline end tangency + point-on-spline, partial ellipse, stretch; planegcs oracle harness.
+2. Remaining M1: partial ellipse, stretch, spline tools (fit/simplify/curvature); planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

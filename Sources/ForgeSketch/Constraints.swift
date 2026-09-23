@@ -41,10 +41,6 @@ extension Sketch {
                 throw bad("a point and a curve")
             }
             guard k.contains(where: Self.isCurve) else { throw bad("a point and a curve (use coincident for two points)") }
-            if k.contains(.spline) {
-                // NOT IMPLEMENTED: point on spline needs a curve-parameter unknown per point.
-                throw ForgeError(.notImplemented, "point on spline is not implemented yet; relate the spline's control points instead", entities: ids.map { "\(id)/\($0)" })
-            }
             return k[0] == .point ? ids : [ids[1], ids[0]]
         case .horizontal, .vertical:
             if k == [.line] || k == [.point, .point] { return ids }
@@ -54,6 +50,19 @@ extension Sketch {
             return ids
         case .tangent:
             guard k.count == 2 else { throw bad("a line and a circle/arc, or two circles/arcs") }
+            if k.contains(.spline) {
+                guard k.allSatisfy({ $0 == .line || $0 == .arc || $0 == .spline }) else {
+                    throw bad("a spline and a line, arc or spline that share an endpoint")
+                }
+                let ordered = k[0] == .spline && k[1] != .spline ? [ids[1], ids[0]] : ids
+                guard sharedTangencyPoint(ordered) != nil else {
+                    // NOT IMPLEMENTED: tangency to a spline away from its ends.
+                    throw ForgeError(
+                        .notImplemented, "tangency to a spline is only supported where it meets the other curve at one of its ends",
+                        entities: ids.map { "\(id)/\($0)" })
+                }
+                return ordered
+            }
             if k[0] == .line && Self.isRound(k[1]) { return ids }
             if k[1] == .line && Self.isRound(k[0]) { return [ids[1], ids[0]] }
             if Self.isRound(k[0]) && Self.isRound(k[1]) { return ids }
@@ -125,6 +134,7 @@ extension Sketch {
             default: return 2
             }
         case .coradial: return 3
+        case .onEntity where entities[c.entities[1]]?.kind == .spline: return 2
         case .offset:
             let tangent = c.tangentEnds?.count ?? 0, aligned = c.alignedEnds?.count ?? 0
             return entities[c.entities[0]]?.kind == .line ? 2 + aligned : 3 - (tangent > 0 ? 1 : 0) + aligned + tangent
@@ -137,7 +147,7 @@ extension Sketch {
         Array(Set(c.entities.flatMap { e -> [Int] in
             guard let ent = entities[e] else { return [] }
             return ent.kind == .point ? ent.params : paramIndices(e)
-        })).sorted()
+        } + (c.aux ?? []))).sorted()
     }
 
     /// Evaluate a constraint's residuals. `p` maps a global parameter index to a scalar.
@@ -186,7 +196,12 @@ extension Sketch {
                 let u = d.x * cr + d.y * sr, w = -(d.x * sr) + d.y * cr
                 // Approximate distance: (normalised radius - 1) · geometric mean axis.
                 return [(D.sqrt((u / a) * (u / a) + (w / b) * (w / b)) - D(constant: 1)) * D.sqrt(a * b)]
-            case .point, .spline: return []  // point-on-spline is refused in normalize
+            case .spline:
+                // q = S(t) with the curve parameter t as an extra unknown (clamped to [0, 1] in
+                // evaluation so the solver cannot run off the ends).
+                let poles = curve.points.map(pt)
+                return BSpline.residual(q, poles, degree: curve.degree ?? 3, t: p(c.aux![0]))
+            case .point: return []
             }
         case .horizontal:
             if ids.count == 1 {
@@ -212,6 +227,28 @@ extension Sketch {
             let (a2, b2) = ends(ids[1])
             return [lineDistance(a2, ids[0]), lineDistance(b2, ids[0])]
         case .tangent:
+            if entities[ids[1]]!.kind == .spline, let at = c.at {
+                // Spline end: its end tangent is the first/last control-point leg.
+                let sp = entities[ids[1]]!.points
+                let t = at == sp.first! ? pt(sp[1]) - pt(sp[0]) : pt(sp[sp.count - 1]) - pt(sp[sp.count - 2])
+                let first = entities[ids[0]]!
+                let dir: V2<D>
+                switch first.kind {
+                case .line:
+                    let (a, b) = ends(ids[0])
+                    dir = b - a
+                case .spline:
+                    let op = first.points
+                    let shared = pt(at)
+                    let atStart = (pt(op[0]) - shared).length.value < (pt(op[op.count - 1]) - shared).length.value
+                    dir = atStart ? pt(op[1]) - pt(op[0]) : pt(op[op.count - 1]) - pt(op[op.count - 2])
+                default:
+                    // Arc: the tangent is perpendicular to the radius at the shared point.
+                    let r = pt(at) - center(ids[0])
+                    dir = V2(x: -r.y, y: r.x)
+                }
+                return [dir.cross(t) / (dir.length * t.length) * angularScale]
+            }
             if let at = c.at {
                 // Endpoint tangency: the tangent direction at the shared point is continuous.
                 let q = pt(at)
@@ -395,14 +432,16 @@ extension Sketch {
             switch e.kind {
             case .line: return e.points
             case .arc: return [e.points[1], e.points[2]]
+            case .spline: return [e.points.first!, e.points.last!]
             default: return []
             }
         }
         let scale = max(1, params.map(abs).max() ?? 1)
         let tol = 1e-7 * scale
-        // The circular curve's endpoint is the anchor (for arc-arc: the first arc's).
-        let round = e0.kind == .line ? e1 : e0
-        let other = e0.kind == .line ? e0 : e1
+        // The anchor is the spline's end (a spline is always second), else the circular
+        // curve's endpoint (for arc-arc: the first arc's).
+        let round = e1.kind == .spline ? e1 : e0.kind == .line ? e1 : e0
+        let other = round.id == e1.id ? e0 : e1
         for p in endpoints(round) {
             let (x, y) = point(p)
             for q in endpoints(other) {

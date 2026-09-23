@@ -100,7 +100,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/partial-ellipse` | Entities: partial ellipse | not started | ForgeSketch | — | — |  |
 | `7.1/entities/parabola` | Entities: parabola | not started | ForgeSketch | — | — |  |
 | `7.1/entities/conic` | Entities: conic | not started | ForgeSketch | — | — |  |
-| `7.1/entities/spline` | Entities: spline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline | clamped uniform B-spline (degree 1–5), same curve in sketch and solid; point-on-spline, spline trim/split/offset, end tangency NOT IMPLEMENTED |
+| `7.1/entities/spline` | Entities: spline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline | clamped uniform B-spline (degree 1–5), same curve in sketch and solid; point-on-spline and end tangency supported; tangency away from the ends and spline trim/split/offset NOT IMPLEMENTED |
 | `7.1/entities/spline/point-control-vertex` | ↳ point/control-vertex | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline(through | poles) |
 | `7.1/entities/spline/style-spline` | ↳ style spline | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline/equation-driven-curve` | ↳ equation-driven curve | not started | ForgeSketch | — | — |  |

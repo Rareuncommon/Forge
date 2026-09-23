@@ -46,6 +46,10 @@ extension Sketch {
         c.linkedTo = linkedTo
         c.alignedEnds = alignedEnds
         c.tangentEnds = tangentEnds
+        if kind == .onEntity, let sp = trial.entities[ids[1]], sp.kind == .spline {
+            let t0 = BSpline.closestParam(trial.point(ids[0]), trial.splinePoles(sp.id), degree: sp.degree ?? 3)
+            c.aux = trial.addParams([t0])
+        }
         let id = trial.appendConstraint(c)
         let r = SketchSolver.solve(&trial)
         try Self.judge(r, new: id, previous: before, kind: kind, entities: ids, value: value, sketchID: self.id)

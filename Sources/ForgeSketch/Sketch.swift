@@ -99,6 +99,8 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
     /// fixes the point's normal position, so this copy holds it only tangentially (aligned with
     /// the original's end) and drops its own distance row (line) or radius row (arc).
     public var tangentEnds: [String]? = nil
+    /// Extra solver unknowns owned by the constraint (point on spline: the curve parameter t).
+    public var aux: [Int]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, kind, entities, value, driven, side, at
@@ -106,6 +108,7 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
         case linkedTo = "linked_to"
         case alignedEnds = "aligned_ends"
         case tangentEnds = "tangent_ends"
+        case aux = "aux_params"
     }
 }
 
