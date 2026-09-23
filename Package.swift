@@ -105,7 +105,7 @@ if env["FORGE_NO_APP"] == nil {
 targets.append(
     .executableTarget(
         name: "ForgeApp",
-        dependencies: ["ForgeCore", "ForgeKernel", "ForgeCommands", "ForgeRender"],
+        dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender"],
         swiftSettings: strictSwift
     )
 )

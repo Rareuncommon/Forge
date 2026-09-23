@@ -54,6 +54,9 @@ final class AppModel {
     var sceneVersion = 0
     var scene = DocumentSceneBox()
     var viewportCommands = ViewportCommandQueue()
+    /// The sketch being edited (mirrors document.state's active_sketch).
+    var activeSketch: String?
+    var sketchState = SketchUIState()
 
     func bootstrap() async {
         await run("document.new", ["name": "Part1"])
@@ -83,7 +86,8 @@ final class AppModel {
             scene = DocumentSceneBox(value: ds)
             sceneVersion += 1
         }
-        if let first = selection.first, let o = try? await engine.execute("query.entity", ["ref": .string(first)]) {
+        await refreshSketchState()
+        if let first = selection.first, !first.hasPrefix("sketch-"), let o = try? await engine.execute("query.entity", ["ref": .string(first)]) {
             inspector = o.result
         } else {
             inspector = nil
@@ -125,8 +129,12 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         } detail: {
             HSplitView {
-                ViewportView()
-                    .frame(minWidth: 400, minHeight: 300)
+                VStack(spacing: 0) {
+                    SketchToolbar()
+                    Divider()
+                    ViewportView()
+                }
+                .frame(minWidth: 400, minHeight: 300)
                 InspectorView()
                     .frame(minWidth: 220, idealWidth: 280, maxWidth: 400)
             }

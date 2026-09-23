@@ -8,6 +8,7 @@
 import ForgeCommands
 import ForgeCore
 import ForgeRender
+import ForgeSketch
 import MetalKit
 import SwiftUI
 
@@ -28,6 +29,8 @@ struct ViewportView: NSViewRepresentable {
             view.delegate = renderer
         }
         view.onPick = { ref, extend in Task { await model.select(ref, extend: extend) } }
+        view.onSketchClick = { point, tolerance in Task { await model.sketchClick(point, tolerance: tolerance) } }
+        view.onCancel = { model.cancelSketchOperation() }
         view.setAccessibilityLabel("3D viewport")
         view.setAccessibilityRole(.group)
         return view
@@ -39,10 +42,12 @@ struct ViewportView: NSViewRepresentable {
             context.coordinator.sceneVersion = model.sceneVersion
             view.documentScene = ds
             view.renderer?.setScene(ds.scene)
+            view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
             if first { view.fit() }
             view.needsDisplay = true
         }
         let commands = model.viewportCommands.log
+        view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
         if context.coordinator.appliedCommands < commands.count {
             for c in commands[context.coordinator.appliedCommands...] {
                 switch c {
@@ -64,6 +69,10 @@ final class ForgeMTKView: MTKView {
     var renderer: MetalViewportRenderer?
     var documentScene: DocumentScene?
     var onPick: ((String?, Bool) -> Void)?
+    /// Set while a sketch tool is active: clicks become sketch coordinates instead of picks.
+    var sketchPlane: SketchPlane?
+    var onSketchClick: ((Point2, Double) -> Void)?
+    var onCancel: (() -> Void)?
     private var dragStart: NSPoint?
     private var dragged = false
 
@@ -99,11 +108,34 @@ final class ForgeMTKView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         defer { dragStart = nil }
-        guard !dragged, let r = renderer, let ds = documentScene else { return }
+        guard !dragged, let r = renderer else { return }
         let p = convert(event.locationInWindow, from: nil)
+        if let plane = sketchPlane {
+            // Ray through the cursor intersected with the sketch plane.
+            let cam = r.camera
+            let (o, d) = cam.ray(pixelX: Double(p.x), pixelY: Double(bounds.height - p.y), width: Double(bounds.width), height: Double(bounds.height))
+            let n = plane.normal
+            let denom = d.dot(n)
+            guard abs(denom) > 1e-9 else { return }
+            let hit = o + d * ((plane.origin - o).dot(n) / denom)
+            let rel = hit - plane.origin
+            // Snap tolerance: 8 pixels in model units at the target plane.
+            let tolerance = 8 * 2 * cam.visibleHalfHeight / max(Double(bounds.height), 1)
+            onSketchClick?(Point2(rel.dot(plane.xAxis), rel.dot(plane.yAxis)), tolerance)
+            return
+        }
+        guard let ds = documentScene else { return }
         let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
         let hit = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
         onPick?(hit.flatMap { ds.reference(for: $0) }, event.modifierFlags.contains(.shift))
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {  // Escape
+            onCancel?()
+        } else {
+            super.keyDown(with: event)
+        }
     }
 
     override func rightMouseDragged(with event: NSEvent) {
