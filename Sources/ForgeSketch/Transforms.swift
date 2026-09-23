@@ -82,13 +82,26 @@ extension Sketch {
                 n = addEllipse(
                     center: map.apply(pts[0]), major: params[e.params[0]] * map.k, minor: params[e.params[1]] * map.k,
                     rotation: map.apply(angle: params[e.params[2]]), construction: e.construction)
+            case .ellipseArc:
+                // Parametric angles of the mapped ends in the mapped ellipse's own frame; a
+                // reflection reverses the sense, so the copy runs image(end) → image(start).
+                let a = params[e.params[0]] * map.k, b = params[e.params[1]] * map.k
+                let rot = map.apply(angle: params[e.params[2]]), c = map.apply(pts[0])
+                func phi(_ q: (Double, Double)) -> Double {
+                    let dx = q.0 - c.0, dy = q.1 - c.1
+                    return atan2((-dx * sin(rot) + dy * cos(rot)) / b, (dx * cos(rot) + dy * sin(rot)) / a)
+                }
+                let (s0, s1) = (phi(map.apply(pts[1])), phi(map.apply(pts[2])))
+                n = map.isReflection
+                    ? addEllipseArc(center: c, major: a, minor: b, rotation: rot, from: s1, to: s0, construction: e.construction)
+                    : addEllipseArc(center: c, major: a, minor: b, rotation: rot, from: s0, to: s1, construction: e.construction)
             case .spline:
                 n = insertSpline(poles: pts.map(map.apply), degree: e.degree ?? 3, construction: e.construction)
             }
             m[id] = n
             let ne = entities[n]!
             var newPoints = ne.points
-            if e.kind == .arc && map.isReflection { newPoints.swapAt(1, 2) }
+            if (e.kind == .arc || e.kind == .ellipseArc) && map.isReflection { newPoints.swapAt(1, 2) }
             for (old, new) in zip(e.points, newPoints) { m[old] = new }
         }
         return m
@@ -139,7 +152,7 @@ extension Sketch {
                 if let c = try s.addUnlessImplied(.symmetric, [id, m[id]!, axis]) { added.append(c) } else { free += e.points }
             case .line, .spline: free += e.points
             case .point: free.append(id)
-            case .ellipse: break  // copied without a relation (symmetric does not cover ellipses yet)
+            case .ellipse, .ellipseArc: break  // copied without a relation (symmetric does not cover ellipses yet)
             }
         }
         added += try s.copyTopology(m, skip: [.tangent])
@@ -283,7 +296,7 @@ extension Sketch {
             let e = s.entities[id]!
             switch e.kind {
             case .circle: s.params[e.params[0]] *= map.k
-            case .ellipse:
+            case .ellipse, .ellipseArc:
                 s.params[e.params[0]] *= map.k
                 s.params[e.params[1]] *= map.k
                 s.params[e.params[2]] = map.apply(angle: s.params[e.params[2]])

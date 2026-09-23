@@ -116,6 +116,14 @@ public struct SketchEntityView: Codable, Sendable, Hashable {
             majorRadius = s.params[e.params[0]]
             minorRadius = s.params[e.params[1]]
             rotationDeg = s.params[e.params[2]] * 180 / .pi
+        case .ellipseArc:
+            points = e.points
+            center = p(e.points[0])
+            start = p(e.points[1])
+            end = p(e.points[2])
+            majorRadius = s.params[e.params[0]]
+            minorRadius = s.params[e.params[1]]
+            rotationDeg = s.params[e.params[2]] * 180 / .pi
         case .spline:
             points = e.points  // control points; the first and last are the ends
             start = p(e.points.first!)
@@ -595,18 +603,24 @@ public enum SketchAddEllipse: Command {
         public var majorRadius: Length
         public var minorRadius: Length
         public var rotation: Angle?
+        public var start: Point2?
+        public var end: Point2?
         public var construction: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case sketch, center, rotation, construction
+            case sketch, center, rotation, start, end, construction
             case majorRadius = "major_radius"
             case minorRadius = "minor_radius"
         }
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": sketchParamDoc, "center": "Centre", "major_radius": "Semi-major axis", "minor_radius": "Semi-minor axis",
-            "rotation": FieldDoc("Angle of the major axis from sketch +u", default: 0), "construction": constructionDoc,
+            "rotation": FieldDoc("Angle of the major axis from sketch +u", default: 0),
+            "start": "Partial ellipse: where it starts (projected onto the ellipse); give with 'end'",
+            "end": "Partial ellipse: where it ends, counter-clockwise from 'start'",
+            "construction": constructionDoc,
         ]
         public func validate() throws {
+            guard (start == nil) == (end == nil) else { throw ForgeError(.invalidParams, "a partial ellipse needs both 'start' and 'end'") }
             try requirePositive(majorRadius, "major_radius")
             try requirePositive(minorRadius, "minor_radius")
             guard minorRadius.millimeters <= majorRadius.millimeters else { throw ForgeError(.invalidParams, "minor_radius must not exceed major_radius") }
@@ -615,13 +629,27 @@ public enum SketchAddEllipse: Command {
     public typealias Output = SketchEditResult
 
     public static let name = "sketch.add_ellipse"
-    public static let summary = "Add an ellipse"
+    public static let summary = "Add an ellipse, or a partial ellipse with 'start' and 'end'"
     public static let category = CommandCategory.sketch
     public static let undo = UndoBehavior.undoable
-    public static let examples: [JSONValue] = [["center": [0, 0], "major_radius": 20, "minor_radius": 10, "rotation": "30 deg"]]
+    public static let examples: [JSONValue] = [
+        ["center": [0, 0], "major_radius": 20, "minor_radius": 10, "rotation": "30 deg"],
+        ["center": [0, 0], "major_radius": 20, "minor_radius": 10, "start": [20, 0], "end": [-20, 0]],
+    ]
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        if let st = p.start, let en = p.end {
+            let (a, b, rot, c) = (p.majorRadius.millimeters, p.minorRadius.millimeters, p.rotation?.radians ?? 0, p.center.tuple)
+            func phi(_ q: Point2) -> Double {
+                let dx = q.u - c.0, dy = q.v - c.1
+                return atan2((-dx * sin(rot) + dy * cos(rot)) / b, (dx * cos(rot) + dy * sin(rot)) / a)
+            }
+            let (f, t) = (phi(st), phi(en))
+            guard abs(Sketch.wrap(t - f)) > 1e-9 else { throw ForgeError(.invalidParams, "start and end are the same point of the ellipse") }
+            let id = s.addEllipseArc(center: c, major: a, minor: b, rotation: rot, from: f, to: t, construction: p.construction ?? false)
+            return finish(&ctx, doc, &s, created: [id], infer: true)
+        }
         let id = s.addEllipse(
             center: p.center.tuple, major: p.majorRadius.millimeters, minor: p.minorRadius.millimeters, rotation: p.rotation?.radians ?? 0,
             construction: p.construction ?? false)

@@ -153,11 +153,12 @@ typedef enum FKSegmentKind {
     FK_SEG_CIRCLE = 2,   /* p[0..2] centre, p[3..5] normal, p[9] radius */
     FK_SEG_ELLIPSE = 3,  /* p[0..2] centre, p[3..5] normal, p[6..8] major direction, p[9] major r, p[10] minor r */
     FK_SEG_BSPLINE = 4,  /* p[0] first pole index into `poles`, p[1] pole count, p[2] degree; clamped uniform knots */
+    FK_SEG_ELLIPSE_ARC = 5, /* as FK_SEG_ELLIPSE, plus p[11] start and p[12] end parameter (CCW about the normal) */
 } FKSegmentKind;
 
 typedef struct FKSegment {
     int32_t kind;
-    double p[11];
+    double p[13];
 } FKSegment;
 
 /* Planar face(s) from loops. Segments of loop i are segments[loopStart[i] .. loopStart[i+1]).

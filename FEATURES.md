@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 873 · in progress: 100 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 872 · in progress: 101 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -97,7 +97,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/arc/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_arc(three_point) |  |
 | `7.1/entities/polygon` | Entities: polygon | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_polygon | inscribed/circumscribed; golden 104 |
 | `7.1/entities/ellipse` | Entities: ellipse | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_ellipse | relations: on_entity, concentric; ellipse dimensions pending |
-| `7.1/entities/partial-ellipse` | Entities: partial ellipse | not started | ForgeSketch | — | — |  |
+| `7.1/entities/partial-ellipse` | Entities: partial ellipse | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/021_half_ellipse_extruded.json | execute:sketch.add_ellipse(start, end) | solver, profiles (exact area), kernel edge, mirror/move; trim/split/offset/symmetric NOT IMPLEMENTED; not yet a feature-tree item (M2) |
 | `7.1/entities/parabola` | Entities: parabola | not started | ForgeSketch | — | — |  |
 | `7.1/entities/conic` | Entities: conic | not started | ForgeSketch | — | — |  |
 | `7.1/entities/spline` | Entities: spline | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/GoldenModelTests/Models/020_spline_profile_extruded.json | execute:sketch.add_spline | clamped uniform B-spline (degree 1–5), same curve in sketch and solid; point-on-spline and end tangency supported; tangency away from the ends and spline trim/split/offset NOT IMPLEMENTED |

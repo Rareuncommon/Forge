@@ -72,7 +72,7 @@ extension Sketch {
             if k.count == 2, Self.isRound(k[0]), Self.isRound(k[1]) { return ids }
             throw bad("two lines or two circles/arcs")
         case .symmetric:
-            guard k.count == 3, k[2] == .line, k[0] == k[1], k[0] != .ellipse else {
+            guard k.count == 3, k[2] == .line, k[0] == k[1], k[0] != .ellipse, k[0] != .ellipseArc else {
                 throw bad("two points, lines, circles or arcs and a line (the symmetry axis)")
             }
             return ids
@@ -189,7 +189,7 @@ extension Sketch {
             switch curve.kind {
             case .line: return [lineDistance(q, ids[1])]
             case .circle, .arc: return [(q - center(ids[1])).length - radius(ids[1])]
-            case .ellipse:
+            case .ellipse, .ellipseArc:
                 let c0 = center(ids[1]), a = p(curve.params[0]), b = p(curve.params[1]), rot = p(curve.params[2])
                 let d = q - c0
                 let cr = D.cos(rot), sr = D.sin(rot)

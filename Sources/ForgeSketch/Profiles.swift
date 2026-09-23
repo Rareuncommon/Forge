@@ -74,11 +74,40 @@ extension Sketch {
                 let u = a * cos(t), v = b * sin(t)
                 return (cx + u * cos(rot) - v * sin(rot), cy + u * sin(rot) + v * cos(rot))
             }
+        case .ellipseArc:
+            let (cx, cy) = point(e.points[0])
+            let a = params[e.params[0]], b = params[e.params[1]], rot = params[e.params[2]]
+            let (phi0, sweep) = ellipseArcSpan(id)
+            let n = max(2, Int((Double(segments) * sweep / (2 * .pi)).rounded(.up)))
+            return (0...n).map { i in
+                let t = phi0 + sweep * Double(i) / Double(n)
+                let u = a * cos(t), v = b * sin(t)
+                return (cx + u * cos(rot) - v * sin(rot), cy + u * sin(rot) + v * cos(rot))
+            }
         case .spline:
             let spans = max(1, e.points.count - (e.degree ?? 3))
             let n = max(segments / 2, 16) * spans
             return (0...n).map { splinePoint(id, at: Double($0) / Double(n)) }
         }
+    }
+
+    /// Parametric angle of a point of an ellipse (projected along the ellipse's own frame).
+    func ellipseParam(_ id: String, _ q: (Double, Double)) -> Double {
+        let e = entities[id]!
+        let (cx, cy) = point(e.points[0])
+        let a = params[e.params[0]], b = params[e.params[1]], rot = params[e.params[2]]
+        let dx = q.0 - cx, dy = q.1 - cy
+        let u = dx * cos(rot) + dy * sin(rot), w = -dx * sin(rot) + dy * cos(rot)
+        return atan2(w / b, u / a)
+    }
+
+    /// Start parametric angle and counter-clockwise parametric sweep ∈ (0, 2π] of a partial ellipse.
+    public func ellipseArcSpan(_ id: String) -> (phi0: Double, sweep: Double) {
+        let e = entities[id]!
+        let phi0 = ellipseParam(id, point(e.points[1]))
+        var sweep = ellipseParam(id, point(e.points[2])) - phi0
+        while sweep <= 1e-12 { sweep += 2 * .pi }
+        return (phi0, sweep)
     }
 
     /// Exact area enclosed by a closed curve (circle/ellipse), else nil.
@@ -114,7 +143,7 @@ extension Sketch {
         for c in curves {
             switch c.kind {
             case .line: edges.append(Edge(id: c.id, a: node(c.points[0]), b: node(c.points[1])))
-            case .arc: edges.append(Edge(id: c.id, a: node(c.points[1]), b: node(c.points[2])))
+            case .arc, .ellipseArc: edges.append(Edge(id: c.id, a: node(c.points[1]), b: node(c.points[2])))
             case .spline: edges.append(Edge(id: c.id, a: node(c.points.first!), b: node(c.points.last!)))
             case .circle, .ellipse:
                 loops.append(ProfileLoop(entities: [c.id], forward: [true], signedAreaMM2: closedCurveArea(c)!, parent: nil, depth: 0))
@@ -205,7 +234,7 @@ extension Sketch {
                 area += forward ? g : -g
                 continue
             }
-            let (a, b): (String, String) = e.kind == .arc ? (e.points[1], e.points[2]) : (e.points[0], e.points[1])
+            let (a, b): (String, String) = e.kind == .arc || e.kind == .ellipseArc ? (e.points[1], e.points[2]) : (e.points[0], e.points[1])
             let (p, q) = forward ? (point(a), point(b)) : (point(b), point(a))
             area += (p.0 * q.1 - q.0 * p.1) / 2
             if e.kind == .arc {
@@ -214,6 +243,11 @@ extension Sketch {
                 var sweep = atan2(ey - cy, ex - cx) - atan2(sy - cy, sx - cx)
                 while sweep <= 0 { sweep += 2 * .pi }
                 let segment = r2 / 2 * (sweep - sin(sweep))
+                area += forward ? segment : -segment
+            } else if e.kind == .ellipseArc {
+                // The affine image of a circular segment: ab/2 · (Δ − sin Δ) in the parametric angle.
+                let (_, sweep) = ellipseArcSpan(id)
+                let segment = params[e.params[0]] * params[e.params[1]] / 2 * (sweep - sin(sweep))
                 area += forward ? segment : -segment
             }
         }

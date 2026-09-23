@@ -128,12 +128,14 @@ public enum ProfileSegment: Sendable, Hashable {
     case arc(Vec3, Vec3, Vec3)
     case circle(center: Vec3, normal: Vec3, radius: Double)
     case ellipse(center: Vec3, normal: Vec3, majorDirection: Vec3, majorRadius: Double, minorRadius: Double)
+    /// Elliptical arc from parameter `from` to `to`, counter-clockwise about `normal`.
+    case ellipseArc(center: Vec3, normal: Vec3, majorDirection: Vec3, majorRadius: Double, minorRadius: Double, from: Double, to: Double)
     /// Clamped uniform B-spline through its end poles.
     case bspline(poles: [Vec3], degree: Int)
 
     var c: FKSegment {
         var s = FKSegment()
-        var p = [Double](repeating: 0, count: 11)
+        var p = [Double](repeating: 0, count: 13)
         func put(_ v: Vec3, _ at: Int) {
             p[at] = v.x
             p[at + 1] = v.y
@@ -161,6 +163,15 @@ public enum ProfileSegment: Sendable, Hashable {
             put(d, 6)
             p[9] = a
             p[10] = b
+        case .ellipseArc(let c, let n, let d, let a, let b, let from, let to):
+            s.kind = Int32(FK_SEG_ELLIPSE_ARC.rawValue)
+            put(c, 0)
+            put(n, 3)
+            put(d, 6)
+            p[9] = a
+            p[10] = b
+            p[11] = from
+            p[12] = to
         case .bspline:
             s.kind = Int32(FK_SEG_BSPLINE.rawValue)  // pole block filled in by Kernel.faces
         }

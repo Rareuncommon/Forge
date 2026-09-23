@@ -1037,3 +1037,56 @@ struct SplineTests {
         }
     }
 }
+
+@Suite("Partial ellipses")
+struct EllipseArcTests {
+    @Test func halfEllipseClosedByItsAxis() throws {
+        var s = newSketch()
+        let arc = s.addEllipseArc(center: (0, 0), major: 20, minor: 10, rotation: 0, from: 0, to: .pi)
+        let e = s.entities[arc]!
+        #expect(near(s.point(e.points[1]), (20, 0)) && near(s.point(e.points[2]), (-20, 0)))
+        #expect(s.resolve().dof == 7)  // centre, axes, rotation, two end angles
+        let l = s.addLine(from: (-20, 0), to: (20, 0))
+        try s.addConstraint(.coincident, [e.points[2], ends(s, l).0])
+        try s.addConstraint(.coincident, [ends(s, l).1, e.points[1]])
+        let rep = s.profiles()
+        #expect(rep.valid)
+        #expect(near(rep.regionAreaMM2, Double.pi * 100, 1e-9))
+        #expect(s.resolve().redundant.isEmpty)
+    }
+
+    @Test func rotatedQuarterAreaAndDraggedEndsStayOnTheEllipse() throws {
+        var s = newSketch()
+        let rot = 0.4
+        let arc = s.addEllipseArc(center: (5, 5), major: 12, minor: 7, rotation: rot, from: 0.3, to: 0.3 + .pi / 2)
+        // Sector-minus-triangle for a parametric sweep of π/2: ab/2 · (π/2 − 1).
+        let e = s.entities[arc]!
+        let l = s.addLine(from: s.point(e.points[2]), to: s.point(e.points[1]))
+        try s.addConstraint(.coincident, [e.points[2], ends(s, l).0])
+        try s.addConstraint(.coincident, [ends(s, l).1, e.points[1]])
+        let expected: Double = 12.0 * 7.0 / 2.0 * (Double.pi / 2 - 1)
+        #expect(near(s.profiles().regionAreaMM2, expected, 1e-9))
+        try s.drag(e.points[2], to: (0, 20))
+        // The ellipse itself is free, so measure against its current centre, axes and rotation.
+        let q = s.point(e.points[2]), c = s.point(e.points[0])
+        let (a, b, r) = (s.params[e.params[0]], s.params[e.params[1]], s.params[e.params[2]])
+        let dx = q.0 - c.0, dy = q.1 - c.1
+        let u = dx * cos(r) + dy * sin(r), w = -dx * sin(r) + dy * cos(r)
+        let level: Double = (u / a) * (u / a) + (w / b) * (w / b)
+        #expect(abs(level - 1) < 1e-9)
+    }
+
+    @Test func mirroredPartialEllipseKeepsItsShape() throws {
+        var s = newSketch()
+        let axis = s.addLine(from: (0, -10), to: (0, 30), construction: true)
+        let arc = s.addEllipseArc(center: (20, 0), major: 8, minor: 4, rotation: 0.2, from: 0.1, to: 2.0)
+        let (created, _) = try s.mirror([arc], about: axis)
+        let m = s.entities[created[0]]!, o = s.entities[arc]!
+        // Mirrored ends are the images of the original ends (swapped: the sense reverses).
+        let (os, oe) = (s.point(o.points[1]), s.point(o.points[2]))
+        let (me, ms): ((Double, Double), (Double, Double)) = ((-oe.0, oe.1), (-os.0, os.1))
+        #expect(near(s.point(m.points[1]), me, 1e-9))
+        #expect(near(s.point(m.points[2]), ms, 1e-9))
+        #expect(near(s.ellipseArcSpan(created[0]).sweep, s.ellipseArcSpan(arc).sweep, 1e-9))
+    }
+}

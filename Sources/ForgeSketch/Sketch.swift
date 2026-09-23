@@ -35,7 +35,7 @@ public struct SketchPlane: Codable, Sendable, Hashable {
 }
 
 public enum SketchEntityKind: String, Codable, Sendable, CaseIterable, SchemaEnum {
-    case point, line, circle, arc, ellipse, spline
+    case point, line, circle, arc, ellipse, ellipseArc = "ellipse_arc", spline
 }
 
 /// A sketch entity. Curves reference their defining points (which are entities too, owned
@@ -47,9 +47,11 @@ public struct SketchEntity: Codable, Sendable, Hashable {
     /// For points created by a curve (line endpoints, arc centre/ends...): the curve's id.
     public var owner: String?
     /// line: [start, end]; circle: [center]; arc: [center, start, end] (CCW start→end);
-    /// ellipse: [center]; spline: control points; point: [].
+    /// ellipse: [center]; ellipse_arc: [center, start, end] (CCW start→end); spline: control
+    /// points; point: [].
     public var points: [String]
-    /// point: [x, y]; circle: [radius]; ellipse: [major, minor, rotation]; line/arc/spline: [].
+    /// point: [x, y]; circle: [radius]; ellipse/ellipse_arc: [major, minor, rotation];
+    /// line/arc/spline: [].
     public var params: [Int]
     /// Spline degree (spline: points are its control points, first and last are its ends).
     public var degree: Int? = nil
@@ -228,12 +230,34 @@ public struct Sketch: Codable, Sendable, Hashable {
         return id
     }
 
+    /// Partial ellipse from parametric angle `from` to `to` (counter-clockwise). Its ends are
+    /// held on the ellipse by internal relations.
+    @discardableResult
+    public mutating func addEllipseArc(
+        center: (Double, Double), major: Double, minor: Double, rotation: Double, from: Double, to: Double, construction: Bool = false
+    ) -> String {
+        let id = newID(.ellipseArc)
+        func at(_ phi: Double) -> (Double, Double) {
+            let u = major * cos(phi), w = minor * sin(phi)
+            return (center.0 + u * cos(rotation) - w * sin(rotation), center.1 + u * sin(rotation) + w * cos(rotation))
+        }
+        let c = addPoint(center.0, center.1, construction: true, owner: id)
+        let a = at(from), b = at(to)
+        let sp = addPoint(a.0, a.1, construction: construction, owner: id)
+        let ep = addPoint(b.0, b.1, construction: construction, owner: id)
+        insert(SketchEntity(id: id, kind: .ellipseArc, construction: construction, owner: nil, points: [c, sp, ep], params: addParams([major, minor, rotation])))
+        for (tag, p) in [("start", sp), ("end", ep)] {
+            constraints.append(SketchConstraint(id: "\(id)#\(tag)", kind: .onEntity, entities: [p, id], value: nil, driven: false, side: 1, isInternal: true))
+        }
+        return id
+    }
+
     public mutating func setConstruction(_ id: String, _ value: Bool) throws {
         guard var e = entities[id], id != Self.originID else { throw ForgeError(.unknownEntity, "no entity '\(id)'") }
         e.construction = value
         entities[id] = e
-        if e.kind == .line || e.kind == .arc {
-            for p in e.points where entities[p]?.owner == id && !(e.kind == .arc && p == e.points[0]) {
+        if e.kind == .line || e.kind == .arc || e.kind == .ellipseArc {
+            for p in e.points where entities[p]?.owner == id && !(e.kind != .line && p == e.points[0]) {
                 entities[p]!.construction = value
             }
         }

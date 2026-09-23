@@ -66,6 +66,11 @@
   exact fractions). Then point-on-spline (the curve parameter is an extra solver unknown
   owned by the relation) and tangency at spline ends (with lines, arcs, splines). Spline
   trim/split/offset and tangency away from the ends are explicit `not_implemented` errors.
+- **Partial ellipse:** `ellipse_arc` entity via `sketch.add_ellipse` with `start`/`end` —
+  ends held on the ellipse by internal relations (7 DOF), exact loop areas (the affine image of
+  the circular-segment formula), rendering, mirror/move/scale, and an elliptical-arc edge in the
+  kernel bridge (`FK_SEG_ELLIPSE_ARC`; `FKSegment` grew to 13 doubles). Golden model 021: half
+  ellipse extruded (volume 1000π, centroid height 40/3π).
 
 ### Findings
 - The AD Jacobian seeded one SIMD16 lane per parameter a row touches, so any row over 16
@@ -96,7 +101,7 @@
   not yet dimensions that drive them; dynamic mirror is not implemented.
 - Ellipses cannot be trimmed/extended (no partial ellipse yet); trim is one pick per call.
 - Offset: ellipses and arc-joined corners/arc caps are not implemented.
-- Not started in 7.1: spline tools (tangency/curvature handles, fit, simplify), partial ellipse, parabola, conic, text,
+- Not started in 7.1: spline tools (tangency/curvature handles, fit, simplify), parabola, conic, text,
   move/copy/rotate/scale, split, and the other sketch tools, arc slots, 3D sketches,
   arc-length/path-length/ordinate/chain/baseline dimensions, equations in dimension fields.
 - The planegcs oracle harness (ADR 0003) is not built.
@@ -106,7 +111,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1: partial ellipse, stretch, spline tools (fit/simplify/curvature); planegcs oracle harness.
+2. Remaining M1: ellipse/partial-ellipse trim/split, stretch, spline tools (fit/simplify/curvature), conics/parabola, text; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

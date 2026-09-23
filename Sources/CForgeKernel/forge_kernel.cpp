@@ -59,6 +59,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeArcOfEllipse.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <TColStd_Array1OfInteger.hxx>
 #include <TColStd_Array1OfReal.hxx>
@@ -437,6 +438,16 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
             case FK_SEG_ELLIPSE: {
                 gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
                 e = BRepBuilderAPI_MakeEdge(gp_Elips(ax, sg.p[9], sg.p[10]));
+                break;
+            }
+            case FK_SEG_ELLIPSE_ARC: {
+                gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
+                GC_MakeArcOfEllipse arc(gp_Elips(ax, sg.p[9], sg.p[10]), sg.p[11], sg.p[12], Standard_True);
+                if (!arc.IsDone()) {
+                    setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate elliptical arc in profile");
+                    return nullptr;
+                }
+                e = BRepBuilderAPI_MakeEdge(arc.Value());
                 break;
             }
             case FK_SEG_BSPLINE: {

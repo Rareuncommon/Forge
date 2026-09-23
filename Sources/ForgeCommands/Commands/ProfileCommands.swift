@@ -42,6 +42,14 @@ extension Sketch {
                     let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
                     return .ellipse(center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
                                     majorRadius: params[e.params[0]], minorRadius: params[e.params[1]])
+                case .ellipseArc:
+                    // Same edge whichever way the loop runs (the wire builder orients it).
+                    let rot = params[e.params[2]]
+                    let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
+                    let (phi0, sweep) = ellipseArcSpan(eid)
+                    return .ellipseArc(
+                        center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
+                        majorRadius: params[e.params[0]], minorRadius: params[e.params[1]], from: phi0, to: phi0 + sweep)
                 case .spline:
                     // Clamped uniform knots are symmetric, so reversing the poles reverses the curve.
                     let poles = e.points.map(P)

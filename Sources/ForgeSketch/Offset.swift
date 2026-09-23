@@ -118,7 +118,7 @@ extension Sketch {
             case .line, .arc: curves.append(id)
             case .circle: circles.append(id)
             case .point: throw ForgeError(.invalidParams, "points cannot be offset", entities: [id])
-            case .ellipse, .spline:
+            case .ellipse, .ellipseArc, .spline:
                 // NOT IMPLEMENTED: the offset of an ellipse or spline is not a curve of the same kind
                 // (needs spline approximation of offset curves).
                 throw ForgeError(.notImplemented, "offsetting \(e.kind.rawValue)s is not implemented yet", entities: [id])
