@@ -3,14 +3,19 @@ import Foundation
 
 /// A rigid 2D map used to copy sketch geometry (mirror, patterns).
 struct RigidMap2 {
-    /// x' = R·x + t, where R is a rotation (det +1) or a reflection (det −1).
+    /// x' = R·x + t, where R is a rotation or reflection times a uniform scale `k`.
     var r00: Double, r01: Double, r10: Double, r11: Double
     var tx: Double, ty: Double
+    var k: Double = 1
 
     var isReflection: Bool { r00 * r11 - r01 * r10 < 0 }
 
     func apply(_ p: (Double, Double)) -> (Double, Double) {
         (r00 * p.0 + r01 * p.1 + tx, r10 * p.0 + r11 * p.1 + ty)
+    }
+
+    static func scaling(about c: (Double, Double), by f: Double) -> RigidMap2 {
+        RigidMap2(r00: f, r01: 0, r10: 0, r11: f, tx: c.0 * (1 - f), ty: c.1 * (1 - f), k: f)
     }
 
     /// Maps a direction angle (e.g. an ellipse's major-axis rotation).
@@ -67,7 +72,7 @@ extension Sketch {
             case .line:
                 n = addLine(from: map.apply(pts[0]), to: map.apply(pts[1]), construction: e.construction)
             case .circle:
-                n = addCircle(center: map.apply(pts[0]), radius: params[e.params[0]], construction: e.construction)
+                n = addCircle(center: map.apply(pts[0]), radius: params[e.params[0]] * map.k, construction: e.construction)
             case .arc:
                 // A reflection reverses the sense of rotation: the copy runs from image(end) to image(start).
                 n = map.isReflection
@@ -75,7 +80,7 @@ extension Sketch {
                     : addArc(center: map.apply(pts[0]), start: map.apply(pts[1]), end: map.apply(pts[2]), construction: e.construction)
             case .ellipse:
                 n = addEllipse(
-                    center: map.apply(pts[0]), major: params[e.params[0]], minor: params[e.params[1]],
+                    center: map.apply(pts[0]), major: params[e.params[0]] * map.k, minor: params[e.params[1]] * map.k,
                     rotation: map.apply(angle: params[e.params[2]]), construction: e.construction)
             }
             m[id] = n
@@ -214,5 +219,102 @@ extension Sketch {
             }
         }
         return added
+    }
+}
+
+extension Sketch {
+    // MARK: move / rotate / scale (SPEC 7.1 "move/copy/rotate/scale")
+
+    /// Applies `map` to entities in place, or to copies when `copy` is set. In place, relations
+    /// that tie moved geometry to unmoved geometry are deleted unless `keepRelations` (then the
+    /// solver pulls the result back into agreement); relations the map itself breaks
+    /// (horizontal/vertical under rotation) are deleted, and dimensions among the moved
+    /// geometry scale with it. Returns (moved or created entities, removed constraints,
+    /// added constraints).
+    mutating func transform(_ ids: [String], _ map: RigidMap2, copy: Bool, keepRelations: Bool) throws
+        -> (entities: [String], removed: [String], added: [String])
+    {
+        let set = try copySet(ids)
+        var s = self
+        if copy {
+            let m = s.copy(set, map)
+            let added = try s.copyTopology(m)
+            s.resolve()
+            self = s
+            return (set.map { m[$0]! }, [], added)
+        }
+        var moved = Set(set)
+        for id in set { moved.formUnion(entities[id]!.points) }
+        // Rotations other than half turns break horizontal/vertical; a half turn keeps them but
+        // flips the sign of horizontal/vertical distances.
+        let rotates = abs(map.r01) > 1e-12
+        let halfTurn = !rotates && map.r00 < 0
+        var removed: [String] = []
+        for c in s.userConstraints {
+            let inside = c.entities.allSatisfy(moved.contains)
+            let touches = c.entities.contains(where: moved.contains)
+            guard touches else { continue }
+            if !inside {
+                if !keepRelations { removed.append(c.id) }
+                continue
+            }
+            switch c.kind {
+            case .horizontal, .vertical:
+                if rotates { removed.append(c.id) }
+            case .horizontalDistance, .verticalDistance:
+                if rotates {
+                    removed.append(c.id)
+                } else if halfTurn, let i = s.constraints.firstIndex(where: { $0.id == c.id }) {
+                    s.constraints[i].side = -s.constraints[i].side
+                }
+            case .distance, .radius, .diameter, .offset:
+                if map.k != 1, let v = c.value { s.setValue(c.id, v * map.k) }
+            default: break
+            }
+        }
+        removed = s.removeConstraints(removed)
+        // Move points, then scale radii / ellipse axes.
+        for id in moved where s.entities[id]!.kind == .point {
+            s.setPoint(id, map.apply(point(id)))
+        }
+        for id in set {
+            let e = s.entities[id]!
+            switch e.kind {
+            case .circle: s.params[e.params[0]] *= map.k
+            case .ellipse:
+                s.params[e.params[0]] *= map.k
+                s.params[e.params[1]] *= map.k
+                s.params[e.params[2]] = map.apply(angle: s.params[e.params[2]])
+            default: break
+            }
+        }
+        s.refreshDriven()
+        let r = s.resolve()
+        if r.status == .failed || !r.conflicting.isEmpty {
+            throw ForgeError(
+                .sketchConflict, "the moved geometry conflicts with relations it keeps; move with keep_relations false or delete them",
+                entities: set + r.conflicting)
+        }
+        self = s
+        return (set, removed, [])
+    }
+
+    public mutating func move(_ ids: [String], by d: (Double, Double), copy: Bool = false, keepRelations: Bool = false) throws
+        -> (entities: [String], removed: [String], added: [String])
+    {
+        try transform(ids, .translation(d.0, d.1), copy: copy, keepRelations: keepRelations)
+    }
+
+    public mutating func rotate(_ ids: [String], about c: (Double, Double), by angle: Double, copy: Bool = false, keepRelations: Bool = false)
+        throws -> (entities: [String], removed: [String], added: [String])
+    {
+        try transform(ids, .rotation(about: c, by: angle), copy: copy, keepRelations: keepRelations)
+    }
+
+    public mutating func scale(_ ids: [String], about c: (Double, Double), by f: Double, copy: Bool = false, keepRelations: Bool = false)
+        throws -> (entities: [String], removed: [String], added: [String])
+    {
+        guard f > 0, f.isFinite else { throw ForgeError(.invalidParams, "scale factor must be positive") }
+        return try transform(ids, .scaling(about: c, by: f), copy: copy, keepRelations: keepRelations)
     }
 }

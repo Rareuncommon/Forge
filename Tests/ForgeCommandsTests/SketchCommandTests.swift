@@ -262,4 +262,21 @@ struct SketchCommandTests {
             #expect(err.code == .invalidParams)
         }
     }
+    @Test func moveRotateScaleThroughTheBus() async throws {
+        let e = try await engine()
+        try await e.execute("sketch.add_line", ["start": [10, 0], "end": [20, 0]])  // line-1, inferred horizontal
+        let m = try await e.execute("sketch.move", ["entities": ["line-1"], "from": [10, 0], "to": [10, 5]]).result
+        #expect(m["entities"] == ["line-1"])
+        #expect(try await entity(e, "point-2")["at"] == [10, 5])
+        let r = try await e.execute("sketch.rotate", ["entities": ["line-1"], "angle": "90 deg", "about": "point-2"]).result
+        #expect(r["removed_constraints"]?.arrayValue?.count == 1)  // horizontal
+        let end = try await entity(e, "point-3")["at"]!.arrayValue!.map { $0.doubleValue! }
+        #expect(abs(end[0] - 10) < 1e-9 && abs(end[1] - 15) < 1e-9)
+        let c = try await e.execute("sketch.scale", ["entities": ["line-1"], "factor": 2, "center": [10, 5], "copy": true]).result
+        let copy = c["entities"]![0]!.stringValue!
+        let pts = try await entity(e, copy)["points"]!.arrayValue!.map { $0.stringValue! }
+        #expect(try await entity(e, pts[1])["at"] == [10, 25])
+        try await e.execute("edit.undo")
+        #expect(try await e.execute("sketch.get").result["entities"]!.arrayValue!.count == 4)
+    }
 }

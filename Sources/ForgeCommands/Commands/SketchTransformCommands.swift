@@ -139,15 +139,7 @@ public enum SketchPatternCircular: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var (doc, s) = try ctx.sketchForEdit(p.sketch)
-        var c = p.center?.tuple ?? (0, 0)
-        if let about = p.about {
-            let e = try s.entity(try localID(about, in: s))
-            switch e.kind {
-            case .point: c = s.point(e.id)
-            case .circle, .arc, .ellipse: c = s.point(e.points[0])
-            case .line: throw ForgeError(.invalidParams, "'about' must be a point, circle, arc or ellipse", entities: ["\(s.id)/\(e.id)"])
-            }
-        }
+        let c = try transformCenter(p.center, p.about, in: s)
         let (instances, added) = try s.circularPattern(
             try p.entities.map { try localID($0, in: s) }, center: c, angle: p.angle?.radians ?? 2 * .pi, count: p.count)
         let r = finish(&ctx, doc, &s, created: instances.flatMap { $0 }, constraints: added, infer: false)
@@ -301,5 +293,167 @@ public enum SketchOffset: Command {
         return Output(
             sketch: SketchSummary(s, active: ctx.document.activeSketch == s.id), created: r.sides.flatMap { $0 } + r.caps,
             sides: r.sides, caps: r.caps, dimension: r.dimension, constraints: r.constraints)
+    }
+}
+
+public struct SketchTransformOutput: Codable, Sendable {
+    public var sketch: SketchSummary
+    /// The moved entities, or the created copies.
+    public var entities: [String]
+    public var removedConstraints: [String]
+    public var constraints: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case sketch, entities, constraints
+        case removedConstraints = "removed_constraints"
+    }
+}
+
+let transformEntitiesDoc: FieldDoc = "Curves and points to transform (endpoints of a selected curve come with it)"
+let transformCopyDoc = FieldDoc("Transform copies and leave the originals (copies keep their mutual coincident/on-curve/tangent relations)", default: false)
+let keepRelationsDoc = FieldDoc("Keep relations to geometry that does not move (the solver then pulls the result back into agreement)", default: false)
+
+/// Resolves a transform centre given as coordinates or as a point/circle/arc entity.
+func transformCenter(_ center: Point2?, _ about: String?, in s: Sketch) throws -> (Double, Double) {
+    guard let about else { return center?.tuple ?? (0, 0) }
+    let e = try s.entity(try localID(about, in: s))
+    switch e.kind {
+    case .point: return s.point(e.id)
+    case .circle, .arc, .ellipse: return s.point(e.points[0])
+    case .line: throw ForgeError(.invalidParams, "'about' must be a point, circle, arc or ellipse", entities: ["\(s.id)/\(e.id)"])
+    }
+}
+
+func finishTransform(_ ctx: inout CommandContext, _ doc: Document, _ s: Sketch, _ r: (entities: [String], removed: [String], added: [String])) -> SketchTransformOutput {
+    ctx.commit(doc, s)
+    return SketchTransformOutput(
+        sketch: SketchSummary(s, active: ctx.document.activeSketch == s.id), entities: r.entities, removedConstraints: r.removed, constraints: r.added)
+}
+
+public enum SketchMove: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var entities: [String]
+        public var by: Point2?
+        public var from: Point2?
+        public var to: Point2?
+        public var copy: Bool?
+        public var keepRelations: Bool?
+        enum CodingKeys: String, CodingKey {
+            case sketch, entities, by, from, to, copy
+            case keepRelations = "keep_relations"
+        }
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc, "entities": transformEntitiesDoc,
+            "by": "Displacement [dx, dy] (or give 'from' and 'to')",
+            "from": "Base point of the move", "to": "Where the base point goes",
+            "copy": transformCopyDoc, "keep_relations": keepRelationsDoc,
+        ]
+        public func validate() throws {
+            guard (by != nil) != (from != nil && to != nil), (from == nil) == (to == nil) else {
+                throw ForgeError(.invalidParams, "give 'by', or both 'from' and 'to'")
+            }
+        }
+    }
+    public typealias Output = SketchTransformOutput
+
+    public static let name = "sketch.move"
+    public static let summary = "Move (or copy) sketch entities by a displacement"
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .sketchConflict]
+    public static let examples: [JSONValue] = [["entities": ["line-1", "line-4"], "by": [10, 0]], ["entities": ["circle-2"], "from": [0, 0], "to": [5, 5], "copy": true]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let d = p.by?.tuple ?? (p.to!.u - p.from!.u, p.to!.v - p.from!.v)
+        let r = try s.move(try p.entities.map { try localID($0, in: s) }, by: d, copy: p.copy ?? false, keepRelations: p.keepRelations ?? false)
+        return finishTransform(&ctx, doc, s, r)
+    }
+}
+
+public enum SketchRotate: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var entities: [String]
+        public var angle: Angle
+        public var center: Point2?
+        public var about: String?
+        public var copy: Bool?
+        public var keepRelations: Bool?
+        enum CodingKeys: String, CodingKey {
+            case sketch, entities, angle, center, about, copy
+            case keepRelations = "keep_relations"
+        }
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc, "entities": transformEntitiesDoc,
+            "angle": "Rotation angle, counter-clockwise",
+            "center": FieldDoc("Centre of rotation (or give 'about')", default: "the sketch origin"),
+            "about": "A point, circle or arc whose centre is the centre of rotation",
+            "copy": transformCopyDoc, "keep_relations": keepRelationsDoc,
+        ]
+        public func validate() throws {
+            guard center == nil || about == nil else { throw ForgeError(.invalidParams, "give 'center' or 'about', not both") }
+        }
+    }
+    public typealias Output = SketchTransformOutput
+
+    public static let name = "sketch.rotate"
+    public static let summary = "Rotate (or copy-rotate) sketch entities about a centre"
+    public static let discussion = "Horizontal/vertical relations and horizontal/vertical distances among the rotated geometry are deleted (a half turn keeps them, flipping signed distances)."
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .sketchConflict]
+    public static let examples: [JSONValue] = [["entities": ["line-1"], "angle": "30 deg", "about": "point-0"]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let c = try transformCenter(p.center, p.about, in: s)
+        let r = try s.rotate(
+            try p.entities.map { try localID($0, in: s) }, about: c, by: p.angle.radians, copy: p.copy ?? false, keepRelations: p.keepRelations ?? false)
+        return finishTransform(&ctx, doc, s, r)
+    }
+}
+
+public enum SketchScale: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var entities: [String]
+        public var factor: Double
+        public var center: Point2?
+        public var about: String?
+        public var copy: Bool?
+        public var keepRelations: Bool?
+        enum CodingKeys: String, CodingKey {
+            case sketch, entities, factor, center, about, copy
+            case keepRelations = "keep_relations"
+        }
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc, "entities": transformEntitiesDoc,
+            "factor": "Uniform scale factor (> 0)",
+            "center": FieldDoc("Scale centre (or give 'about')", default: "the sketch origin"),
+            "about": "A point, circle or arc whose centre is the scale centre",
+            "copy": transformCopyDoc, "keep_relations": keepRelationsDoc,
+        ]
+        public func validate() throws {
+            guard factor > 0, factor.isFinite else { throw ForgeError(.invalidParams, "factor must be positive") }
+            guard center == nil || about == nil else { throw ForgeError(.invalidParams, "give 'center' or 'about', not both") }
+        }
+    }
+    public typealias Output = SketchTransformOutput
+
+    public static let name = "sketch.scale"
+    public static let summary = "Scale (or copy-scale) sketch entities about a centre; dimensions among them scale too"
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .sketchConflict]
+    public static let examples: [JSONValue] = [["entities": ["circle-1"], "factor": 2]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let c = try transformCenter(p.center, p.about, in: s)
+        let r = try s.scale(
+            try p.entities.map { try localID($0, in: s) }, about: c, by: p.factor, copy: p.copy ?? false, keepRelations: p.keepRelations ?? false)
+        return finishTransform(&ctx, doc, s, r)
     }
 }

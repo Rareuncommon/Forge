@@ -51,6 +51,11 @@
   `sketch.add_dimension`) with the other copies linked to it; bi-directional, line caps,
   base-to-construction. Golden model 019: rectangle offset, offset re-dimensioned, extruded
   as a frame. See ADR 0003 notes for how tangent joints avoid rank deficiency.
+- **Move / copy / rotate / scale:** `sketch.move` (by a vector or from→to), `sketch.rotate`,
+  `sketch.scale`, each in place or as copies. In place, relations to unmoved geometry are
+  dropped unless `keep_relations`; rotation drops horizontal/vertical relations (a half turn
+  keeps them and flips signed distances); scaling scales the dimensions among the scaled
+  geometry. Stretch is not implemented.
 
 ### Findings
 - Two of my new tests assumed an under-defined original stays put when a dimension changes;
@@ -85,7 +90,7 @@
 
 ### Next steps
 1. Run the app on a Mac (or add a UI smoke test) to verify the viewport and sketch UI at runtime.
-2. Remaining M1 tools: move/copy/rotate/scale, splines, split; planegcs oracle harness.
+2. Remaining M1 tools: splines, split, stretch, partial ellipse; planegcs oracle harness.
 3. M2: feature tree + regeneration engine + persistent naming v1 (ADR 0002), stored in the
    v1 file format, turning extrude/revolve/fillet into parametric features.
 

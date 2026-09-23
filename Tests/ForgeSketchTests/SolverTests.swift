@@ -781,3 +781,77 @@ struct OffsetTests {
         #expect(near(s.circleOf(copyArc).r, 2.5))
     }
 }
+
+@Suite("Sketch move, rotate, scale")
+struct MoveRotateScaleTests {
+    /// A 40 x 20 rectangle with its first corner on the origin and both sides dimensioned.
+    func definedRectangle() throws -> (Sketch, [String]) {
+        var s = newSketch()
+        let r = try s.addRectangle(.corner, [(0, 0), (40, 20)])
+        try s.addConstraint(.coincident, [ends(s, r[0]).0, Sketch.originID])
+        try s.addConstraint(.distance, [r[0]], value: 40)
+        try s.addConstraint(.distance, [r[1]], value: 20)
+        #expect(s.resolve().status == .fullyDefined)
+        return (s, r)
+    }
+
+    @Test func moveDetachesFromUnmovedGeometry() throws {
+        var (s, r) = try definedRectangle()
+        let res = try s.move(r, by: (10, 5))
+        #expect(res.removed.count == 1)  // the coincidence with the origin
+        #expect(near(s.point(ends(s, r[0]).0), (10, 5)) && near(s.point(ends(s, r[0]).1), (50, 5)))
+        let rep = s.resolve()
+        #expect(rep.dof == 2 && rep.conflicting.isEmpty)
+    }
+
+    @Test func keepingRelationsLetsTheSolverPullBack() throws {
+        var (s, r) = try definedRectangle()
+        let res = try s.move(r, by: (10, 5), keepRelations: true)
+        #expect(res.removed.isEmpty)
+        #expect(near(s.point(ends(s, r[0]).0), (0, 0), 1e-9))
+        #expect(s.resolve().status == .fullyDefined)
+    }
+
+    @Test func rotateDropsHorizontalVerticalAndKeepsLengths() throws {
+        var (s, r) = try definedRectangle()
+        let res = try s.rotate(r, about: (0, 0), by: .pi / 6)
+        // The origin coincidence (unmoved origin) and the 4 horizontal/vertical relations go.
+        #expect(res.removed.count == 5)
+        let (a, b) = ends(s, r[0])
+        let rb: (Double, Double) = (40 * cos(Double.pi / 6), 40 * sin(Double.pi / 6))
+        #expect(near(s.point(a), (0, 0)) && near(s.point(b), rb))
+        let (_, c) = ends(s, r[1])
+        let (cs, sn): (Double, Double) = (cos(.pi / 6), sin(.pi / 6))
+        let expected: (Double, Double) = (40 * cs - 20 * sn, 40 * sn + 20 * cs)
+        #expect(near(s.point(c), expected))
+        #expect(s.resolve().conflicting.isEmpty)
+    }
+
+    @Test func halfTurnKeepsSignedDistances() throws {
+        var s = newSketch()
+        let p = s.addPoint(0, 0), q = s.addPoint(10, 3)
+        try s.addConstraint(.horizontalDistance, [p, q], value: 10)
+        _ = try s.rotate([p, q], about: (5, 0), by: .pi)
+        #expect(near(s.point(p), (10, 0)) && near(s.point(q), (0, -3)))
+        #expect(s.resolve().conflicting.isEmpty)
+        #expect(s.constraints.count == 1)
+    }
+
+    @Test func scaleScalesRadiiAndDimensions() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (5, 0), radius: 5)
+        let dim = try s.addConstraint(.radius, [c], value: 5)
+        _ = try s.scale([c], about: (0, 0), by: 2)
+        #expect(near(s.circleOf(c).r, 10) && near(s.circleOf(c).c, (10, 0)))
+        #expect(s.constraints.first { $0.id == dim }?.value == 10)
+    }
+
+    @Test func copyLeavesTheOriginal() throws {
+        var s = newSketch()
+        let l = s.addLine(from: (10, 0), to: (20, 0))
+        let res = try s.rotate([l], about: (0, 0), by: .pi / 2, copy: true)
+        #expect(near(s.point(ends(s, l).0), (10, 0)))
+        let (a, b) = ends(s, res.entities[0])
+        #expect(near(s.point(a), (0, 10)) && near(s.point(b), (0, 20)))
+    }
+}
