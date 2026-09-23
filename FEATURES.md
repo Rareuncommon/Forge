@@ -109,7 +109,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/text` | Entities: text | not started | ForgeSketch | — | — |  |
 | `7.1/entities/text/with-fonts` | ↳ with fonts | not started | ForgeSketch | — | — |  |
 | `7.1/entities/construction-geometry` | Entities: construction geometry | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.set_construction | excluded from profiles, drawn grey |
-| `7.1/entities/fillet-chamfer` | Entities: fillet/chamfer | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, golden 106 | execute:sketch.fillet | fillet with virtual sharp done; sketch chamfer not started |
+| `7.1/entities/fillet-chamfer` | Entities: fillet/chamfer | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, golden 106 | execute:sketch.fillet, execute:sketch.chamfer | fillet and chamfer (distance–distance, distance–angle) with virtual sharps |
 | `7.1/entities/fillet-chamfer/sketch` | ↳ sketch | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift | execute:sketch.fillet | see parent |
 | `7.1/tools/trim` | Tools: trim | not started | ForgeSketch | — | — |  |
 | `7.1/tools/trim/power` | ↳ power | not started | ForgeSketch | — | — |  |

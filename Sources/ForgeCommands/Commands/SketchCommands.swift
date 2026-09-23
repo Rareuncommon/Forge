@@ -969,3 +969,43 @@ public enum SketchFillet: Command {
         return finish(&ctx, doc, &s, created: created, constraints: added, infer: false)
     }
 }
+
+public enum SketchChamfer: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
+        public var sketch: String?
+        public var lines: [String]
+        public var distance: Length
+        public var distance2: Length?
+        public var angle: Angle?
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc,
+            "lines": "The two lines meeting at the corner (the first is the reference for distance and angle)",
+            "distance": "Distance from the corner along the first line",
+            "distance2": FieldDoc("Distance along the second line (distance–distance)", default: "same as distance"),
+            "angle": "Angle between the first line and the chamfer (distance–angle); excludes distance2",
+        ]
+        public func validate() throws {
+            guard lines.count == 2 else { throw ForgeError(.invalidParams, "give exactly two lines") }
+            try requirePositive(distance, "distance")
+            if let d2 = distance2 { try requirePositive(d2, "distance2") }
+            if distance2 != nil && angle != nil { throw ForgeError(.invalidParams, "give distance2 or angle, not both") }
+        }
+    }
+    public typealias Output = SketchEditResult
+
+    public static let name = "sketch.chamfer"
+    public static let summary = "Bevel the corner between two lines (distance–distance or distance–angle), keeping dimensions via a virtual sharp"
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .solverFailed]
+    public static let examples: [JSONValue] = [["lines": ["line-1", "line-4"], "distance": 3], ["lines": ["line-1", "line-4"], "distance": 3, "angle": "30 deg"]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let ids = try p.lines.map { try localID($0, in: s) }
+        let before = Set(s.constraints.map(\.id))
+        let created = try s.chamferCorner(ids[0], ids[1], distance: p.distance.millimeters, distance2: p.distance2?.millimeters, angle: p.angle?.radians)
+        let added = s.constraints.map(\.id).filter { !before.contains($0) && !$0.contains("#") }
+        return finish(&ctx, doc, &s, created: created, constraints: added, infer: false)
+    }
+}

@@ -52,7 +52,7 @@ extension Sketch {
         for (i, loop) in report.loops.enumerated() where loop.depth % 2 == 0 {
             loops.append(segments(loop))
             regions.append(i)
-            for (j, hole) in report.loops.enumerated() where hole.parent == i {
+            for hole in report.loops where hole.parent == i {
                 loops.append(segments(hole))
                 regions.append(i)
             }

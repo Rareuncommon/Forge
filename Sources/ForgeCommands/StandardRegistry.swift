@@ -42,6 +42,7 @@ extension CommandRegistry {
         r.register(SketchDrag.self)
         r.register(SketchSetConstruction.self)
         r.register(SketchFillet.self)
+        r.register(SketchChamfer.self)
         // bodies
         r.register(BodyCreateBox.self)
         r.register(BodyCreateCylinder.self)

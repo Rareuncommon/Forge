@@ -420,3 +420,31 @@ struct FilletTests {
         #expect(near(cy, 2) && near(cx, t))
     }
 }
+
+@Suite("Sketch chamfer")
+struct ChamferTests {
+    func dimensionedRectangle() throws -> (Sketch, [String]) {
+        var s = newSketch()
+        let lines = try s.addRectangle(.corner, [(0, 0), (40, 20)])
+        try s.addConstraint(.coincident, [Sketch.originID, s.entities[lines[0]]!.points[0]])
+        try s.addConstraint(.distance, [lines[0]], value: 40)
+        try s.addConstraint(.distance, [lines[1]], value: 20)
+        return (s, lines)
+    }
+
+    @Test func distanceDistance() throws {
+        var (s, lines) = try dimensionedRectangle()
+        _ = try s.chamferCorner(lines[0], lines[1], distance: 5, distance2: 3)
+        #expect(s.resolve().status == .fullyDefined)
+        #expect(near(s.profiles().regionAreaMM2, 800 - 7.5, 1e-9))
+        #expect(near(s.point(s.entities[lines[0]]!.points[1]), (35, 0)))
+    }
+
+    @Test func distanceAngle() throws {
+        var (s, lines) = try dimensionedRectangle()
+        _ = try s.chamferCorner(lines[0], lines[1], distance: 4, angle: .pi / 4)
+        #expect(s.resolve().status == .fullyDefined)
+        #expect(near(s.profiles().regionAreaMM2, 800 - 8, 1e-9))  // 45°: isosceles 4 x 4
+        #expect(throws: ForgeError.self) { try s.chamferCorner(lines[2], lines[3], distance: 30) }
+    }
+}
