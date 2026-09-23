@@ -1,5 +1,19 @@
 # Progress
 
+## Session 3 — 2026-09-23 — Design-driven UI, SolidWorks research
+
+- **Research:** `docs/research/solidworks.md` covers SolidWorks UI anatomy, the full feature
+  inventory with options, and a priority list mapped to FEATURES.md IDs. Its top missing items
+  drive the roadmap: the parametric feature tree (ADR 0011), extrude end conditions and cuts,
+  sketch on face, chamfer, Hole Wizard, reference geometry, patterns and mirror, shell.
+- **Design:** the Claude Design canvas (`docs/design`, three artboards) defines the UI. The
+  icons are Forge's own and live in `Sources/ForgeApp/Icons.swift`, which both the mockups
+  and the app draw from.
+- **App:** rebuilt to the design (toolbar, ribbon, tree, PropertyManager, viewport overlays,
+  more sketch tools; see commit c45ee33). CI run #22 compiles it on macOS. It has not been run
+  interactively since the rebuild.
+- **Next:** M2 feature tree per ADR 0011, then the research priority list.
+
 ## Session 2 — 2026-09-23 — Milestone 1 (sketcher) + first sketch-to-solid
 
 ### CI status

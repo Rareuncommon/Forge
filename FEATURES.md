@@ -59,9 +59,9 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/background-regen` | Background regeneration with cancellation (§3) | in progress | ForgeCommands | — | — | Engine actor keeps work off the main thread; cancellation pending (M2) |
 | `P/metal-viewport` | Metal viewport: shaded+edges, orbit/pan/zoom, GPU picking (§2, M0) | in progress | ForgeRender | — | — | unverified: written, never compiled (Linux session). See PROGRESS.md |
 | `P/headless-render` | Headless software renderer + PNG (render_view backend) | done | ForgeRender | Tests/ForgeRenderTests/RenderTests.swift | render_view |  |
-| `P/app-shell` | SwiftUI app shell (§1.4) | in progress | ForgeApp | — | — | written, never compiled (Linux session) |
-| `P/command-palette` | Command palette ⌘K with inline parameter entry (§6.1) | in progress | ForgeApp | — | — | search + JSON params; inline typed entry pending |
-| `P/inspector` | Inspector panel instead of modal PropertyManagers (§6.2) | in progress | ForgeApp | — | — | read-only entity descriptors |
+| `P/app-shell` | SwiftUI app shell (§1.4) | in progress | ForgeApp | — | — | redesigned from docs/design (Claude Design); compiles on macOS CI; runs on the user's Mac |
+| `P/command-palette` | Command palette ⌘K with inline parameter entry (§6.1) | in progress | ForgeApp | — | — | searches all commands; runs parameterless ones directly, JSON entry otherwise; inline typed entry pending |
+| `P/inspector` | Inspector panel instead of modal PropertyManagers (§6.2) | in progress | ForgeApp | — | — | PropertyManager panels (OK/Cancel, groups, selection boxes) for every UI operation; read-only entity descriptors |
 | `P/handles` | Direct-manipulation handles (§6.3) | not started | — | — | — |  |
 | `P/explainable-failures` | Explainable failures in the viewport (§6.4) | not started | — | — | — |  |
 | `P/smart-selection` | Smart selection, filters, select-other (§6.5) | not started | — | — | — |  |
