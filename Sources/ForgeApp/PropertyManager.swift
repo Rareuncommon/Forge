@@ -652,6 +652,7 @@ extension AppModel {
             return
         }
         if activeSketch != nil && op != .plane && !op.isSketchOperation { await exitSketch() }
+        let wasEmpty = bodies.isEmpty
         if items.count > 1 { await run("transaction.begin", ["label": .string(op.title)]) }
         for i in items {
             ok = await run(i.command, i.params)
@@ -659,10 +660,10 @@ extension AppModel {
         }
         if items.count > 1 { await run(ok == nil ? "transaction.rollback" : "transaction.commit") }
         if ok != nil {
-            let wasSketchOp = op.isSketchOperation
             operation = nil
             clearOperationPreview()
-            if !wasSketchOp { zoomToFit() }
+            // Like SolidWorks the view stays put; only the first solid is framed.
+            if wasEmpty && !bodies.isEmpty { zoomToFit() }
         }
     }
 
