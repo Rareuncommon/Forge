@@ -35,6 +35,13 @@ struct OperationForm {
     var endCondition = EndConditionUI.blind
     var reverse = false
     var direction2 = false, endCondition2 = EndConditionUI.blind, depth2 = "10"
+    var draftOn = false, draftAngle = "3", draftOutward = false
+    var thinOn = false, thinType = "one_direction", thinThickness = "1", thinThickness2 = "1", thinReverse = false
+    var chamferType = "equal_distance", chamferDistance = "1", chamferDistance2 = "1", chamferAngle = "45"
+    var shellThickness = "1", shellOutward = false, shellFaces: [String] = []
+    var draftNeutral = "", draftFaces: [String] = [], draftReverse = false, draftFeatureAngle = "3"
+    /// Which selection box receives picks (Draft: "neutral" or "faces").
+    var activeBox = "faces"
     var merge = true
     /// Cut / merge scope: empty = all bodies.
     var scope: [String] = []
@@ -72,6 +79,8 @@ extension AppModel {
                 operationSketch = activeSketch ?? selection.first(where: { $0.hasPrefix("sketch-") && !$0.contains("/") }) ?? sketches.last?.id
             }
             form.direction2 = false
+            form.draftOn = false
+            form.thinOn = false
             form.scope = []
             if op == .cutExtrude {
                 // A cut goes into the material: opposite to the sketch normal by default.
@@ -82,6 +91,13 @@ extension AppModel {
         case .combine where bodies.count >= 2:
             form.target = selectedBodies.first ?? bodies[0].id
             form.tool = selectedBodies.dropFirst().first ?? bodies.first { $0.id != form.target }?.id ?? ""
+        case .shell:
+            form.shellFaces = selection.filter { $0.contains("/face-") }
+        case .draft:
+            let faces = selection.filter { $0.contains("/face-") }
+            form.draftNeutral = faces.first ?? ""
+            form.draftFaces = Array(faces.dropFirst())
+            form.activeBox = faces.isEmpty ? "neutral" : "faces"
         case .sketchMirror:
             if let sk = sketchState.sketch {
                 form.mirrorAxis = sketchSelection.last(where: { sk.entities[$0]?.kind == .line && sk.entities[$0]?.construction == true })
@@ -151,6 +167,22 @@ extension AppModel {
             }
             form.merge = p["merge"]?.boolValue ?? false
             form.scope = p["scope"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            if let d = p["draft"], !d.isNull {
+                form.draftOn = true
+                form.draftAngle = t(d["angle"]) ?? form.draftAngle
+                form.draftOutward = d["outward"]?.boolValue ?? false
+            } else {
+                form.draftOn = false
+            }
+            if let th = p["thin"], !th.isNull {
+                form.thinOn = true
+                form.thinType = th["type"]?.stringValue ?? "one_direction"
+                form.thinThickness = t(th["thickness"]) ?? form.thinThickness
+                form.thinThickness2 = t(th["thickness2"]) ?? form.thinThickness2
+                form.thinReverse = th["reverse"]?.boolValue ?? false
+            } else {
+                form.thinOn = false
+            }
         case .revolve:
             operationSketch = p["sketch"]?.stringValue ?? operationSketch
             form.axis = p["axis"]?.stringValue ?? ""
@@ -160,6 +192,22 @@ extension AppModel {
             form.radius = t(p["radius"]) ?? form.radius
             let edges = p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []
             Task { await select(edges) }
+        case .chamfer:
+            form.chamferType = p["type"]?.stringValue ?? "equal_distance"
+            form.chamferDistance = t(p["distance"]) ?? form.chamferDistance
+            form.chamferDistance2 = t(p["distance2"]) ?? form.chamferDistance2
+            form.chamferAngle = t(p["angle"]) ?? form.chamferAngle
+            let edges = p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            Task { await select(edges) }
+        case .shell:
+            form.shellThickness = t(p["thickness"]) ?? form.shellThickness
+            form.shellOutward = p["outward"]?.boolValue ?? false
+            form.shellFaces = p["faces"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        case .draft:
+            form.draftNeutral = p["neutral_plane"]?.stringValue ?? ""
+            form.draftFaces = p["faces"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            form.draftFeatureAngle = t(p["angle"]) ?? form.draftFeatureAngle
+            form.draftReverse = p["reverse"]?.boolValue ?? false
         case .combine:
             form.combine = p["operation"]?.stringValue ?? "fuse"
             form.target = p["target"]?.stringValue ?? ""
@@ -193,7 +241,7 @@ extension AppModel {
     func commitFeatureEdit(_ id: String, _ op: Operation) async {
         var params: JSONValue?
         switch op {
-        case .extrude, .cutExtrude, .revolve, .primitive:
+        case .extrude, .cutExtrude, .revolve, .primitive, .chamfer, .shell, .draft:
             params = invocations(for: op)?.first?.params
             if case .object(var o)? = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
                 // A feature that made its own body keeps doing so.
@@ -247,6 +295,17 @@ extension AppModel {
             var p: [String: JSONValue] = ["sketch": .string(sk), "end_condition": .string(form.endCondition.param)]
             if form.endCondition.needsDepth { p["depth"] = quantity(form.depth) }
             if form.reverse && form.endCondition != .midPlane && form.endCondition != .throughAllBoth { p["reverse"] = true }
+            if form.draftOn && !form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
+                var d: [String: JSONValue] = ["angle": angleQuantity(form.draftAngle)]
+                if form.draftOutward { d["outward"] = true }
+                p["draft"] = .object(d)
+            }
+            if form.thinOn {
+                var t: [String: JSONValue] = ["type": .string(form.thinType), "thickness": quantity(form.thinThickness)]
+                if form.thinType == "two_direction" { t["thickness2"] = quantity(form.thinThickness2) }
+                if form.thinType == "one_direction" && form.thinReverse { t["reverse"] = true }
+                p["thin"] = .object(t)
+            }
             if form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
                 var d2: [String: JSONValue] = ["end_condition": .string(form.endCondition2.param)]
                 if form.endCondition2 == .blind { d2["depth"] = quantity(form.depth2) }
@@ -264,6 +323,28 @@ extension AppModel {
             var p: [String: JSONValue] = ["sketch": .string(sk), "axis": .string(form.axis), "angle": angleQuantity(form.angle)]
             if form.merge && !bodies.isEmpty { p["merge"] = true }
             return [Invocation("body.revolve", .object(p))]
+        case .chamfer:
+            let edges = selectedEdges
+            guard let body = edges.first?.split(separator: "/").first else { return nil }
+            var p: [String: JSONValue] = [
+                "body": .string(String(body)), "edges": .array(edges.map { .string($0) }), "type": .string(form.chamferType),
+                "distance": quantity(form.chamferDistance),
+            ]
+            if form.chamferType == "distance_distance" { p["distance2"] = quantity(form.chamferDistance2) }
+            if form.chamferType == "angle_distance" { p["angle"] = angleQuantity(form.chamferAngle) }
+            return [Invocation("body.chamfer_edges", .object(p))]
+        case .shell:
+            guard let body = (form.shellFaces.first?.split(separator: "/").first).map(String.init) ?? selectedBodies.first ?? bodies.first?.id else { return nil }
+            return [Invocation("body.shell", [
+                "body": .string(body), "faces": .array(form.shellFaces.map { .string($0) }), "thickness": quantity(form.shellThickness),
+                "outward": .bool(form.shellOutward),
+            ])]
+        case .draft:
+            guard !form.draftNeutral.isEmpty, !form.draftFaces.isEmpty, let body = form.draftNeutral.split(separator: "/").first else { return nil }
+            return [Invocation("body.draft", [
+                "body": .string(String(body)), "neutral_plane": .string(form.draftNeutral), "faces": .array(form.draftFaces.map { .string($0) }),
+                "angle": angleQuantity(form.draftFeatureAngle), "reverse": .bool(form.draftReverse),
+            ])]
         case .primitive(let p):
             switch p {
             case .box: return [Invocation("body.create_box", ["width": quantity(form.width), "height": quantity(form.height), "depth": quantity(form.boxDepth)])]
@@ -282,13 +363,15 @@ extension AppModel {
 
     /// Recompute the live preview of the open operation (translucent bodies in the viewport).
     func updatePreview() async {
-        guard let op = operation, editingFeature == nil, let items = invocations(for: op) else {
+        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve].contains(op) || { if case .primitive = op { true } else { false } }(),
+            let items = invocations(for: op)
+        else {
             clearOperationPreview()
             return
         }
         do {
             let (doc, changes) = try await engine.preview(items)
-            let created = changes.created.filter { $0.hasPrefix("body-") }
+            let created = (changes.created + changes.modified).filter { $0.hasPrefix("body-") }
             guard let doc, !created.isEmpty else { return clearOperationPreview() }
             let ds = try DocumentScene(document: doc, bodies: created, showSketches: false)
             let cut = op == .cutExtrude
@@ -326,7 +409,9 @@ extension AppModel {
     var previewKey: String {
         guard let op = operation else { return "" }
         let f = form
-        return [op.title, operationSketch ?? "", f.depth, f.extrudeDirection, f.axis, f.angle, f.width, f.height, f.boxDepth, f.cylRadius, f.cylHeight,
+        return [op.title, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
+                String(f.merge), f.scope.joined(separator: ","), String(f.draftOn), f.draftAngle, String(f.draftOutward), String(f.thinOn), f.thinType,
+                f.thinThickness, f.thinThickness2, String(f.thinReverse), f.axis, f.angle, f.width, f.height, f.boxDepth, f.cylRadius, f.cylHeight,
                 f.sphereRadius, f.coneBase, f.coneTop, f.coneHeight, f.torusMajor, f.torusMinor, String(sceneVersion)].joined(separator: "|")
     }
 
@@ -341,9 +426,10 @@ extension AppModel {
             return
         }
         switch op {
-        case .extrude, .cutExtrude, .revolve, .primitive:
+        case .extrude, .cutExtrude, .revolve, .primitive, .chamfer, .shell, .draft:
             guard let items = invocations(for: op) else {
-                lastError = ForgeError(.invalidParams, op == .revolve ? "choose the axis of revolution" : "choose a sketch")
+                lastError = ForgeError(.invalidParams, [.chamfer: "select the edges to chamfer", .shell: "select a face to remove, or a body",
+                                                        .draft: "select the neutral plane and the faces to draft", .revolve: "choose the axis of revolution"][op] ?? "choose a sketch")
                 return
             }
             if activeSketch != nil { await exitSketch() }

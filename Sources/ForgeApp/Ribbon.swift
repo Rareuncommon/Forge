@@ -52,8 +52,15 @@ private struct FeaturesTab: View {
         }
         RibbonSeparator()
         RibbonGroup("Modify") {
-            RibbonLarge(.fillet, "Fillet", active: model.operation == .fillet, enabled: hasBody,
-                        help: "Round the selected edges") { model.begin(.fillet) }
+            RibbonFlyout(icon: model.operation == .chamfer ? .chamfer : .fillet, title: model.operation == .chamfer ? "Chamfer" : "Fillet",
+                         active: model.operation == .fillet || model.operation == .chamfer, enabled: hasBody, action: { model.begin(.fillet) }) {
+                Button("Fillet") { model.begin(.fillet) }
+                Button("Chamfer") { model.begin(.chamfer) }
+            }
+            RibbonStack {
+                RibbonSmall(.draft, "Draft", active: model.operation == .draft, enabled: hasBody) { model.begin(.draft) }
+                RibbonSmall(.shell, "Shell", active: model.operation == .shell, enabled: hasBody) { model.begin(.shell) }
+            }
             RibbonStack {
                 RibbonSmall(.combine, "Combine", active: model.operation == .combine, enabled: model.bodies.count >= 2) { model.begin(.combine) }
                 RibbonSmall(.trash, "Delete Body", enabled: !model.selectedBodies.isEmpty) {

@@ -826,6 +826,46 @@ extension AppModel {
         }.map(\.id)
     }
 
+    /// What to do next with a sketch tool (its PropertyManager message and the status bar).
+    func toolMessage(_ tool: SketchTool) -> String {
+        let st = sketchState
+        switch tool {
+        case .line:
+            switch st.lineKind {
+            case .line: return "Click or drag to place lines; they chain on. Click the first point to close the profile; double-click or Esc to stop."
+            case .centerline: return "Click two points. Centerlines are construction lines for mirrors, revolves and symmetry."
+            case .midpoint: return "Click the midpoint, then an end. The line is symmetric about the first click."
+            }
+        case .rectangle:
+            switch st.rectangleType {
+            case .corner: return "Click two opposite corners."
+            case .center: return "Click the centre, then a corner."
+            case .threePoint: return "Click two corners to set one side and its angle, then the width."
+            case .parallelogram: return "Click three corners."
+            }
+        case .circle: return st.circleType == .center ? "Click the centre, then a point on the circle." : "Click three points on the circle."
+        case .arc:
+            switch st.arcType {
+            case .center: return "Click the centre, the start, then the end (counter-clockwise)."
+            case .tangent: return "Click the end of a line or arc, then where the arc ends."
+            case .threePoint: return "Click the start, the end, then a point the arc passes through."
+            }
+        case .slot: return st.slotType == .straight ? "Click the two arc centres, then the width." : "Click the slot centre, an arc centre, then the width."
+        case .polygon: return "Click the centre, then a vertex (inscribed) or the middle of a side (circumscribed)."
+        case .spline: return "Click the points the spline passes through; double-click to finish."
+        case .ellipse:
+            return st.ellipseType == .full
+                ? "Click the centre, the end of the major axis, then a point on the minor axis."
+                : "Click the centre, the major axis, the minor axis (also the start), then the end."
+        case .point: return "Click to place points."
+        case .fillet: return "Click a corner where two lines meet."
+        case .chamfer: return "Click a corner where two lines meet."
+        case .trim: return st.trimMode == .power ? "Drag across the pieces to remove, or click them." : "Click the piece of a curve to remove."
+        case .extend: return "Click a curve near the end to extend it to the next curve."
+        case .dimension: return "Click a line, circle or arc, or two entities. Type the value in the Modify box and press Return."
+        }
+    }
+
     /// Esc: cancel the pending entity, then the tool, then the operation.
     func cancelSketchOperation() {
         if dimensionEdit != nil {

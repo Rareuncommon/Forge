@@ -175,3 +175,54 @@ struct ExtrudeOptionsTests {
         }
     }
 }
+
+@Suite("Applied features and extrude draft/thin")
+struct AppliedFeatureTests {
+    func volume(_ e: Engine, _ body: String = "body-1") async throws -> Double {
+        try await e.execute("query.mass_properties", ["body": .string(body)]).result["volume_mm3"]!.doubleValue!
+    }
+
+    func square() async throws -> Engine {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [10, 10]]])
+        try await e.execute("sketch.exit")
+        return e
+    }
+
+    @Test func draftedAndThinExtrusions() async throws {
+        let e = try await square()
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 10, "draft": ["angle": "5 deg"]])
+        let a = 5.0 * .pi / 180, top = 10 - 20 * tan(a)
+        #expect(abs(try await volume(e) - 10.0 / 3 * (100 + top * top + 10 * top)) < 1e-6)
+        // Thin, outward 1 mm: the band's area is 40 + π (rounded outer corners).
+        try await e.execute("feature.edit", ["feature": "Boss-Extrude1", "params": ["draft": .null, "thin": ["thickness": 1]]])
+        #expect(abs(try await volume(e) - 10 * (40 + .pi)) < 1e-6)
+        // Inward 1 mm: 100 − 64.
+        try await e.execute("feature.edit", ["feature": "Boss-Extrude1", "params": ["thin": ["thickness": 1, "reverse": true]]])
+        #expect(abs(try await volume(e) - 10 * 36) < 1e-6)
+        // Mid-plane 2 mm: offsets ±1, (100 + 40 + π) − 64.
+        try await e.execute("feature.edit", ["feature": "Boss-Extrude1", "params": ["thin": ["thickness": 2, "type": "mid_plane"]]])
+        #expect(abs(try await volume(e) - 10 * (76 + .pi)) < 1e-6)
+    }
+
+    @Test func chamferShellAndDraftAreFeatures() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("body.create_box", ["width": 10, "height": 10, "depth": 10])
+        let faces = try await e.execute("query.faces", ["body": "body-1"]).result["faces"]!.arrayValue!
+        func face(_ n: [Double]) -> String {
+            faces.first { f in zip(f["normal"]!.arrayValue!.map { $0.doubleValue! }, n).allSatisfy { abs($0 - $1) < 1e-9 } }!["id"]!.stringValue!
+        }
+        let top = face([0, 0, 1]), bottom = face([0, 0, -1]), side = face([1, 0, 0])
+        try await e.execute("body.draft", ["body": "body-1", "neutral_plane": .string(bottom), "faces": [.string(side)], "angle": "3 deg", "reverse": true])
+        let a = 3.0 * .pi / 180
+        #expect(abs(try await volume(e) - (1000 - 10 * (100 * tan(a)) / 2)) < 1e-6)
+        try await e.execute("feature.suppress", ["feature": "Draft1"])
+        try await e.execute("body.shell", ["body": "body-1", "faces": [.string(top)], "thickness": 1])
+        #expect(abs(try await volume(e) - (1000 - 576)) < 1e-6)
+        let names = try await e.execute("feature.list").result["features"]!.arrayValue!.map { $0["name"]!.stringValue! }
+        #expect(names == ["Box1", "Draft1", "Shell1"])
+    }
+}

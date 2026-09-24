@@ -190,3 +190,73 @@ struct KernelTests {
         #expect(try build() == (try build()))
     }
 }
+
+@Suite("Kernel: chamfer, shell, draft, offset")
+struct KernelFeatureTests {
+    /// Index of the face whose outward normal is `n` (planar faces of a box).
+    func face(_ s: Shape, normal n: Vec3) throws -> Int {
+        let t = try s.topology()
+        for i in 0..<t.faces where (try s.face(i).normal - n).length < 1e-9 { return i }
+        throw ForgeError(.internalError, "no face with normal \(n)")
+    }
+
+    /// Index of an edge of the box: the one whose midpoint is `m`.
+    func edge(_ s: Shape, midpoint m: Vec3) throws -> Int {
+        let t = try s.topology()
+        for i in 0..<t.edges where (try s.edge(i).midpoint - m).length < 1e-9 { return i }
+        throw ForgeError(.internalError, "no edge at \(m)")
+    }
+
+    @Test func chamferVariants() throws {
+        let box = try Kernel.box(size: Vec3(10, 10, 10))
+        let e = try edge(box, midpoint: Vec3(10, 10, 5))  // a vertical edge
+        // Equal distance 2: removes a 2 × 2 / 2 triangle prism, 10 long.
+        #expect(abs(try Kernel.chamfer(box, edges: [e], distance: 2).massProperties().volume - (1000 - 20)) < 1e-6)
+        // Distances 2 and 3: a 2 × 3 / 2 triangle.
+        #expect(abs(try Kernel.chamfer(box, edges: [e], distance: 2, distance2: 3).massProperties().volume - (1000 - 30)) < 1e-6)
+        // Distance 2 at 45°: the same as equal distances.
+        #expect(abs(try Kernel.chamfer(box, edges: [e], distance: 2, angle: .pi / 4).massProperties().volume - (1000 - 20)) < 1e-6)
+    }
+
+    @Test func shellOpenTopInwardAndOutward() throws {
+        let box = try Kernel.box(size: Vec3(10, 10, 10))
+        let top = try face(box, normal: Vec3(0, 0, 1))
+        // Walls 1 thick inward, top open: the cavity is 8 × 8 × 9.
+        #expect(abs(try Kernel.shell(box, openFaces: [top], thickness: 1).massProperties().volume - (1000 - 576)) < 1e-6)
+        // Outward: the box becomes the cavity of a 12 × 12 × 11 block.
+        #expect(abs(try Kernel.shell(box, openFaces: [top], thickness: 1, outward: true).massProperties().volume - (12 * 12 * 11 - 1000)) < 1e-6)
+        // No open face: a closed hollow body.
+        #expect(abs(try Kernel.shell(box, openFaces: [], thickness: 1).massProperties().volume - (1000 - 512)) < 1e-6)
+    }
+
+    @Test func draftedExtrusionIsAFrustum() throws {
+        let sq = try Kernel.faces(
+            loops: [[.line(Vec3(0, 0, 0), Vec3(10, 0, 0)), .line(Vec3(10, 0, 0), Vec3(10, 10, 0)), .line(Vec3(10, 10, 0), Vec3(0, 10, 0)),
+                     .line(Vec3(0, 10, 0), Vec3(0, 0, 0))]], regions: [0])
+        let a = 5.0 * .pi / 180
+        let top = 10 - 2 * 10 * tan(a)
+        let frustum = 10.0 / 3 * (100 + top * top + 10 * top)
+        #expect(abs(try Kernel.extrudeDrafted(sq, by: Vec3(0, 0, 10), angle: a).massProperties().volume - frustum) < 1e-6)
+        let out = 10 + 2 * 10 * tan(a)
+        let flared = 10.0 / 3 * (100 + out * out + 10 * out)
+        #expect(abs(try Kernel.extrudeDrafted(sq, by: Vec3(0, 0, 10), angle: a, outward: true).massProperties().volume - flared) < 1e-6)
+    }
+
+    @Test func draftFacesOfABox() throws {
+        let box = try Kernel.box(size: Vec3(10, 10, 10))
+        let side = try face(box, normal: Vec3(1, 0, 0))
+        // Neutral plane z = 0, pull +z: the +x face tilts inward by 10 tan a at the top.
+        let a = 3.0 * .pi / 180
+        let v = try Kernel.draft(box, faces: [side], neutralOrigin: .zero, pull: Vec3(0, 0, 1), angle: a).massProperties().volume
+        #expect(abs(v - (1000 - 10 * (10 * 10 * tan(a)) / 2)) < 1e-6)
+    }
+
+    @Test func offsetFaceGrowsWithRoundCornersAndShrinks() throws {
+        let sq = try Kernel.faces(
+            loops: [[.line(Vec3(0, 0, 0), Vec3(10, 0, 0)), .line(Vec3(10, 0, 0), Vec3(10, 10, 0)), .line(Vec3(10, 10, 0), Vec3(0, 10, 0)),
+                     .line(Vec3(0, 10, 0), Vec3(0, 0, 0))]], regions: [0])
+        #expect(abs(try Kernel.offsetFace(sq, by: 1).massProperties().surfaceArea - (100 + 40 + .pi)) < 1e-6)
+        #expect(abs(try Kernel.offsetFace(sq, by: -1).massProperties().surfaceArea - 64) < 1e-6)
+        #expect(throws: ForgeError.self) { try Kernel.offsetFace(sq, by: -6) }
+    }
+}

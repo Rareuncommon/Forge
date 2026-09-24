@@ -53,6 +53,9 @@ struct OperationPage: View {
         case _ where [Operation.extrude, .cutExtrude, .revolve].contains(op) && model.sketches.isEmpty: "Create a sketch with a closed profile first."
         case .revolve where model.form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
         case .fillet where model.selectedEdges.isEmpty: "Select the edges to fillet (⇧-click adds)."
+        case .chamfer where model.selectedEdges.isEmpty: "Select the edges to chamfer (⇧-click adds)."
+        case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
+        case .draft: model.form.activeBox == "neutral" ? "Select the neutral plane: a planar face." : "Select the faces to draft (⇧-click adds)."
         case .measure where model.selection.count != 2: "Select two entities to measure between."
         case .sketchMirror where model.form.mirrorAxis.isEmpty: "Select the entities to mirror and a line (ideally a centerline) to mirror about."
         case .sketchOffset, .sketchLinearPattern, .sketchCircularPattern, .sketchMove, .sketchRotate, .sketchScale:
@@ -94,6 +97,16 @@ struct OperationPage: View {
                 if op == .extrude && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
                     PMCheckbox(label: "Merge result", isOn: $model.form.merge)
                 }
+                if !model.form.direction2 && model.form.endCondition != .midPlane && model.form.endCondition != .throughAllBoth {
+                    HStack(spacing: 8) {
+                        Toggle(isOn: $model.form.draftOn) { Text("Draft On/Off").font(.system(size: 12.5)) }.toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                    if model.form.draftOn {
+                        PMField(label: "Draft angle", text: $model.form.draftAngle, unit: "°", icon: .draft)
+                        PMCheckbox(label: "Draft outward", isOn: $model.form.draftOutward)
+                    }
+                }
             }
             if model.form.endCondition != .midPlane && model.form.endCondition != .throughAllBoth {
                 PMCheckGroup(title: "Direction 2", isOn: $model.form.direction2) {
@@ -105,6 +118,22 @@ struct OperationPage: View {
                     if model.form.endCondition2 == .blind {
                         PMField(label: "Depth", text: $model.form.depth2, unit: "mm", icon: .smartDimension)
                     }
+                }
+            }
+            PMCheckGroup(title: "Thin Feature", isOn: $model.form.thinOn) {
+                Picker("Type", selection: $model.form.thinType) {
+                    Text("One-Direction").tag("one_direction")
+                    Text("Mid-Plane").tag("mid_plane")
+                    Text("Two-Direction").tag("two_direction")
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                PMField(label: "Thickness", text: $model.form.thinThickness, unit: "mm", icon: .shell)
+                if model.form.thinType == "two_direction" {
+                    PMField(label: "Thickness 2", text: $model.form.thinThickness2, unit: "mm", icon: .shell)
+                }
+                if model.form.thinType == "one_direction" {
+                    PMCheckbox(label: "Reverse (inside the profile)", isOn: $model.form.thinReverse)
                 }
             }
             PMSection("Selected Contours") {
@@ -166,6 +195,57 @@ struct OperationPage: View {
                 PMPicker(label: "", selection: .constant(0)) { Text("Symmetric").tag(0) }
                 PMField(label: "Radius", text: $model.form.radius, unit: "mm", icon: .smartDimension)
                 PMPicker(label: "Profile", selection: .constant(0)) { Text("Circular").tag(0) }
+            }
+        case .chamfer:
+            PMSection("Chamfer Type") {
+                PMTypeList(options: [(value: "angle_distance", icon: .chamfer, title: "Angle Distance"),
+                                     (value: "distance_distance", icon: .chamfer, title: "Distance Distance"),
+                                     (value: "equal_distance", icon: .chamfer, title: "Equal Distance")], selection: $model.form.chamferType)
+            }
+            PMSection("Items To Chamfer") {
+                PMSelectionBox(items: model.selectedEdges.map { (icon: ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges")
+            }
+            PMSection("Chamfer Parameters") {
+                PMField(label: "Distance", text: $model.form.chamferDistance, unit: "mm", icon: .smartDimension)
+                if model.form.chamferType == "distance_distance" {
+                    PMField(label: "Distance 2", text: $model.form.chamferDistance2, unit: "mm", icon: .smartDimension)
+                }
+                if model.form.chamferType == "angle_distance" {
+                    PMField(label: "Angle", text: $model.form.chamferAngle, unit: "°", icon: .arc)
+                }
+            }
+        case .shell:
+            PMSection("Parameters") {
+                PMField(label: "Thickness", text: $model.form.shellThickness, unit: "mm", icon: .shell)
+                PMSelectionBox(items: model.form.shellFaces.map { (icon: ForgeIcon.plane, text: shortName($0)) }, placeholder: "Faces to Remove (none: hollow closed body)")
+                PMCheckbox(label: "Shell outward", isOn: $model.form.shellOutward)
+            }
+            .onChange(of: model.selection) { _, sel in model.form.shellFaces = sel.filter { $0.contains("/face-") } }
+        case .draft:
+            PMSection("Type of Draft") {
+                PMTypeList(options: [(value: 0, icon: .draft, title: "Neutral Plane")], selection: .constant(0))
+            }
+            PMSection("Draft Angle") {
+                PMField(label: "Angle", text: $model.form.draftFeatureAngle, unit: "°", icon: .arc)
+            }
+            PMSection("Neutral Plane") {
+                PMSelectionBox(items: model.form.draftNeutral.isEmpty ? [] : [(icon: ForgeIcon.plane, text: shortName(model.form.draftNeutral))],
+                               placeholder: "A planar face", active: model.form.activeBox == "neutral")
+                    .onTapGesture { model.form.activeBox = "neutral" }
+                PMCheckbox(label: "Reverse direction", isOn: $model.form.draftReverse)
+            }
+            PMSection("Faces to Draft") {
+                PMSelectionBox(items: model.form.draftFaces.map { (icon: ForgeIcon.plane, text: shortName($0)) }, placeholder: "Faces",
+                               active: model.form.activeBox == "faces")
+                    .onTapGesture { model.form.activeBox = "faces" }
+            }
+            .onChange(of: model.selection) { _, sel in
+                let faces = sel.filter { $0.contains("/face-") }
+                if model.form.activeBox == "neutral" {
+                    if let f = faces.last { model.form.draftNeutral = f; model.form.activeBox = "faces" }
+                } else {
+                    model.form.draftFaces = faces.filter { $0 != model.form.draftNeutral }
+                }
             }
         case .combine:
             PMSection("Operation Type") {
@@ -392,44 +472,7 @@ struct SketchToolPage: View {
         }
     }
 
-    private var message: String {
-        let st = model.sketchState
-        switch tool {
-        case .line:
-            switch st.lineKind {
-            case .line: return "Click or drag to place lines; they chain on. Click the first point to close the profile; double-click or Esc to stop."
-            case .centerline: return "Click two points. Centerlines are construction lines for mirrors, revolves and symmetry."
-            case .midpoint: return "Click the midpoint, then an end. The line is symmetric about the first click."
-            }
-        case .rectangle:
-            switch st.rectangleType {
-            case .corner: return "Click two opposite corners."
-            case .center: return "Click the centre, then a corner."
-            case .threePoint: return "Click two corners to set one side and its angle, then the width."
-            case .parallelogram: return "Click three corners."
-            }
-        case .circle: return st.circleType == .center ? "Click the centre, then a point on the circle." : "Click three points on the circle."
-        case .arc:
-            switch st.arcType {
-            case .center: return "Click the centre, the start, then the end (counter-clockwise)."
-            case .tangent: return "Click the end of a line or arc, then where the arc ends."
-            case .threePoint: return "Click the start, the end, then a point the arc passes through."
-            }
-        case .slot: return st.slotType == .straight ? "Click the two arc centres, then the width." : "Click the slot centre, an arc centre, then the width."
-        case .polygon: return "Click the centre, then a vertex (inscribed) or the middle of a side (circumscribed)."
-        case .spline: return "Click the points the spline passes through; double-click to finish."
-        case .ellipse:
-            return st.ellipseType == .full
-                ? "Click the centre, the end of the major axis, then a point on the minor axis."
-                : "Click the centre, the major axis, the minor axis (also the start), then the end."
-        case .point: return "Click to place points."
-        case .fillet: return "Click a corner where two lines meet."
-        case .chamfer: return "Click a corner where two lines meet."
-        case .trim: return st.trimMode == .power ? "Drag across the pieces to remove, or click them." : "Click the piece of a curve to remove."
-        case .extend: return "Click a curve near the end to extend it to the next curve."
-        case .dimension: return "Click a line, circle or arc, or two entities. Type the value in the Modify box and press Return."
-        }
-    }
+    private var message: String { model.toolMessage(tool) }
 
     private func number(_ key: WritableKeyPath<SketchUIState, Double>) -> Binding<String> {
         Binding(

@@ -85,8 +85,8 @@ enum RibbonTab: String, CaseIterable, Identifiable {
 }
 
 /// The operation whose options are shown in the PropertyManager (with OK / Cancel).
-enum Operation: Equatable {
-    case extrude, cutExtrude, revolve, fillet, combine, massProperties, measure, check
+enum Operation: Hashable {
+    case extrude, cutExtrude, revolve, fillet, chamfer, shell, draft, combine, massProperties, measure, check
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
     case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
@@ -98,6 +98,9 @@ enum Operation: Equatable {
         case .cutExtrude: "Cut-Extrude"
         case .revolve: "Revolve"
         case .fillet: "Fillet"
+        case .chamfer: "Chamfer"
+        case .shell: "Shell"
+        case .draft: "Draft"
         case .combine: "Combine"
         case .massProperties: "Mass Properties"
         case .measure: "Measure"
@@ -121,6 +124,9 @@ enum Operation: Equatable {
         case .cutExtrude: .cutExtrude
         case .revolve: .revolve
         case .fillet: .fillet
+        case .chamfer: .chamfer
+        case .shell: .shell
+        case .draft: .draft
         case .combine: .combine
         case .massProperties: .massProps
         case .measure: .measure
@@ -175,6 +181,9 @@ struct FeatureRow: Identifiable, Equatable {
         case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
         case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
         case "body.fillet_edges": .fillet
+        case "body.chamfer_edges": .chamfer
+        case "body.shell": .shell
+        case "body.draft": .draft
         case "body.boolean": .combine
         case "body.transform": .move
         case "body.delete": .trash
@@ -191,6 +200,9 @@ struct FeatureRow: Identifiable, Equatable {
         case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
         case "body.revolve": .revolve
         case "body.fillet_edges": .fillet
+        case "body.chamfer_edges": .chamfer
+        case "body.shell": .shell
+        case "body.draft": .draft
         case "body.boolean": .combine
         case "body.create_box": .primitive(.box)
         case "body.create_cylinder": .primitive(.cylinder)
@@ -418,7 +430,7 @@ final class AppModel {
     var hint: String {
         if let op = operation { return "\(op.title): set the options in the PropertyManager, then OK (↩)." }
         if activeSketch != nil {
-            if let t = sketchState.tool { return t.hint }
+            if let t = sketchState.tool { return toolMessage(t) }
             return "Pick a sketch tool, or select curves to add relations and dimensions. Esc cancels."
         }
         if bodies.isEmpty && sketches.isEmpty {

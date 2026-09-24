@@ -176,6 +176,8 @@ struct PMCheckbox: View {
 struct PMSelectionBox: View {
     let items: [(icon: ForgeIcon, text: String)]
     var placeholder = ""
+    /// The box receiving picks (SolidWorks highlights the active box).
+    var active: Bool? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -197,7 +199,8 @@ struct PMSelectionBox: View {
         .padding(6)
         .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 7).fill(Theme.field))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(items.isEmpty ? Theme.line : Theme.accent, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder((active ?? !items.isEmpty) ? Theme.accent : Theme.line, lineWidth: active == true ? 2 : 1.5))
+        .background(RoundedRectangle(cornerRadius: 7).fill(active == true ? Theme.accentSoft.opacity(0.5) : .clear))
     }
 }
 

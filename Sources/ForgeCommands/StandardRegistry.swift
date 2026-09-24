@@ -67,6 +67,9 @@ extension CommandRegistry {
         r.register(BodyBoolean.self)
         r.register(BodyTransform.self)
         r.register(BodyFilletEdges.self)
+        r.register(BodyChamferEdges.self)
+        r.register(BodyShell.self)
+        r.register(BodyDraft.self)
         r.register(BodyDelete.self)
         r.register(BodyRename.self)
         // feature tree

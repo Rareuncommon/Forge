@@ -16,6 +16,14 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepOffsetAPI_DraftAngle.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepLib_FindSurface.hxx>
+#include <Geom_Plane.hxx>
+#include <gp_Pln.hxx>
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -397,6 +405,249 @@ FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_
         return nullptr;
     }
     return wrap(mk.Shape());
+    FK_END(nullptr)
+}
+
+namespace {
+double volumeOf(const TopoDS_Shape &s) {
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(s, g);
+    return g.Mass();
+}
+
+bool collect(const TopoDS_Shape &shape, TopAbs_ShapeEnum kind, const int32_t *idx, size_t count, TopTools_ListOfShape &out,
+             FKError *err) {
+    TopTools_IndexedMapOfShape map;
+    TopExp::MapShapes(shape, kind, map);
+    for (size_t i = 0; i < count; ++i) {
+        if (idx[i] < 0 || idx[i] >= map.Extent()) {
+            setError(err, FK_ERR_OUT_OF_RANGE, kind == TopAbs_FACE ? "face index out of range" : "edge index out of range");
+            return false;
+        }
+        out.Append(map(idx[i] + 1));
+    }
+    return true;
+}
+
+/* Draft `faces` of `shape`; returns a null shape on failure. */
+TopoDS_Shape draft(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle, const gp_Pln &neutral) {
+    BRepOffsetAPI_DraftAngle mk(shape);
+    for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
+        mk.Add(TopoDS::Face(it.Value()), dir, angle, neutral);
+        if (!mk.AddDone()) return TopoDS_Shape();
+    }
+    mk.Build();
+    if (!mk.IsDone()) return TopoDS_Shape();
+    return mk.Shape();
+}
+
+/* Draft with the sign that makes the solid lose volume (inward) or gain it (outward). */
+TopoDS_Shape draftInOrOut(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle, const gp_Pln &neutral,
+                          bool outward) {
+    const double base = volumeOf(shape);
+    for (double sign : {1.0, -1.0}) {
+        TopoDS_Shape r = draft(shape, faces, dir, sign * angle, neutral);
+        if (r.IsNull()) continue;
+        const double v = volumeOf(r);
+        if ((outward && v > base) || (!outward && v < base)) return r;
+    }
+    return TopoDS_Shape();
+}
+} // namespace
+
+FKShape *fk_chamfer_edges(const FKShape *shape, const int32_t *edgeIndices, size_t count, double distance, double distance2,
+                          double angle, FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err)) return nullptr;
+    if (!positive(distance) || count == 0 || !edgeIndices) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "chamfer needs a positive distance and at least one edge");
+        return nullptr;
+    }
+    FK_BEGIN
+    TopTools_ListOfShape edges;
+    if (!collect(shape->shape, TopAbs_EDGE, edgeIndices, count, edges, err)) return nullptr;
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndAncestors(shape->shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    BRepFilletAPI_MakeChamfer mk(shape->shape);
+    for (TopTools_ListIteratorOfListOfShape it(edges); it.More(); it.Next()) {
+        const TopoDS_Edge &e = TopoDS::Edge(it.Value());
+        if (distance2 <= 0 && angle <= 0) {
+            mk.Add(distance, e);
+            continue;
+        }
+        const TopTools_ListOfShape &faces = edgeFaces.FindFromKey(e);
+        if (faces.IsEmpty()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "edge has no adjacent face");
+            return nullptr;
+        }
+        const TopoDS_Face &f = TopoDS::Face(faces.First());
+        if (angle > 0) mk.AddDA(distance, angle, e, f);
+        else mk.Add(distance, distance2, e, f);
+    }
+    mk.Build();
+    if (!mk.IsDone()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "chamfer failed (distance too large for the adjacent faces?)");
+        return nullptr;
+    }
+    return wrap(mk.Shape());
+    FK_END(nullptr)
+}
+
+FKShape *fk_shell(const FKShape *shape, const int32_t *faceIndices, size_t count, double thickness, int32_t outward, FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err)) return nullptr;
+    if (!positive(thickness)) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "shell needs a positive thickness");
+        return nullptr;
+    }
+    FK_BEGIN
+    TopTools_ListOfShape faces;
+    if (count > 0 && !collect(shape->shape, TopAbs_FACE, faceIndices, count, faces, err)) return nullptr;
+    const double offset = outward ? thickness : -thickness;
+    if (count == 0) {
+        // Closed hollow body: offset the whole solid and subtract (sharp corners, as SolidWorks).
+        BRepOffsetAPI_MakeOffsetShape off;
+        off.PerformByJoin(shape->shape, offset, 1.0e-3, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+        if (!off.IsDone() || off.Shape().IsNull()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "shell failed (thickness larger than a wall or a radius of curvature?)");
+            return nullptr;
+        }
+        BRepAlgoAPI_Cut cut(outward ? off.Shape() : shape->shape, outward ? shape->shape : off.Shape());
+        if (!cut.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "shell failed");
+            return nullptr;
+        }
+        return wrap(cut.Shape());
+    }
+    BRepOffsetAPI_MakeThickSolid mk;
+    mk.MakeThickSolidByJoin(shape->shape, faces, offset, 1.0e-3, BRepOffset_Skin, Standard_False, Standard_False, GeomAbs_Intersection);
+    mk.Build();
+    if (!mk.IsDone() || mk.Shape().IsNull()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "shell failed (thickness larger than a radius of curvature or a wall?)");
+        return nullptr;
+    }
+    return wrap(mk.Shape());
+    FK_END(nullptr)
+}
+
+FKShape *fk_draft_faces(const FKShape *shape, const int32_t *faceIndices, size_t count, const double planeOrigin[3],
+                        const double pullDirection[3], double angle, int32_t outward, FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err)) return nullptr;
+    if (!(angle > 0 && angle < M_PI / 2) || count == 0 || !faceIndices) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "draft needs an angle between 0 and 90 degrees and at least one face");
+        return nullptr;
+    }
+    FK_BEGIN
+    TopTools_ListOfShape faces;
+    if (!collect(shape->shape, TopAbs_FACE, faceIndices, count, faces, err)) return nullptr;
+    const gp_Dir dir(pullDirection[0], pullDirection[1], pullDirection[2]);
+    const gp_Pln neutral(gp_Pnt(planeOrigin[0], planeOrigin[1], planeOrigin[2]), dir);
+    TopoDS_Shape r = draftInOrOut(shape->shape, faces, dir, angle, neutral, outward != 0);
+    if (r.IsNull()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "draft failed (faces must meet the neutral plane or be parallel to the pull direction)");
+        return nullptr;
+    }
+    return wrap(r);
+    FK_END(nullptr)
+}
+
+FKShape *fk_extrude_draft(const FKShape *profile, const double v[3], double angle, int32_t outward, FKError *err) {
+    clearError(err);
+    if (!hasShape(profile, err)) return nullptr;
+    const gp_Vec vec(v[0], v[1], v[2]);
+    if (vec.Magnitude() <= 0 || !(angle > 0 && angle < M_PI / 2)) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "drafted extrusion needs a direction and an angle between 0 and 90 degrees");
+        return nullptr;
+    }
+    FK_BEGIN
+    BRepPrimAPI_MakePrism prism(profile->shape, vec, Standard_True);
+    prism.Build();
+    if (!prism.IsDone()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "extrusion failed");
+        return nullptr;
+    }
+    const TopoDS_Shape solid = prism.Shape();
+    // Side faces: every face except the two caps (the profile and its translate).
+    TopTools_IndexedMapOfShape capFaces;
+    TopExp::MapShapes(prism.FirstShape(), TopAbs_FACE, capFaces);
+    TopExp::MapShapes(prism.LastShape(), TopAbs_FACE, capFaces);
+    TopTools_ListOfShape sides;
+    for (TopExp_Explorer ex(solid, TopAbs_FACE); ex.More(); ex.Next()) {
+        if (!capFaces.Contains(ex.Current())) sides.Append(ex.Current());
+    }
+    Handle(Geom_Surface) surf = BRepLib_FindSurface(profile->shape, 1e-6, Standard_True).Surface();
+    Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(surf);
+    if (plane.IsNull()) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "drafted extrusion needs a planar profile");
+        return nullptr;
+    }
+    const gp_Dir dir(vec);
+    const gp_Pln neutral(plane->Pln().Location(), dir);
+    TopoDS_Shape r = draftInOrOut(solid, sides, dir, angle, neutral, outward != 0);
+    if (r.IsNull()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "draft failed (angle too large for the depth?)");
+        return nullptr;
+    }
+    return wrap(r);
+    FK_END(nullptr)
+}
+
+FKShape *fk_offset_face(const FKShape *face, double distance, FKError *err) {
+    clearError(err);
+    if (!hasShape(face, err)) return nullptr;
+    TopExp_Explorer fx(face->shape, TopAbs_FACE);
+    if (!fx.More()) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "offset needs a face");
+        return nullptr;
+    }
+    if (distance == 0) return wrap(face->shape);
+    FK_BEGIN
+    TopoDS_Compound out;
+    BRep_Builder bb;
+    bb.MakeCompound(out);
+    int made = 0;
+    for (; fx.More(); fx.Next()) {
+        const TopoDS_Face f = TopoDS::Face(fx.Current());
+        BRepOffsetAPI_MakeOffset mk(f, GeomAbs_Arc);
+        mk.Perform(distance);
+        if (!mk.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "offset failed");
+            return nullptr;
+        }
+        // The offset wires: the largest encloses the others (holes).
+        std::vector<TopoDS_Wire> wires;
+        for (TopExp_Explorer wx(mk.Shape(), TopAbs_WIRE); wx.More(); wx.Next()) wires.push_back(TopoDS::Wire(wx.Current()));
+        if (wires.empty()) continue;  // the face vanished (shrunk away)
+        Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
+        auto area = [&](const TopoDS_Wire &w) {
+            BRepBuilderAPI_MakeFace m(surf, w, Standard_True);
+            if (!m.IsDone()) return 0.0;
+            GProp_GProps g;
+            BRepGProp::SurfaceProperties(m.Face(), g);
+            return std::abs(g.Mass());
+        };
+        size_t outer = 0;
+        double best = -1;
+        for (size_t i = 0; i < wires.size(); ++i) {
+            double a = area(wires[i]);
+            if (a > best) { best = a; outer = i; }
+        }
+        BRepBuilderAPI_MakeFace mf(surf, wires[outer], Standard_True);
+        for (size_t i = 0; i < wires.size(); ++i) {
+            if (i != outer) mf.Add(TopoDS::Wire(wires[i].Reversed()));
+        }
+        if (!mf.IsDone()) continue;
+        ShapeFix_Face fix(mf.Face());
+        fix.Perform();
+        bb.Add(out, fix.Face());
+        ++made;
+    }
+    if (made == 0) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "the offset removes the whole profile");
+        return nullptr;
+    }
+    return wrap(made == 1 ? TopoDS_Shape(TopExp_Explorer(out, TopAbs_FACE).Current()) : TopoDS_Shape(out));
     FK_END(nullptr)
 }
 

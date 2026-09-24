@@ -145,6 +145,25 @@ FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError 
 /* m is a row-major 3x4 affine matrix [R | t]; must be a rigid motion or uniform scale. */
 FKShape *fk_transform(const FKShape *shape, const double m[12], FKError *err);
 FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_t count, double radius, FKError *err);
+/* Chamfer edges. distance2 <= 0 and angle <= 0: equal distance. distance2 > 0: two distances,
+   the first measured on the first face adjacent to each edge. angle > 0 (radians): distance
+   on that face and angle. */
+FKShape *fk_chamfer_edges(const FKShape *shape, const int32_t *edgeIndices, size_t count, double distance, double distance2,
+                          double angle, FKError *err);
+/* Shell: hollow the solid to the given wall thickness, opening the given faces (none: a
+   closed hollow body). Walls grow inward, or outward when outward != 0. */
+FKShape *fk_shell(const FKShape *shape, const int32_t *faceIndices, size_t count, double thickness, int32_t outward, FKError *err);
+/* Draft faces by angle (radians) about a neutral plane (point, normal = pull direction).
+   The sign is chosen so the faces taper inward (outward != 0: outward). */
+FKShape *fk_draft_faces(const FKShape *shape, const int32_t *faceIndices, size_t count, const double planeOrigin[3],
+                        const double pullDirection[3], double angle, int32_t outward, FKError *err);
+/* Extrude a planar profile face by v with its side faces drafted by angle (radians),
+   tapering inward along v (outward != 0: outward). */
+FKShape *fk_extrude_draft(const FKShape *profile, const double v[3], double angle, int32_t outward, FKError *err);
+/* Offset a planar face's boundary (outer and inner wires) by distance: > 0 grows the face,
+   < 0 shrinks it. Corners are rounded (arc joins), as in a thin feature. */
+FKShape *fk_offset_face(const FKShape *face, double distance, FKError *err);
+
 
 /* ---- profiles → solids ---------------------------------------------------- */
 typedef enum FKSegmentKind {

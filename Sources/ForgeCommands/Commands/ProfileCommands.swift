@@ -82,6 +82,34 @@ public enum EndCondition: String, Codable, Sendable, CaseIterable, SchemaEnum {
     case blind, throughAll = "through_all", throughAllBoth = "through_all_both", midPlane = "mid_plane", upToVertex = "up_to_vertex"
 }
 
+public enum ThinType: String, Codable, Sendable, CaseIterable, SchemaEnum {
+    case oneDirection = "one_direction", midPlane = "mid_plane", twoDirection = "two_direction"
+}
+
+/// Thin Feature: extrude a wall along the profile's boundary instead of the filled profile.
+public struct ThinOption: Codable, Sendable, SchemaDocumented {
+    public var type: ThinType?
+    public var thickness: Length
+    public var thickness2: Length?
+    public var reverse: Bool?
+    public static let fieldDocs: [String: FieldDoc] = [
+        "type": FieldDoc("one_direction (outward, inward with reverse), mid_plane (centred on the profile) or two_direction", default: "one_direction"),
+        "thickness": "Wall thickness (outward for two_direction)",
+        "thickness2": "Inward thickness, for two_direction",
+        "reverse": FieldDoc("one_direction: put the wall inside the profile", default: false),
+    ]
+}
+
+/// Draft on the extruded side faces, measured from the sketch plane.
+public struct DraftOption: Codable, Sendable, SchemaDocumented {
+    public var angle: Angle
+    public var outward: Bool?
+    public static let fieldDocs: [String: FieldDoc] = [
+        "angle": "Draft angle",
+        "outward": FieldDoc("Draft outward (the profile grows along the extrusion)", default: false),
+    ]
+}
+
 public enum FeatureOperation: String, Codable, Sendable, CaseIterable, SchemaEnum {
     case boss, cut
 }
@@ -151,13 +179,15 @@ public enum BodyExtrude: Command {
         public var reverse: Bool?
         public var vertex: Point3?
         public var direction2: ExtrudeDirection2?
+        public var draft: DraftOption?
+        public var thin: ThinOption?
         public var operation: FeatureOperation?
         public var merge: Bool?
         public var scope: [String]?
         public var name: String?
 
         enum CodingKeys: String, CodingKey {
-            case sketch, depth, direction, reverse, vertex, direction2, operation, merge, scope, name
+            case sketch, depth, direction, reverse, vertex, direction2, draft, thin, operation, merge, scope, name
             case endCondition = "end_condition"
         }
         public static let fieldDocs: [String: FieldDoc] = [
@@ -170,6 +200,8 @@ public enum BodyExtrude: Command {
             "reverse": FieldDoc("Extrude against the sketch normal", default: false),
             "vertex": "Point Direction 1 reaches, for up_to_vertex (model coordinates)",
             "direction2": "Also extrude the other way (not with mid_plane or through_all_both)",
+            "draft": "Draft the sides, from the sketch plane (Direction 1 only: not with direction2, mid_plane or through_all_both)",
+            "thin": "Thin Feature: a wall of this thickness along the profile boundary",
             "operation": FieldDoc("boss (add material) or cut (remove it from the bodies in scope)", default: "boss"),
             "merge": FieldDoc("Boss: merge the result into the bodies it touches instead of making a new body", default: false),
             "scope": FieldDoc("Bodies a cut or merge affects", default: "all bodies"),
@@ -182,6 +214,19 @@ public enum BodyExtrude: Command {
                 try requirePositive(depth, "depth")
             }
             if ec == .upToVertex && vertex == nil { throw ForgeError(.invalidParams, "vertex is required for up_to_vertex") }
+            if let d = draft {
+                guard d.angle.radians > 0, d.angle.radians < .pi / 2 else { throw ForgeError(.invalidParams, "draft angle must be between 0 and 90 degrees") }
+                if direction2 != nil || ec == .midPlane || ec == .throughAllBoth {
+                    throw ForgeError(.invalidParams, "draft applies to Direction 1 only (not with direction2, mid_plane or through_all_both)")
+                }
+            }
+            if let t = thin {
+                try requirePositive(t.thickness, "thin.thickness")
+                if t.type == .twoDirection {
+                    guard let t2 = t.thickness2 else { throw ForgeError(.invalidParams, "thin.thickness2 is required for two_direction") }
+                    try requirePositive(t2, "thin.thickness2")
+                }
+            }
             if let d2 = direction2 {
                 if ec == .midPlane || ec == .throughAllBoth { throw ForgeError(.invalidParams, "direction2 does not combine with \(ec.rawValue)") }
                 switch d2.endCondition ?? .blind {
@@ -200,7 +245,8 @@ public enum BodyExtrude: Command {
     public static let name = "body.extrude"
     public static let summary = "Extruded Boss/Base or Extruded Cut from a sketch's closed profile (holes and islands kept)"
     public static let discussion = """
-        SolidWorks' Extrude: Direction 1 end condition (blind, through all, through all both, mid plane, up to vertex) with         reverse, an optional Direction 2, boss or cut, merge result and feature scope. Recorded as a feature: editing the         sketch or feature.edit regenerates it. Draft, thin feature and the up-to-surface end conditions are not implemented yet.
+        SolidWorks' Extrude: Direction 1 end condition (blind, through all, through all both, mid plane, up to vertex) with         reverse, an optional Direction 2, boss or cut, merge result and feature scope. Recorded as a feature: editing the         sketch or feature.edit regenerates it. Also draft (Direction 1) and thin feature for closed profiles. The up-to-surface \
+        end conditions and thin features from open sketches are not implemented yet.
         """
     public static let category = CommandCategory.body
     public static let undo = UndoBehavior.undoable
@@ -210,6 +256,26 @@ public enum BodyExtrude: Command {
         ["sketch": "sketch-2", "end_condition": "through_all", "operation": "cut"],
         ["sketch": "sketch-1", "depth": 10, "direction2": ["depth": 4], "merge": true],
     ]
+
+    /// The wall region of a Thin Feature: the band between offsets of the profile boundary.
+    static func thinFace(_ face: Shape, _ t: ThinOption) throws -> Shape {
+        let th = t.thickness.millimeters
+        let (outer, inner): (Double, Double)
+        switch t.type ?? .oneDirection {
+        case .oneDirection: (outer, inner) = (t.reverse ?? false) ? (0, th) : (th, 0)
+        case .midPlane: (outer, inner) = (th / 2, th / 2)
+        case .twoDirection: (outer, inner) = (th, t.thickness2!.millimeters)
+        }
+        let big = try Kernel.offsetFace(face, by: outer)
+        let small: Shape? = inner == 0 ? face : try? Kernel.offsetFace(face, by: -inner)
+        // Shrunk away entirely: the wall fills the profile.
+        guard let small else { return big }
+        do {
+            return try Kernel.boolean(.cut, big, small)
+        } catch {
+            throw ForgeError(.kernelFailure, "the thin wall could not be built (thickness too large for the profile?)")
+        }
+    }
 
     /// Signed extent of the bodies in scope along the sketch normal, relative to the plane.
     static func extent(_ doc: Document, _ scope: [String]?, origin: Vec3, normal n: Vec3) throws -> (min: Double, max: Double) {
@@ -233,7 +299,8 @@ public enum BodyExtrude: Command {
         var doc = try ctx.requireDocument()
         let sk = try doc.sketch(p.sketch)
         let (loops, regions) = try sk.profileLoops()
-        let face = try Kernel.faces(loops: loops, regions: regions)
+        var face = try Kernel.faces(loops: loops, regions: regions)
+        if let t = p.thin { face = try thinFace(face, t) }
         let n = sk.plane.normal, origin = sk.plane.origin
         let ec = p.endCondition ?? (p.direction == .midPlane ? .midPlane : .blind)
         let s1: Double = (p.reverse ?? false) || p.direction == .reverse ? -1 : 1
@@ -269,8 +336,15 @@ public enum BodyExtrude: Command {
             let t2 = try p.direction2.map { d2 in try reach(d2.endCondition ?? .blind, depth: d2.depth, vertex: d2.vertex, sign: -s1) } ?? 0
             (a, b) = s1 > 0 ? (-t2, t1) : (-t1, t2)
         }
-        let start = a == 0 ? face : try Kernel.transform(face, .translation(n * a))
-        let solid = try Kernel.extrude(start, by: n * (b - a))
+        let solid: Shape
+        if let d = p.draft {
+            // Drafted from the sketch plane, along Direction 1.
+            let depth = s1 > 0 ? b : -a
+            solid = try Kernel.extrudeDrafted(face, by: n * (s1 * depth), angle: d.angle.radians, outward: d.outward ?? false)
+        } else {
+            let start = a == 0 ? face : try Kernel.transform(face, .translation(n * a))
+            solid = try Kernel.extrude(start, by: n * (b - a))
+        }
 
         if p.operation == .cut {
             let modified = try FeatureScope.cut(solid, &doc, p.scope, producedBy: name)

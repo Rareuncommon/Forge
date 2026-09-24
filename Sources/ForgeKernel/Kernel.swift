@@ -63,6 +63,41 @@ public enum Kernel {
         return try call { err in idx.withUnsafeBufferPointer { fk_fillet_edges(shape.handle, $0.baseAddress, $0.count, radius, err) } }
     }
 
+    /// Chamfer edges: equal distance; or `distance2` (two distances, the first on the first
+    /// face of each edge); or `angle` (radians) with the distance.
+    public static func chamfer(_ shape: Shape, edges: [Int], distance: Double, distance2: Double? = nil, angle: Double? = nil) throws -> Shape {
+        let idx = edges.map { Int32($0) }
+        return try call { err in
+            idx.withUnsafeBufferPointer { fk_chamfer_edges(shape.handle, $0.baseAddress, $0.count, distance, distance2 ?? 0, angle ?? 0, err) }
+        }
+    }
+
+    /// Hollow a solid (walls inward, or outward), opening the given faces.
+    public static func shell(_ shape: Shape, openFaces: [Int], thickness: Double, outward: Bool = false) throws -> Shape {
+        let idx = openFaces.map { Int32($0) }
+        return try call { err in idx.withUnsafeBufferPointer { fk_shell(shape.handle, $0.baseAddress, $0.count, thickness, outward ? 1 : 0, err) } }
+    }
+
+    /// Draft faces about a neutral plane (origin, pull direction), tapering inward or outward.
+    public static func draft(_ shape: Shape, faces: [Int], neutralOrigin: Vec3, pull: Vec3, angle: Double, outward: Bool = false) throws -> Shape {
+        let idx = faces.map { Int32($0) }
+        return try call { err in
+            idx.withUnsafeBufferPointer { f in
+                withUnsafePointer3(neutralOrigin) { o in withUnsafePointer3(pull) { d in fk_draft_faces(shape.handle, f.baseAddress, f.count, o, d, angle, outward ? 1 : 0, err) } }
+            }
+        }
+    }
+
+    /// Extrusion with drafted sides (taper inward along v, or outward).
+    public static func extrudeDrafted(_ profile: Shape, by v: Vec3, angle: Double, outward: Bool = false) throws -> Shape {
+        try call { err in withUnsafePointer3(v) { fk_extrude_draft(profile.handle, $0, angle, outward ? 1 : 0, err) } }
+    }
+
+    /// Grow (> 0) or shrink (< 0) a planar face's boundary, rounding corners.
+    public static func offsetFace(_ face: Shape, by distance: Double) throws -> Shape {
+        try call { err in fk_offset_face(face.handle, distance, err) }
+    }
+
     /// Minimum distance between two shapes and the closest points.
     public static func distance(_ a: Shape, _ b: Shape) throws -> (distance: Double, pointA: Vec3, pointB: Vec3) {
         var d = 0.0

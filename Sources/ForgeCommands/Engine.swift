@@ -223,8 +223,10 @@ public actor Engine {
             }
             let created = doc.bodyOrder.filter { before.bodies[$0] == nil }
             var edges: Int?
-            if command == "body.fillet_edges", let b = p["body"]?.stringValue, let body = try? before.body(b) {
-                edges = try? body.shape.topology().edges
+            if let b = p["body"]?.stringValue, let body = try? before.body(b), let t = try? body.shape.topology() {
+                // Edge (or face) count when the references were picked: detects renumbering.
+                if command == "body.fillet_edges" || command == "body.chamfer_edges" { edges = t.edges }
+                if command == "body.shell" || command == "body.draft" { edges = t.faces }
             }
             doc.recordFeature(command: command, params: .object(p), createdBodies: created, edgeCount: edges)
         } else if command == "sketch.create", let id = doc.sketchOrder.first(where: { before.sketches[$0] == nil }) {

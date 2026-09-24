@@ -30,7 +30,8 @@ public struct Feature: Codable, Sendable, Hashable {
     /// Bodies the feature created the first time it ran; regeneration re-uses these ids.
     public var createdBodies: [String]
     public var status: FeatureStatus
-    /// Fillet: edge count of the body when the edges were picked (detects renumbering).
+    /// Fillet/chamfer: edge count (shell/draft: face count) of the body when the references
+    /// were picked; a different count on regeneration means they may have been renumbered.
     public var edgeCount: Int?
 
     public var isSketch: Bool { command == "sketch.create" }
@@ -60,7 +61,8 @@ struct BodyState: Sendable {
 extension Document {
     /// Commands whose invocations become features.
     public static let featureCommands: Set<String> = [
-        "body.extrude", "body.revolve", "body.boolean", "body.transform", "body.fillet_edges", "body.delete",
+        "body.extrude", "body.revolve", "body.boolean", "body.transform", "body.fillet_edges", "body.chamfer_edges", "body.shell",
+        "body.draft", "body.delete",
         "body.create_box", "body.create_cylinder", "body.create_sphere", "body.create_cone", "body.create_torus",
     ]
 
@@ -72,6 +74,9 @@ extension Document {
         case "body.boolean": "Combine"
         case "body.transform": params["copy"]?.boolValue == true ? "Body-Move/Copy" : "Body-Move"
         case "body.fillet_edges": "Fillet"
+        case "body.chamfer_edges": "Chamfer"
+        case "body.shell": "Shell"
+        case "body.draft": "Draft"
         case "body.delete": "Body-Delete/Keep"
         case "body.create_box": "Box"
         case "body.create_cylinder": "Cylinder"
@@ -160,7 +165,10 @@ extension Document {
                 continue
             }
             let before = currentBodyState
-            let edgeCounts = Dictionary(uniqueKeysWithValues: before.order.compactMap { id in (try? bodies[id]?.shape.topology().edges).map { (id, $0) } })
+            let usesFaces = f.command == "body.shell" || f.command == "body.draft"
+            let edgeCounts = Dictionary(uniqueKeysWithValues: before.order.compactMap { id in
+                (try? bodies[id]?.shape.topology()).map { (id, usesFaces ? $0.faces : $0.edges) }
+            })
             do {
                 guard let d = try? registry.descriptor(f.command) else {
                     throw ForgeError(.unknownCommand, "unknown command '\(f.command)'")
@@ -176,12 +184,12 @@ extension Document {
                 f.status = .ok
                 // Fillet edges are indices (see the file comment): warn when the body they
                 // index was rebuilt with a different number of edges.
-                if f.command == "body.fillet_edges", let b = f.params["body"]?.stringValue, let n = edgeCounts[b],
-                    let recorded = f.edgeCount, recorded != n
-                {
+                if let b = f.params["body"]?.stringValue, let n = edgeCounts[b], let recorded = f.edgeCount, recorded != n {
                     f.status = FeatureStatus(
                         state: .warning,
-                        error: ForgeError(.referenceLost, "the edges of \(b) changed upstream; check that the fillet is on the intended edges", entities: [b]))
+                        error: ForgeError(
+                            .referenceLost, "the \(usesFaces ? "faces" : "edges") of \(b) changed upstream; check that \(f.name) is on the intended ones",
+                            entities: [b]))
                 }
             } catch {
                 restoreBodies(before)
