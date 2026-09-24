@@ -289,33 +289,48 @@ extension AppModel {
     func commitFeatureEdit(_ id: String, _ op: Operation) async {
         var params: JSONValue?
         switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft, .linearPattern, .circularPattern, .mirror:
-            params = invocations(for: op)?.first?.params
-            if case .object(var o)? = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
-                // A feature that made its own body keeps doing so.
-                o.removeValue(forKey: "merge")
-                params = .object(o)
-            }
-        case .fillet:
-            let edges = selectedEdges
-            guard let body = edges.first?.split(separator: "/").first else {
-                lastError = ForgeError(.invalidParams, "select the edges to fillet")
-                return
-            }
-            params = ["body": .string(String(body)), "edges": .array(edges.map { .string($0) }), "radius": quantity(form.radius)]
-        case .combine:
-            params = ["operation": .string(form.combine), "target": .string(form.target), "tool": .string(form.tool)]
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .fillet, .chamfer, .shell, .draft, .linearPattern,
+             .circularPattern, .mirror, .combine:
+            params = featureEditParams(id, op)
         default:
             params = nil
         }
-        guard let params else { return }
+        guard let params else {
+            lastError = ForgeError(.invalidParams, missingInputMessage(op))
+            return
+        }
         let replace: Bool = op != .combine
         if await run("feature.edit", ["feature": .string(id), "params": params, "replace": .bool(replace)]) != nil {
             operation = nil
             editingFeature = nil
+            clearOperationPreview()
         }
     }
 
+    /// The parameters `feature.edit` gets from the page of feature `id`.
+    func featureEditParams(_ id: String, _ op: Operation) -> JSONValue? {
+        guard var params = invocations(for: op)?.first?.params else { return nil }
+        if case .object(var o) = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
+            // A feature that made its own body keeps doing so.
+            o.removeValue(forKey: "merge")
+            params = .object(o)
+        }
+        return params
+    }
+
+    /// What OK needs before it can run (the PropertyManager's red message).
+    func missingInputMessage(_ op: Operation) -> String {
+        let messages: [Operation: String] = [.fillet: "select the edges or faces to fillet", .chamfer: "select the edges or faces to chamfer",
+         .shell: "select a face to remove, or a body", .draft: "select the neutral plane and the faces to draft",
+         .revolve: "choose the axis of revolution", .cutRevolve: "choose the axis of revolution",
+         .linearPattern: "choose the features to pattern", .circularPattern: "choose the features to pattern",
+         .mirror: "choose the features to mirror", .combine: "choose the main body and the body to combine with it",
+         .sketchOffset: "select the sketch entities to offset", .sketchMirror: "select the entities and a line to mirror about",
+         .sketchLinearPattern: "select the sketch entities to pattern", .sketchCircularPattern: "select the sketch entities to pattern",
+         .sketchMove: "select the sketch entities to move", .sketchRotate: "select the sketch entities to rotate",
+         .sketchScale: "select the sketch entities to scale"]
+        return messages[op] ?? "choose a sketch"
+    }
 
     /// Number when it parses, otherwise the text (a quantity with units, e.g. "0.5 in").
     func quantity(_ text: String) -> JSONValue {
@@ -409,12 +424,16 @@ extension AppModel {
             var p: [String: JSONValue] = ["reference": .string(form.planeReference), "offset": quantity(form.planeOffset)]
             if form.planeFlip { p["flip"] = true }
             return [Invocation("plane.create", .object(p))]
+        case .fillet:
+            // Edges and faces of any number of bodies: body.fillet_edges groups them per body.
+            let items = filletItems
+            guard !items.isEmpty else { return nil }
+            return [Invocation("body.fillet_edges", ["edges": .array(items.map { .string($0) }), "radius": quantity(form.radius)])]
         case .chamfer:
-            let edges = selectedEdges
-            guard let body = edges.first?.split(separator: "/").first else { return nil }
+            let items = filletItems
+            guard !items.isEmpty else { return nil }
             var p: [String: JSONValue] = [
-                "body": .string(String(body)), "edges": .array(edges.map { .string($0) }), "type": .string(form.chamferType),
-                "distance": quantity(form.chamferDistance),
+                "edges": .array(items.map { .string($0) }), "type": .string(form.chamferType), "distance": quantity(form.chamferDistance),
             ]
             if form.chamferType == "distance_distance" { p["distance2"] = quantity(form.chamferDistance2) }
             if form.chamferType == "angle_distance" { p["angle"] = angleQuantity(form.chamferAngle) }
@@ -431,6 +450,11 @@ extension AppModel {
                 "body": .string(String(body)), "neutral_plane": .string(form.draftNeutral), "faces": .array(form.draftFaces.map { .string($0) }),
                 "angle": angleQuantity(form.draftFeatureAngle), "reverse": .bool(form.draftReverse),
             ])]
+        case .combine:
+            guard !form.target.isEmpty, !form.tool.isEmpty, form.target != form.tool else { return nil }
+            return [Invocation("body.boolean", ["operation": .string(form.combine), "target": .string(form.target), "tool": .string(form.tool)])]
+        case .sketchOffset, .sketchMirror, .sketchLinearPattern, .sketchCircularPattern, .sketchMove, .sketchRotate, .sketchScale:
+            return sketchInvocation(op).map { [$0] }
         case .primitive(let p):
             switch p {
             case .box: return [Invocation("body.create_box", ["width": quantity(form.width), "height": quantity(form.height), "depth": quantity(form.boxDepth)])]
@@ -445,48 +469,149 @@ extension AppModel {
         }
     }
 
+    /// The command of a sketch operation on the selected entities of the open sketch.
+    private func sketchInvocation(_ op: Operation) -> Invocation? {
+        let local = sketchSelection
+        guard !local.isEmpty else { return nil }
+        let ents: JSONValue = .array(local.map { .string($0) })
+        switch op {
+        case .sketchOffset:
+            return Invocation("sketch.offset", [
+                "entities": ents, "distance": quantity(form.offsetDistance), "reverse": .bool(form.offsetReverse),
+                "bidirectional": .bool(form.offsetBoth), "cap_ends": .bool(form.offsetCaps), "make_base_construction": .bool(form.offsetBaseConstruction),
+            ])
+        case .sketchMirror:
+            let entities = local.filter { $0 != form.mirrorAxis }
+            guard !form.mirrorAxis.isEmpty, !entities.isEmpty else { return nil }
+            return Invocation("sketch.mirror", ["entities": .array(entities.map { .string($0) }), "axis": .string(form.mirrorAxis)])
+        case .sketchLinearPattern:
+            var p: [String: JSONValue] = [
+                "entities": ents, "count": count(form.patternCount), "spacing": quantity(form.patternSpacing),
+                "direction": angleQuantity(form.patternDirection),
+            ]
+            if form.patternDirection2On {
+                p["count2"] = count(form.patternCount2)
+                p["spacing2"] = quantity(form.patternSpacing2)
+                p["direction2"] = angleQuantity(form.patternDirection2)
+            }
+            return Invocation("sketch.pattern_linear", .object(p))
+        case .sketchCircularPattern:
+            var p: [String: JSONValue] = ["entities": ents, "count": count(form.circularCount), "angle": angleQuantity(form.circularAngle)]
+            if let c = point(form.circularCenter) { p["center"] = c }
+            return Invocation("sketch.pattern_circular", .object(p))
+        case .sketchMove:
+            return Invocation("sketch.move", [
+                "entities": ents, "by": [quantity(form.moveDX), quantity(form.moveDY)], "copy": .bool(form.copy), "keep_relations": .bool(form.keepRelations),
+            ])
+        case .sketchRotate:
+            var p: [String: JSONValue] = ["entities": ents, "angle": angleQuantity(form.rotateAngle), "copy": .bool(form.copy), "keep_relations": .bool(form.keepRelations)]
+            if let c = point(form.rotateCenter) { p["center"] = c }
+            return Invocation("sketch.rotate", .object(p))
+        case .sketchScale:
+            var p: [String: JSONValue] = [
+                "entities": ents, "factor": .number(Double(form.scaleFactor) ?? 1), "copy": .bool(form.copy), "keep_relations": .bool(form.keepRelations),
+            ]
+            if let c = point(form.scaleCenter) { p["center"] = c }
+            return Invocation("sketch.scale", .object(p))
+        default:
+            return nil
+        }
+    }
+
     // MARK: preview
 
-    /// Recompute the live preview of the open operation (translucent bodies in the viewport).
+    /// Recompute the live preview of the open operation, or of the feature being edited:
+    /// new bodies translucent (amber, red for cuts), changed bodies opaque and tinted in place of
+    /// the originals, sketch operations as preview curves in the sketch.
     func updatePreview() async {
-        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .linearPattern, .circularPattern, .mirror].contains(op) || { if case .primitive = op { true } else { false } }(),
-            let items = invocations(for: op)
-        else {
+        guard let op = operation, !op.isReport, op != .addRelation, var items = invocations(for: op) else {
             clearOperationPreview()
             return
         }
+        if let fid = editingFeature {
+            guard let params = featureEditParams(fid, op) else { return clearOperationPreview() }
+            items = [Invocation("feature.edit", ["feature": .string(fid), "params": params, "replace": .bool(op != .combine)])]
+        }
         do {
             let (doc, changes) = try await engine.preview(items)
-            let created = (changes.created + changes.modified).filter { $0.hasPrefix("body-") }
-            guard let doc, !created.isEmpty else { return clearOperationPreview() }
-            let ds = try DocumentScene(document: doc, bodies: created, showSketches: false)
-            let cut = op == .cutExtrude || op == .cutRevolve || op == .hole
-            let fill = cut ? RGBA(0.90, 0.28, 0.22, 0.38) : RGBA(0.96, 0.64, 0.14, 0.40)
-            let edge = cut ? RGBA(0.72, 0.16, 0.12) : RGBA(0.80, 0.47, 0.0)
-            preview = PreviewBox(items: ds.scene.items.enumerated().map { i, item in
-                var out = item
-                out.objectID = ReferenceGeometry.firstObjectID + 100 + UInt32(i)
-                out.color = fill
-                out.highlightedFaces = []
-                out.highlightedEdges = []
-                out.highlightAll = false
-                out.edgeColors = Dictionary(uniqueKeysWithValues: item.mesh.edgeIDs.map { ($0, edge) })
-                return out
-            })
+            guard let doc else { return clearOperationPreview() }
             previewError = nil
+            if op.isSketchOperation {
+                showSketchOperationPreview(doc)
+                return
+            }
+            let created = changes.created.filter { $0.hasPrefix("body-") && doc.bodies[$0] != nil }
+            let modified = changes.modified.filter { $0.hasPrefix("body-") && doc.bodies[$0] != nil }
+            let deleted = changes.deleted.filter { $0.hasPrefix("body-") }
+            guard !(created.isEmpty && modified.isEmpty && deleted.isEmpty) else { return clearOperationPreview() }
+            let cut = op == .cutExtrude || op == .cutRevolve || op == .hole || (op == .combine && form.combine == "cut")
+            let tint = cut ? RGBA(0.90, 0.28, 0.22) : RGBA(0.96, 0.64, 0.14)
+            let edge = cut ? RGBA(0.72, 0.16, 0.12) : RGBA(0.80, 0.47, 0.0)
+            var out: [RenderItem] = []
+            let shown = created + modified
+            if !shown.isEmpty {
+                let ds = try DocumentScene(document: doc, bodies: shown, showSketches: false)
+                for (i, item) in ds.scene.items.enumerated() where i < ds.bodies.count {
+                    var o = item
+                    o.objectID = ReferenceGeometry.firstObjectID + 100 + UInt32(out.count)
+                    if created.contains(ds.bodies[i]) {
+                        o.color = RGBA(tint.r, tint.g, tint.b, 0.40)
+                    } else {
+                        // The body as it would become, a little toward the preview colour.
+                        o.color = Self.blend(item.color, tint, 0.3)
+                    }
+                    o.highlightedFaces = []
+                    o.highlightedEdges = []
+                    o.highlightAll = false
+                    o.edgeColors = Dictionary(uniqueKeysWithValues: item.mesh.edgeIDs.map { ($0, edge) })
+                    out.append(o)
+                }
+            }
+            preview = PreviewBox(items: out, hidden: modified + deleted)
             previewVersion += 1
         } catch {
             previewError = ForgeError.wrap(error).message
-            if !preview.items.isEmpty {
+            if !preview.items.isEmpty || !preview.hidden.isEmpty || !sketchState.opPreview.isEmpty {
                 preview = PreviewBox()
+                sketchState.opPreview = []
                 previewVersion += 1
+                overlayVersion += 1
             }
         }
     }
 
+    static func blend(_ a: RGBA, _ b: RGBA, _ t: Float) -> RGBA {
+        let s: Float = 1 - t
+        let r: Float = a.r * s + b.r * t
+        let g: Float = a.g * s + b.g * t
+        let bl: Float = a.b * s + b.b * t
+        return RGBA(r, g, bl, 1)
+    }
+
+    /// Sketch operation preview: the curves of the previewed sketch that are new or moved.
+    private func showSketchOperationPreview(_ doc: Document) {
+        guard let id = activeSketch, let after = doc.sketches[id] else { return clearOperationPreview() }
+        let before = sketchState.sketch
+        var lines: [[Point2]] = []
+        for (eid, e) in after.entities where e.kind != .point {
+            let pl = after.polyline(eid)
+            if let before, before.entities[eid] != nil {
+                let old = before.polyline(eid)
+                if old.count == pl.count && zip(old, pl).allSatisfy({ abs($0.0 - $1.0) < 1e-9 && abs($0.1 - $1.1) < 1e-9 }) { continue }
+            }
+            lines.append(pl.map { Point2($0.0, $0.1) })
+        }
+        sketchState.opPreview = lines
+        overlayVersion += 1
+    }
+
     func clearOperationPreview() {
         previewError = nil
-        guard !preview.items.isEmpty else { return }
+        if !sketchState.opPreview.isEmpty {
+            sketchState.opPreview = []
+            overlayVersion += 1
+        }
+        guard !preview.items.isEmpty || !preview.hidden.isEmpty else { return }
         preview = PreviewBox()
         previewVersion += 1
     }
@@ -500,7 +625,13 @@ extension AppModel {
                 String(f.linDirection2On), f.linDirection2, f.linSpacing2, f.linCount2, f.cirAxis, f.cirAngle, f.cirCount, String(f.cirEqual),
                 String(f.cirReverse), f.mirrorPlane, f.holeType, f.holeSize, f.holeFit, f.holeEnd, f.holeDepth, String(f.holeReverse), String(f.draftOn), f.draftAngle, String(f.draftOutward), String(f.thinOn), f.thinType,
                 f.thinThickness, f.thinThickness2, String(f.thinReverse), f.axis, f.angle, f.width, f.height, f.boxDepth, f.cylRadius, f.cylHeight,
-                f.sphereRadius, f.coneBase, f.coneTop, f.coneHeight, f.torusMajor, f.torusMinor, String(sceneVersion)].joined(separator: "|")
+                f.sphereRadius, f.coneBase, f.coneTop, f.coneHeight, f.torusMajor, f.torusMinor, f.chamferType, f.chamferDistance,
+                f.chamferDistance2, f.chamferAngle, f.radius, f.shellThickness, String(f.shellOutward), f.shellFaces.joined(separator: ","),
+                f.draftNeutral, f.draftFaces.joined(separator: ","), String(f.draftReverse), f.draftFeatureAngle, f.planeReference, f.planeOffset,
+                String(f.planeFlip), f.combine, f.target, f.tool, f.offsetDistance, String(f.offsetReverse), String(f.offsetBoth), String(f.offsetCaps),
+                f.mirrorAxis, f.patternCount, f.patternSpacing, f.patternDirection, String(f.patternDirection2On), f.patternCount2, f.patternSpacing2,
+                f.patternDirection2, f.circularCount, f.circularAngle, f.circularCenter, f.moveDX, f.moveDY, String(f.copy), f.rotateAngle,
+                f.rotateCenter, f.scaleFactor, f.scaleCenter, editingFeature ?? "", selection.joined(separator: ","), String(sceneVersion)].joined(separator: "|")
     }
 
     // MARK: commit
@@ -508,77 +639,25 @@ extension AppModel {
     func commitOperation() async {
         guard let op = operation else { return }
         var ok: CommandOutcome?
-        let local = sketchSelection
         if let fid = editingFeature {
             await commitFeatureEdit(fid, op)
             return
         }
-        switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft, .linearPattern, .circularPattern, .mirror:
-            guard let items = invocations(for: op) else {
-                lastError = ForgeError(.invalidParams, [.chamfer: "select the edges to chamfer", .shell: "select a face to remove, or a body",
-                                                        .draft: "select the neutral plane and the faces to draft", .revolve: "choose the axis of revolution",
-                                                        .linearPattern: "choose the features to pattern", .circularPattern: "choose the features to pattern",
-                                                        .mirror: "choose the features to mirror"][op] ?? "choose a sketch")
-                return
-            }
-            if activeSketch != nil && op != .plane { await exitSketch() }
-            for i in items { ok = await run(i.command, i.params) }
-        case .fillet:
-            let edges = selectedEdges
-            guard let body = edges.first?.split(separator: "/").first else {
-                lastError = ForgeError(.invalidParams, "select the edges to fillet in the viewport first")
-                return
-            }
-            ok = await run("body.fillet_edges", ["body": .string(String(body)), "edges": .array(edges.map { .string($0) }), "radius": quantity(form.radius)])
-        case .combine:
-            ok = await run("body.boolean", ["operation": .string(form.combine), "target": .string(form.target), "tool": .string(form.tool)])
-        case .massProperties, .measure, .check, .addRelation, .displayRelations:
+        if op.isReport || op == .addRelation {
             operation = nil
             return
-        case .sketchOffset:
-            ok = await run("sketch.offset", [
-                "entities": .array(local.map { .string($0) }), "distance": quantity(form.offsetDistance), "reverse": .bool(form.offsetReverse),
-                "bidirectional": .bool(form.offsetBoth), "cap_ends": .bool(form.offsetCaps), "make_base_construction": .bool(form.offsetBaseConstruction),
-            ])
-        case .sketchMirror:
-            let entities = local.filter { $0 != form.mirrorAxis }
-            ok = await run("sketch.mirror", ["entities": .array(entities.map { .string($0) }), "axis": .string(form.mirrorAxis)])
-        case .sketchLinearPattern:
-            var p: [String: JSONValue] = [
-                "entities": .array(local.map { .string($0) }), "count": count(form.patternCount), "spacing": quantity(form.patternSpacing),
-                "direction": angleQuantity(form.patternDirection),
-            ]
-            if form.patternDirection2On {
-                p["count2"] = count(form.patternCount2)
-                p["spacing2"] = quantity(form.patternSpacing2)
-                p["direction2"] = angleQuantity(form.patternDirection2)
-            }
-            ok = await run("sketch.pattern_linear", .object(p))
-        case .sketchCircularPattern:
-            var p: [String: JSONValue] = ["entities": .array(local.map { .string($0) }), "count": count(form.circularCount), "angle": angleQuantity(form.circularAngle)]
-            if let c = point(form.circularCenter) { p["center"] = c }
-            ok = await run("sketch.pattern_circular", .object(p))
-        case .sketchMove:
-            ok = await run("sketch.move", [
-                "entities": .array(local.map { .string($0) }), "by": [quantity(form.moveDX), quantity(form.moveDY)],
-                "copy": .bool(form.copy), "keep_relations": .bool(form.keepRelations),
-            ])
-        case .sketchRotate:
-            var p: [String: JSONValue] = [
-                "entities": .array(local.map { .string($0) }), "angle": angleQuantity(form.rotateAngle), "copy": .bool(form.copy),
-                "keep_relations": .bool(form.keepRelations),
-            ]
-            if let c = point(form.rotateCenter) { p["center"] = c }
-            ok = await run("sketch.rotate", .object(p))
-        case .sketchScale:
-            var p: [String: JSONValue] = [
-                "entities": .array(local.map { .string($0) }), "factor": .number(Double(form.scaleFactor) ?? 1), "copy": .bool(form.copy),
-                "keep_relations": .bool(form.keepRelations),
-            ]
-            if let c = point(form.scaleCenter) { p["center"] = c }
-            ok = await run("sketch.scale", .object(p))
         }
+        guard let items = invocations(for: op) else {
+            lastError = ForgeError(.invalidParams, missingInputMessage(op))
+            return
+        }
+        if activeSketch != nil && op != .plane && !op.isSketchOperation { await exitSketch() }
+        if items.count > 1 { await run("transaction.begin", ["label": .string(op.title)]) }
+        for i in items {
+            ok = await run(i.command, i.params)
+            if ok == nil { break }
+        }
+        if items.count > 1 { await run(ok == nil ? "transaction.rollback" : "transaction.commit") }
         if ok != nil {
             let wasSketchOp = op.isSketchOperation
             operation = nil

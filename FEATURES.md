@@ -239,7 +239,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/boss-base-and-cut/boundary-boss-cut` | Boss/base & cut: boundary boss/cut | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/thicken-thicken-cut` | Boss/base & cut: thicken/thicken cut | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/cut-with-surface` | Boss/base & cut: cut with surface | not started | ForgeModel | — | — |  |
-| `7.2/applied/fillet` | Applied: fillet | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests/006 | execute:body.fillet_edges | constant radius on transient edge indices; no feature tree yet |
+| `7.2/applied/fillet` | Applied: fillet | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests/006 | execute:body.fillet_edges | constant radius; edges and whole faces across several bodies in one feature (recorded in the feature tree); edge refs are transient indices until ADR 0002 |
 | `7.2/applied/fillet/constant` | ↳ constant | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests/006 | execute:body.fillet_edges | kernel-level; parametric feature in M2 |
 | `7.2/applied/fillet/variable` | ↳ variable | not started | ForgeModel | — | — |  |
 | `7.2/applied/fillet/face` | ↳ face | not started | ForgeModel | — | — |  |

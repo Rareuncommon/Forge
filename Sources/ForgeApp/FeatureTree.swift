@@ -54,7 +54,7 @@ struct FeatureTreeView: View {
             if bodiesOpen {
                 ForEach(model.bodies.filter { matches($0.name) }, id: \.id) { b in
                     TreeRow(icon: .part, title: b.name, depth: 2, selected: model.selection.contains(b.id)) {
-                        Task { await model.select(b.id, extend: NSEvent.modifierFlags.contains(.shift)) }
+                        Task { await model.select(b.id, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
                     }
                     .contextMenu {
                         Button("Mass Properties") {
@@ -194,7 +194,7 @@ private struct FeatureNode: View {
             return
         }
         if feature.isSketch, let s = feature.sketchID {
-            Task { await model.select(s, extend: NSEvent.modifierFlags.contains(.shift)) }
+            Task { await model.select(s, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
         } else if !feature.createdBodies.isEmpty && feature.command != "plane.create" {
             Task { await model.select(feature.createdBodies) }
         }

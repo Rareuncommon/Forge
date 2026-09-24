@@ -360,34 +360,69 @@ public enum BodyTransform: Command {
 
 /// Resolve edge references ("body-1/edge-3" or bare index "3") against a body.
 func resolveEdges(_ refs: [String], body: Body) throws -> [Int] {
-    let count = try body.shape.topology().edges
-    return try refs.map { r in
-        let idx: Int
+    let t = try body.shape.topology()
+    var out: [Int] = []
+    func add(_ i: Int) { if !out.contains(i) { out.append(i) } }
+    for r in refs {
         if let i = Int(r) {
-            idx = i
+            guard i >= 0, i < t.edges else { throw noEdge(body, i, t.edges) }
+            add(i)
+            continue
+        }
+        let ref = try EntityRef.parse(r)
+        guard ref.body == body.id, let i = ref.index, ref.kind == .edge || ref.kind == .face else {
+            throw ForgeError(.invalidParams, "'\(r)' is not an edge or face of \(body.id)", entities: [r])
+        }
+        if ref.kind == .edge {
+            guard i < t.edges else { throw noEdge(body, i, t.edges) }
+            add(i)
         } else {
-            let ref = try EntityRef.parse(r)
-            guard ref.kind == .edge, ref.body == body.id, let i = ref.index else {
-                throw ForgeError(.invalidParams, "'\(r)' is not an edge of \(body.id)", entities: [r])
+            // A face stands for all its edges (SolidWorks: fillet/chamfer a face's boundary).
+            guard i < t.faces else {
+                throw ForgeError(.unknownEntity, "\(body.id) has no face \(i) (it has \(t.faces) faces)", entities: [r])
             }
-            idx = i
+            for e in 0..<t.edges where try body.shape.edge(e).faces.contains(i) { add(e) }
         }
-        guard idx >= 0, idx < count else {
-            throw ForgeError(.unknownEntity, "\(body.id) has no edge \(idx) (it has \(count) edges)", entities: ["\(body.id)/edge-\(idx)"],
-                             suggestions: [SuggestedFix(description: "List the body's edges", command: "query.edges", params: ["body": .string(body.id)])])
+    }
+    return out
+}
+
+private func noEdge(_ body: Body, _ idx: Int, _ count: Int) -> ForgeError {
+    ForgeError(
+        .unknownEntity, "\(body.id) has no edge \(idx) (it has \(count) edges)", entities: ["\(body.id)/edge-\(idx)"],
+        suggestions: [SuggestedFix(description: "List the body's edges", command: "query.edges", params: ["body": .string(body.id)])])
+}
+
+/// Edge/face references grouped by body. Bare indices belong to `body`.
+func edgesByBody(_ refs: [String], body: String?, _ doc: Document) throws -> [(Body, [Int])] {
+    var order: [String] = []
+    var groups: [String: [String]] = [:]
+    for r in refs {
+        let owner: String
+        if Int(r) != nil {
+            guard let body else { throw ForgeError(.invalidParams, "'\(r)' is an index; give 'body' or a full reference like body-1/edge-\(r)") }
+            owner = body
+        } else {
+            owner = try EntityRef.parse(r).body
         }
-        return idx
+        let b = try doc.body(owner).id
+        if groups[b] == nil { order.append(b) }
+        groups[b, default: []].append(r)
+    }
+    return try order.map { id in
+        let b = try doc.body(id)
+        return (b, try resolveEdges(groups[id]!, body: b))
     }
 }
 
 public enum BodyFilletEdges: Command {
     public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
-        public var body: String
+        public var body: String?
         public var edges: [String]
         public var radius: Length
         public static let fieldDocs: [String: FieldDoc] = [
-            "body": "Body to fillet",
-            "edges": "Edge references (\"body-1/edge-3\") or indices (\"3\")",
+            "body": FieldDoc("Body for bare edge indices", default: "taken from the references"),
+            "edges": "Edge references (\"body-1/edge-3\") or indices; a face (\"body-1/face-2\") stands for all its edges; several bodies are allowed",
             "radius": "Constant fillet radius",
         ]
         public func validate() throws {
@@ -398,28 +433,30 @@ public enum BodyFilletEdges: Command {
     public typealias Output = BodyResult
 
     public static let name = "body.fillet_edges"
-    public static let summary = "Round edges of a body with a constant-radius fillet"
-    public static let discussion = "Kernel-level fillet on transient edge indices. The parametric Fillet feature with persistent references arrives with the feature tree (M2)."
+    public static let summary = "Round edges (or all edges of faces) with a constant-radius fillet"
+    public static let discussion = "Tangent-continuous edges are included automatically. Recorded as a Fillet feature; references are transient indices until persistent naming (ADR 0002) lands."
     public static let category = CommandCategory.body
     public static let undo = UndoBehavior.undoable
     public static let errors: [ErrorCode] = [.unknownEntity, .kernelFailure]
-    public static let examples: [JSONValue] = [["body": "body-1", "edges": ["body-1/edge-0"], "radius": 2]]
+    public static let examples: [JSONValue] = [["body": "body-1", "edges": ["body-1/edge-0"], "radius": 2], ["edges": ["body-1/face-4"], "radius": 1]]
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let b = try doc.body(p.body)
-        let idx = try resolveEdges(p.edges, body: b)
-        let shape: Shape
-        do {
-            shape = try Kernel.fillet(b.shape, edges: idx, radius: p.radius.millimeters)
-        } catch var e as ForgeError {
-            e.entities = idx.map { "\(b.id)/edge-\($0)" }
-            e.suggestions.append(SuggestedFix(description: "Try a smaller radius", command: name, params: ["body": .string(b.id), "edges": .array(p.edges.map { .string($0) }), "radius": .number(p.radius.millimeters / 2)]))
-            throw e
+        var changed: [String] = []
+        for (b, idx) in try edgesByBody(p.edges, body: p.body, doc) {
+            let shape: Shape
+            do {
+                shape = try Kernel.fillet(b.shape, edges: idx, radius: p.radius.millimeters)
+            } catch var e as ForgeError {
+                e.entities = idx.map { "\(b.id)/edge-\($0)" }
+                e.suggestions.append(SuggestedFix(description: "Try a smaller radius", command: name, params: ["edges": .array(p.edges.map { .string($0) }), "radius": .number(p.radius.millimeters / 2)]))
+                throw e
+            }
+            try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+            changed.append(b.id)
         }
-        try doc.replaceShape(of: b.id, with: shape, producedBy: name)
         ctx.document = doc
-        return Output(body: try BodySummary(try doc.body(b.id)))
+        return Output(body: try BodySummary(try doc.body(changed[0])), bodies: changed.count > 1 ? changed : nil)
     }
 }
 

@@ -64,15 +64,20 @@ struct ViewportView: NSViewRepresentable {
             if first { view.fit() } else { view.cameraChanged() }
             view.needsDisplay = true
         }
-        if context.coordinator.previewVersion != model.previewVersion {
+        if context.coordinator.previewVersion != model.previewVersion || context.coordinator.hiddenSceneVersion != model.sceneVersion {
             context.coordinator.previewVersion = model.previewVersion
+            context.coordinator.hiddenSceneVersion = model.sceneVersion
             view.renderer?.setPreview(model.preview.items)
+            // Bodies an opaque preview replaces (fillet, cut, combine…) are not drawn meanwhile.
+            let bodies = view.documentScene?.bodies ?? []
+            view.renderer?.hiddenObjects = Set(model.preview.hidden.compactMap { id in bodies.firstIndex(of: id).map { UInt32($0) } })
             view.needsDisplay = true
         }
         if context.coordinator.overlayVersion != model.overlayVersion {
             context.coordinator.overlayVersion = model.overlayVersion
             view.renderer?.setOverlay(
-                Self.overlay(model.sketchState.preview, plane: model.sketchState.plane, markerSize: view.pixelSize * 5, dark: model.isDark))
+                Self.overlay(model.sketchState.preview, operation: model.sketchState.opPreview, plane: model.sketchState.plane,
+                             markerSize: view.pixelSize * 5, dark: model.isDark))
             view.needsDisplay = true
         }
         let commands = model.viewportCommands.log
@@ -100,14 +105,19 @@ struct ViewportView: NSViewRepresentable {
         var appliedCommands = 0
         var overlayVersion = 0
         var previewVersion = 0
+        var hiddenSceneVersion = 0
     }
 
     /// Overlay items for the sketch preview: rubber-band geometry and the snap marker (a ring,
     /// as in the design).
-    static func overlay(_ preview: SketchPreview?, plane: SketchPlane?, markerSize: Double, dark: Bool) -> [RenderItem] {
-        guard let pv = preview, let plane else { return [] }
+    static func overlay(_ preview: SketchPreview?, operation: [[Point2]] = [], plane: SketchPlane?, markerSize: Double, dark: Bool) -> [RenderItem] {
+        guard let plane, preview != nil || !operation.isEmpty else { return [] }
+        let pv = preview ?? SketchPreview()
         let color = Theme.sketchRGBA(dark: dark).preview
         var lines = ReferenceGeometry.LineBuilder()
+        for pl in operation {
+            lines.add(pl.map { plane.point($0.u, $0.v) }, color)
+        }
         for pl in pv.polylines {
             lines.add(pl.map { plane.point($0.u, $0.v) }, color)
         }
@@ -342,7 +352,7 @@ final class ForgeMTKView: MTKView {
         guard let ds = documentScene else { return }
         let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
         let hit = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
-        onPick?(hit.flatMap { ds.reference(for: $0) }, event.modifierFlags.contains(.shift), CGPoint(x: p.x, y: bounds.height - p.y))
+        onPick?(hit.flatMap { ds.reference(for: $0) }, !event.modifierFlags.intersection([.shift, .command, .control]).isEmpty, CGPoint(x: p.x, y: bounds.height - p.y))
     }
 
     override func keyDown(with event: NSEvent) {

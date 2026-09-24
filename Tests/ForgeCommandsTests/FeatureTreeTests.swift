@@ -381,3 +381,32 @@ struct PatternTests {
         }
     }
 }
+
+@Suite("Fillet and chamfer selections")
+struct FilletSelectionTests {
+    @Test func severalEdgesFacesAndBodiesInOneFeature() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("body.create_box", ["width": 10, "height": 10, "depth": 10])
+        try await e.execute("body.create_box", ["width": 10, "height": 10, "depth": 10])
+        try await e.execute("body.transform", ["body": "body-2", "translate": [30, 0, 0]])
+        func top(_ b: String) async throws -> String {
+            let faces = try await e.execute("query.faces", ["body": .string(b)]).result["faces"]!.arrayValue!
+            return faces.first { $0["normal"]!.arrayValue!.map { $0.doubleValue! } == [0, 0, 1] }!["id"]!.stringValue!
+        }
+        // All four edges of body-1's top face, and one edge of body-2: one Fillet1.
+        let t1 = try await top("body-1")
+        try await e.execute("body.fillet_edges", ["edges": [.string(t1), "body-2/edge-0"], "radius": 1])
+        let v1 = try await e.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!
+        let v2 = try await e.execute("query.mass_properties", ["body": "body-2"]).result["volume_mm3"]!.doubleValue!
+        // Each rounded edge removes (1 − π/4) mm² per mm; the four top edges meet in mitred
+        // corners, so body-1 loses between 4 × 8 and 4 × 10 mm of that section.
+        let a: Double = 1 - Double.pi / 4
+        let most: Double = 1000 - 40 * a, least: Double = 1000 - 32 * a
+        #expect(v1 > most - 1e-6)
+        #expect(v1 < least + 1e-6)
+        #expect(abs(v2 - (1000 - 10 * a)) < 1e-6)
+        let tree = try await e.execute("feature.list").result["features"]!.arrayValue!
+        #expect(tree.last?["name"] == "Fillet1")
+    }
+}

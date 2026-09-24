@@ -227,7 +227,7 @@ public actor Engine {
             }
             let created = doc.bodyOrder.filter { before.bodies[$0] == nil } + doc.refPlaneOrder.filter { before.refPlanes[$0] == nil }
             var edges: Int?
-            if let b = p["body"]?.stringValue, let body = try? before.body(b), let t = try? body.shape.topology() {
+            if let b = Document.referencedBody(.object(p)), let body = try? before.body(b), let t = try? body.shape.topology() {
                 // Edge (or face) count when the references were picked: detects renumbering.
                 if command == "body.fillet_edges" || command == "body.chamfer_edges" { edges = t.edges }
                 if command == "body.shell" || command == "body.draft" { edges = t.faces }

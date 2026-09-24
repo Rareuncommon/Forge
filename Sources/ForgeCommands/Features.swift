@@ -68,6 +68,15 @@ extension Document {
         "body.create_box", "body.create_cylinder", "body.create_sphere", "body.create_cone", "body.create_torus",
     ]
 
+    /// The body a face/edge-referencing feature works on: "body", else the first reference's.
+    static func referencedBody(_ params: JSONValue) -> String? {
+        if let b = params["body"]?.stringValue { return b }
+        for key in ["edges", "faces"] {
+            if let r = params[key]?.arrayValue?.first?.stringValue, let e = EntityRef(parsing: r), Int(r) == nil { return e.body }
+        }
+        return nil
+    }
+
     /// Feature name stem, SolidWorks style ("Boss-Extrude" → "Boss-Extrude1").
     static func featureStem(_ command: String, _ params: JSONValue) -> String {
         switch command {
@@ -211,7 +220,7 @@ extension Document {
                 f.status = .ok
                 // Fillet edges are indices (see the file comment): warn when the body they
                 // index was rebuilt with a different number of edges.
-                if let b = f.params["body"]?.stringValue, let n = edgeCounts[b], let recorded = f.edgeCount, recorded != n {
+                if let b = Self.referencedBody(f.params), let n = edgeCounts[b], let recorded = f.edgeCount, recorded != n {
                     f.status = FeatureStatus(
                         state: .warning,
                         error: ForgeError(

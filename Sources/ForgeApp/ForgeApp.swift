@@ -387,10 +387,21 @@ final class AppModel {
         return out
     }
 
+    /// Operations whose PropertyManager collects picks: a click adds to (or, on an item
+    /// already picked, removes from) the selection instead of replacing it, as in SolidWorks.
+    var collectsPicks: Bool {
+        guard let op = operation else { return false }
+        return [Operation.fillet, .chamfer, .shell, .draft, .measure, .massProperties, .check, .combine].contains(op) || op.isSketchOperation
+    }
+
+    /// A viewport or tree pick. `extend` (⇧, ⌘ or ⌃ held) toggles the item in the selection;
+    /// so does any pick while an operation collecting picks is open.
     func select(_ ref: String?, extend: Bool) async {
+        let additive = extend || collectsPicks
         if let ref {
-            await run("selection.set", ["entities": [.string(ref)], "mode": extend ? "add" : "replace"])
-        } else if !extend {
+            let mode = !additive ? "replace" : selection.contains(ref) ? "remove" : "add"
+            await run("selection.set", ["entities": [.string(ref)], "mode": .string(mode)])
+        } else if !additive {
             await run("selection.clear")
         }
     }
@@ -446,6 +457,9 @@ final class AppModel {
     }
 
     var selectedEdges: [String] { selection.filter { $0.contains("/edge-") } }
+
+    /// Fillet / chamfer items: selected edges, and faces (all of a face's edges).
+    var filletItems: [String] { selection.filter { $0.contains("/edge-") || $0.contains("/face-") } }
 
     /// One-line guidance for the status bar.
     var hint: String {
@@ -507,6 +521,8 @@ final class AppModel {
 /// The live preview's render items (not observed item by item).
 struct PreviewBox {
     var items: [RenderItem] = []
+    /// Bodies (ids) the preview replaces on screen.
+    var hidden: [String] = []
 }
 
 /// Non-observable wrapper so large scene data doesn't participate in SwiftUI diffing.

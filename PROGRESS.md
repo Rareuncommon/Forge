@@ -25,6 +25,20 @@
 - **Next:** persistent naming (ADR 0002) for face/edge references; Rib, Sweep, Loft,
   Convert Entities, up-to-surface end conditions, materials, equations, configurations.
 
+### Follow-up fixes (user report: missing previews, multi-select fillet)
+
+- Picks are additive while a PropertyManager collects items (fillet, chamfer, shell, draft,
+  combine, measure, sketch operations): a click adds the item, clicking it again removes it,
+  clicking empty space no longer clears. ⇧/⌘/⌃ toggle everywhere else.
+- `body.fillet_edges` / `body.chamfer_edges`: `body` is optional; edges of several bodies and
+  whole faces (all their edges) are accepted in one call (FilletSelectionTests).
+- Live preview for every operation, not only the creating ones: changed bodies are drawn
+  opaque and tinted in place of the originals (renderer `hiddenObjects`), new bodies
+  translucent; feature edits preview through `feature.edit`; sketch operations (offset, mirror,
+  patterns, move/rotate/scale) show their result curves in the sketch.
+- All PropertyManager operations build their commands in one place (`invocations(for:)`), so
+  commit, preview and feature edit cannot drift apart.
+
 ## Session 2 — 2026-09-23 — Milestone 1 (sketcher) + first sketch-to-solid
 
 ### CI status

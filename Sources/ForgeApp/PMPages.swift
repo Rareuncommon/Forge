@@ -56,8 +56,8 @@ struct OperationPage: View {
         case .hole where model.sketches.isEmpty: "Sketch points on a face first: each point is a hole position."
         case .linearPattern, .circularPattern, .mirror:
             "Click features in the tree to add or remove them (extrusions, revolutions, holes). Select an edge in the view for a direction or axis."
-        case .fillet where model.selectedEdges.isEmpty: "Select the edges to fillet (⇧-click adds)."
-        case .chamfer where model.selectedEdges.isEmpty: "Select the edges to chamfer (⇧-click adds)."
+        case .fillet where model.filletItems.isEmpty: "Select edges or faces to fillet. Each click adds an item; click it again to remove it."
+        case .chamfer where model.filletItems.isEmpty: "Select edges or faces to chamfer. Each click adds an item; click it again to remove it."
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
         case .draft: model.form.activeBox == "neutral" ? "Select the neutral plane: a planar face." : "Select the faces to draft (⇧-click adds)."
         case .measure where model.selection.count != 2: "Select two entities to measure between."
@@ -287,7 +287,7 @@ struct OperationPage: View {
                 PMTypeList(options: [(value: 0, icon: .fillet, title: "Constant Size Fillet")], selection: .constant(0))
             }
             PMSection("Items To Fillet") {
-                PMSelectionBox(items: model.selectedEdges.map { (icon: ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges")
+                PMSelectionBox(items: model.filletItems.map { (icon: $0.contains("/face-") ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
             }
             PMSection("Fillet Parameters") {
                 PMPicker(label: "", selection: .constant(0)) { Text("Symmetric").tag(0) }
@@ -301,7 +301,7 @@ struct OperationPage: View {
                                      (value: "equal_distance", icon: .chamfer, title: "Equal Distance")], selection: $model.form.chamferType)
             }
             PMSection("Items To Chamfer") {
-                PMSelectionBox(items: model.selectedEdges.map { (icon: ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges")
+                PMSelectionBox(items: model.filletItems.map { (icon: $0.contains("/face-") ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
             }
             PMSection("Chamfer Parameters") {
                 PMField(label: "Distance", text: $model.form.chamferDistance, unit: "mm", icon: .smartDimension)
@@ -357,6 +357,12 @@ struct OperationPage: View {
                 PMPicker(label: "", selection: $model.form.tool, icon: .part) {
                     ForEach(model.bodies, id: \.id) { Text($0.name).tag($0.id) }
                 }
+            }
+            .onChange(of: model.selection) { _, _ in
+                // Bodies picked in the view fill the boxes in order (main body first).
+                let picked = model.selectedBodies
+                if let a = picked.first { model.form.target = a }
+                if picked.count > 1 { model.form.tool = picked[1] }
             }
         case .primitive(let p):
             PMSection("Parameters") {

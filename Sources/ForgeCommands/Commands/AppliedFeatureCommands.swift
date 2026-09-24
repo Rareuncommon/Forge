@@ -34,7 +34,7 @@ public enum ChamferType: String, Codable, Sendable, CaseIterable, SchemaEnum {
 
 public enum BodyChamferEdges: Command {
     public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
-        public var body: String
+        public var body: String?
         public var edges: [String]
         public var type: ChamferType?
         public var distance: Length
@@ -42,8 +42,8 @@ public enum BodyChamferEdges: Command {
         public var angle: Angle?
 
         public static let fieldDocs: [String: FieldDoc] = [
-            "body": "Body to chamfer",
-            "edges": "Edge references (\"body-1/edge-3\") or indices",
+            "body": FieldDoc("Body for bare edge indices", default: "taken from the references"),
+            "edges": "Edge references (\"body-1/edge-3\") or indices; a face stands for all its edges; several bodies are allowed",
             "type": FieldDoc("equal_distance, distance_distance (distance on the first face of each edge, distance2 on the other) or angle_distance", default: "equal_distance"),
             "distance": "Chamfer distance (the first one)",
             "distance2": "Second distance, for distance_distance",
@@ -78,22 +78,24 @@ public enum BodyChamferEdges: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let b = try doc.body(p.body)
-        let idx = try resolveEdges(p.edges, body: b)
-        let shape: Shape
-        do {
-            switch p.type ?? .equalDistance {
-            case .equalDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters)
-            case .distanceDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters, distance2: p.distance2!.millimeters)
-            case .angleDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters, angle: p.angle!.radians)
+        var changed: [String] = []
+        for (b, idx) in try edgesByBody(p.edges, body: p.body, doc) {
+            let shape: Shape
+            do {
+                switch p.type ?? .equalDistance {
+                case .equalDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters)
+                case .distanceDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters, distance2: p.distance2!.millimeters)
+                case .angleDistance: shape = try Kernel.chamfer(b.shape, edges: idx, distance: p.distance.millimeters, angle: p.angle!.radians)
+                }
+            } catch var e as ForgeError {
+                e.entities = idx.map { "\(b.id)/edge-\($0)" }
+                throw e
             }
-        } catch var e as ForgeError {
-            e.entities = idx.map { "\(b.id)/edge-\($0)" }
-            throw e
+            try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+            changed.append(b.id)
         }
-        try doc.replaceShape(of: b.id, with: shape, producedBy: name)
         ctx.document = doc
-        return Output(body: try BodySummary(try doc.body(b.id)))
+        return Output(body: try BodySummary(try doc.body(changed[0])), bodies: changed.count > 1 ? changed : nil)
     }
 }
 

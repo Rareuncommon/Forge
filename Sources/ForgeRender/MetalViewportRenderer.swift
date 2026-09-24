@@ -25,6 +25,8 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     public var camera = Camera()
     public var style: RenderStyle = .shadedWithEdges
     public var background = RGBA.background
+    /// Items not drawn (still pickable): bodies replaced on screen by an opaque preview.
+    public var hiddenObjects: Set<UInt32> = []
     /// Clear to transparent so the view behind (e.g. a gradient) shows through.
     public var transparentBackground = false
     private var items: [GPUItem] = []
@@ -199,7 +201,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         if style != .wireframe {
             enc.setRenderPipelineState(pick ? pickTrianglePipeline : shadedPipeline)
             for item in items {
-                guard let tri = item.triangles else { continue }
+                guard let tri = item.triangles, pick || !hiddenObjects.contains(item.objectID) else { continue }
                 var u = uniforms(aspect: aspect, item: item)
                 enc.setVertexBuffer(tri, offset: 0, index: 0)
                 enc.setVertexBytes(&u, length: u.count * 4, index: 1)
@@ -211,7 +213,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         for item in items {
             // In "shaded" style body edges are hidden, but line-only items (sketches, reference
             // geometry) are always drawn.
-            guard let lines = item.lines, style != .shaded || item.triangles == nil else { continue }
+            guard let lines = item.lines, style != .shaded || item.triangles == nil, pick || !hiddenObjects.contains(item.objectID) else { continue }
             var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
             enc.setVertexBuffer(lines, offset: 0, index: 0)
             enc.setVertexBytes(&u, length: u.count * 4, index: 1)
@@ -219,6 +221,21 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
         }
         if !pick && !preview.isEmpty {
+            // Opaque previews (a modified body shown in place of the original): depth-tested
+            // and written like the scene.
+            let opaque = preview.filter { $0.color.a >= 0.999 }
+            if !opaque.isEmpty {
+                enc.setDepthStencilState(depthState)
+                enc.setRenderPipelineState(shadedPipeline)
+                for item in opaque {
+                    guard let tri = item.triangles else { continue }
+                    var u = uniforms(aspect: aspect, item: item)
+                    enc.setVertexBuffer(tri, offset: 0, index: 0)
+                    enc.setVertexBytes(&u, length: u.count * 4, index: 1)
+                    enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
+                    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
+                }
+            }
             enc.setRenderPipelineState(linePipeline)
             for item in preview {
                 guard let lines = item.lines else { continue }
@@ -230,7 +247,7 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
             }
             enc.setDepthStencilState(previewDepthState)
             enc.setRenderPipelineState(previewPipeline)
-            for item in preview {
+            for item in preview where item.color.a < 0.999 {
                 guard let tri = item.triangles else { continue }
                 var u = uniforms(aspect: aspect, item: item)
                 enc.setVertexBuffer(tri, offset: 0, index: 0)

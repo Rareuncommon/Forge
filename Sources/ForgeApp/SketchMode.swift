@@ -130,6 +130,9 @@ struct SketchUIState {
     var tangentBase: String?
     /// Curves already trimmed during the current power-trim drag.
     var trimmedInDrag: Set<String> = []
+    /// Live result of the open sketch operation (offset, mirror, pattern, move…): the curves
+    /// it would add or change, in sketch coordinates.
+    var opPreview: [[Point2]] = []
 }
 
 /// A dimension or relation glyph shown in the viewport for the sketch being edited.
@@ -166,7 +169,7 @@ extension AppModel {
     }
 
     /// The planar face in the selection, if any (for Sketch / Plane on a face).
-    var selectedFace: String? { selection.first { $0.contains("/face-") } }
+    var selectedFace: String? { selection.last { $0.contains("/face-") } }
 
     func editSketch(_ id: String) async {
         operation = nil
