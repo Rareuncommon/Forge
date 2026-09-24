@@ -207,7 +207,7 @@ struct AxisTriad: View {
             .onTapGesture { location in
                 // Click an axis: view normal to it (SolidWorks' reference triad).
                 let c = CGPoint(x: 40, y: 40)
-                var best: (ViewOrientation, Double)?
+                var best: (ViewOrientation, CGFloat)?
                 for (v, o) in [(Vec3.unitX, ViewOrientation.right), (.unitY, .top), (.unitZ, .front)] {
                     let d = proj.axis(v)
                     let tip = CGPoint(x: c.x + d.dx * 28, y: c.y + d.dy * 28)

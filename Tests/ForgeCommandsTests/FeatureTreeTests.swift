@@ -98,3 +98,80 @@ struct FeatureTreeTests {
         #expect(abs(try await volume(e) - 40 * 20 * 10) < 1e-6)
     }
 }
+
+@Suite("Extrude end conditions")
+struct ExtrudeOptionsTests {
+    func volume(_ e: Engine, _ body: String = "body-1") async throws -> Double {
+        try await e.execute("query.mass_properties", ["body": .string(body)]).result["volume_mm3"]!.doubleValue!
+    }
+
+    /// A 40 × 20 × 10 block on the Front plane (z from 0 to 10), and an open sketch-2 with a
+    /// 10 × 10 square at the plate's centre on the same plane.
+    func plate() async throws -> Engine {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [40, 20]]])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 10])
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[15, 5], [25, 15]]])
+        try await e.execute("sketch.exit")
+        return e
+    }
+
+    @Test func throughAllCutMakesAHole() async throws {
+        let e = try await plate()
+        try await e.execute("body.extrude", ["sketch": "sketch-2", "end_condition": "through_all", "operation": "cut"])
+        #expect(abs(try await volume(e) - (8000 - 1000)) < 1e-6)
+        #expect(await e.activeDocument!.features.last?.name == "Cut-Extrude1")
+        #expect(await e.activeDocument!.bodies.count == 1)
+    }
+
+    @Test func blindCutReversedAndInScope() async throws {
+        let e = try await plate()
+        // The plate lies on the +normal side; a cut along the normal 4 deep removes 400.
+        try await e.execute("body.extrude", ["sketch": "sketch-2", "depth": 4, "operation": "cut", "scope": ["body-1"]])
+        #expect(abs(try await volume(e) - (8000 - 400)) < 1e-6)
+        // Reversed, the cut misses the plate.
+        await #expect(throws: ForgeError.self) {
+            try await e.execute("body.extrude", ["sketch": "sketch-2", "depth": 4, "operation": "cut", "reverse": true])
+        }
+    }
+
+    @Test func directionTwoMidPlaneAndThroughAllBoth() async throws {
+        let e = try await plate()
+        try await e.execute("body.extrude", ["sketch": "sketch-2", "depth": 5, "direction2": ["depth": 3]])
+        let b = await e.activeDocument!.bodyOrder.last!
+        #expect(abs(try await volume(e, b) - 100 * 8) < 1e-6)
+        let bb = try await e.activeDocument!.body(b).shape.boundingBox()
+        #expect(abs(bb.min.z + 3) < 1e-6 && abs(bb.max.z - 5) < 1e-6)
+
+        try await e.execute("feature.edit", ["feature": "Boss-Extrude2", "params": ["end_condition": "mid_plane", "depth": 6, "direction2": .null]])
+        let mid = try await e.activeDocument!.body(b).shape.boundingBox()
+        #expect(abs(mid.min.z + 3) < 1e-6 && abs(mid.max.z - 3) < 1e-6)
+
+        try await e.execute("feature.edit", ["feature": "Boss-Extrude2", "params": ["end_condition": "through_all_both", "scope": ["body-1"]]])
+        let both = try await e.activeDocument!.body(b).shape.boundingBox()
+        #expect(both.min.z < -0.5 && both.max.z > 10.5)
+    }
+
+    @Test func upToVertexAndMerge() async throws {
+        let e = try await plate()
+        // Up to z = 25, merged into the plate: one body of 8000 + 10·10·25 − overlap 10·10·10.
+        try await e.execute("body.extrude", ["sketch": "sketch-2", "end_condition": "up_to_vertex", "vertex": [0, 0, 25], "merge": true])
+        #expect(await e.activeDocument!.bodies.count == 1)
+        #expect(abs(try await volume(e) - (8000 + 2500 - 1000)) < 1e-6)
+    }
+
+    @Test func invalidCombinationsAreRefused() async throws {
+        let e = try await plate()
+        for bad: JSONValue in [
+            ["sketch": "sketch-2", "end_condition": "up_to_vertex"],
+            ["sketch": "sketch-2", "end_condition": "mid_plane", "depth": 4, "direction2": ["depth": 2]],
+            ["sketch": "sketch-2"],
+        ] {
+            await #expect(throws: ForgeError.self) { try await e.execute("body.extrude", bad) }
+        }
+    }
+}

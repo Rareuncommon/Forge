@@ -120,7 +120,7 @@ struct IconLayer {
     let paint: Paint
     let path: Path
 
-    nonisolated(unsafe) static let cache: [ForgeIcon: [IconLayer]] = Dictionary(uniqueKeysWithValues: ForgeIcon.allCases.map { icon in
+    static let cache: [ForgeIcon: [IconLayer]] = Dictionary(uniqueKeysWithValues: ForgeIcon.allCases.map { icon in
         (icon, (ForgeIcon.paths[icon] ?? "").components(separatedBy: " | ").map(IconLayer.init))
     })
 

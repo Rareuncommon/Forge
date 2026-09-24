@@ -8,15 +8,36 @@ import ForgeRender
 import ForgeSketch
 import SwiftUI
 
-enum EndCondition: String, CaseIterable {
-    case blind = "Blind", midPlane = "Mid Plane"
+/// SolidWorks' end conditions as shown in the Extrude page (the engine's body.extrude names).
+enum EndConditionUI: String, CaseIterable {
+    case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane"
+
+    var param: String {
+        switch self {
+        case .blind: "blind"
+        case .throughAll: "through_all"
+        case .throughAllBoth: "through_all_both"
+        case .midPlane: "mid_plane"
+        }
+    }
+
+    init?(param: String) {
+        guard let v = Self.allCases.first(where: { $0.param == param }) else { return nil }
+        self = v
+    }
+
+    var needsDepth: Bool { self == .blind || self == .midPlane }
 }
 
 /// Values being edited in the PropertyManager. Lengths are text so units work ("0.5 in").
 struct OperationForm {
     var depth = "10"
-    var endCondition = EndCondition.blind
+    var endCondition = EndConditionUI.blind
     var reverse = false
+    var direction2 = false, endCondition2 = EndConditionUI.blind, depth2 = "10"
+    var merge = true
+    /// Cut / merge scope: empty = all bodies.
+    var scope: [String] = []
     var axis = ""
     var angle = "360"
     var radius = "2"
@@ -31,15 +52,14 @@ struct OperationForm {
     var offsetDistance = "2", offsetReverse = false, offsetBoth = false, offsetCaps = false, offsetBaseConstruction = false
     var mirrorAxis = ""
     var patternCount = "3", patternSpacing = "10", patternDirection = "0"
-    var direction2 = false, patternCount2 = "2", patternSpacing2 = "10", patternDirection2 = "90"
+    var patternDirection2On = false, patternCount2 = "2", patternSpacing2 = "10", patternDirection2 = "90"
     var circularCount = "6", circularAngle = "360", circularCenter = "0, 0"
     var moveDX = "10", moveDY = "0", copy = false, keepRelations = true
     var rotateAngle = "90", rotateCenter = "0, 0"
     var scaleFactor = "2", scaleCenter = "0, 0"
     var result: JSONValue?
 
-    /// The `direction` parameter of body.extrude for the end condition and reverse button.
-    var extrudeDirection: String { endCondition == .midPlane ? "mid_plane" : reverse ? "reverse" : "normal" }
+
 }
 
 extension AppModel {
@@ -51,8 +71,9 @@ extension AppModel {
             if operationSketch == nil || !sketches.contains(where: { $0.id == operationSketch }) {
                 operationSketch = activeSketch ?? selection.first(where: { $0.hasPrefix("sketch-") && !$0.contains("/") }) ?? sketches.last?.id
             }
+            form.direction2 = false
+            form.scope = []
             if op == .cutExtrude {
-                if !bodies.contains(where: { $0.id == form.target }) { form.target = selectedBodies.first ?? bodies.last?.id ?? "" }
                 // A cut goes into the material: opposite to the sketch normal by default.
                 form.reverse = true
             } else if op == .extrude {
@@ -87,9 +108,118 @@ extension AppModel {
 
     func cancelOperation() {
         operation = nil
+        editingFeature = nil
         form.result = nil
         clearOperationPreview()
     }
+
+    // MARK: editing a feature (double-click in the tree): its page, filled from its params
+
+    /// Editing a feature that made its own body (merge does not apply to it).
+    var editingFeatureCreatesBody: Bool? {
+        editingFeature.flatMap { id in features.first { $0.id == id } }.map { !$0.createdBodies.isEmpty }
+    }
+
+    /// Text for a parameter value in a field ("25", "0.5 in").
+    static func fieldText(_ v: JSONValue?) -> String? {
+        switch v {
+        case .number(let d)?: String(format: "%g", d)
+        case .string(let s)?: s.hasSuffix(" deg") ? String(s.dropLast(4)) : s
+        default: nil
+        }
+    }
+
+    func editFeature(_ f: FeatureRow) {
+        guard let op = f.operation else { return }
+        let p = f.params
+        begin(op)
+        editingFeature = f.id
+        let t = Self.fieldText
+        switch op {
+        case .extrude, .cutExtrude:
+            operationSketch = p["sketch"]?.stringValue ?? operationSketch
+            let ec = p["end_condition"]?.stringValue ?? (p["direction"]?.stringValue == "mid_plane" ? "mid_plane" : "blind")
+            form.endCondition = EndConditionUI(param: ec) ?? .blind
+            form.depth = t(p["depth"]) ?? form.depth
+            form.reverse = p["reverse"]?.boolValue ?? (p["direction"]?.stringValue == "reverse")
+            if let d2 = p["direction2"], !d2.isNull {
+                form.direction2 = true
+                form.endCondition2 = EndConditionUI(param: d2["end_condition"]?.stringValue ?? "blind") ?? .blind
+                form.depth2 = t(d2["depth"]) ?? form.depth2
+            } else {
+                form.direction2 = false
+            }
+            form.merge = p["merge"]?.boolValue ?? false
+            form.scope = p["scope"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        case .revolve:
+            operationSketch = p["sketch"]?.stringValue ?? operationSketch
+            form.axis = p["axis"]?.stringValue ?? ""
+            form.angle = t(p["angle"]) ?? "360"
+            form.merge = p["merge"]?.boolValue ?? false
+        case .fillet:
+            form.radius = t(p["radius"]) ?? form.radius
+            let edges = p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            Task { await select(edges) }
+        case .combine:
+            form.combine = p["operation"]?.stringValue ?? "fuse"
+            form.target = p["target"]?.stringValue ?? ""
+            form.tool = p["tool"]?.stringValue ?? ""
+        case .primitive(let prim):
+            switch prim {
+            case .box:
+                form.width = t(p["width"]) ?? form.width
+                form.height = t(p["height"]) ?? form.height
+                form.boxDepth = t(p["depth"]) ?? form.boxDepth
+            case .cylinder:
+                form.cylRadius = t(p["radius"]) ?? form.cylRadius
+                form.cylHeight = t(p["height"]) ?? form.cylHeight
+            case .sphere:
+                form.sphereRadius = t(p["radius"]) ?? form.sphereRadius
+            case .cone:
+                form.coneBase = t(p["base_radius"]) ?? form.coneBase
+                form.coneTop = t(p["top_radius"]) ?? form.coneTop
+                form.coneHeight = t(p["height"]) ?? form.coneHeight
+            case .torus:
+                form.torusMajor = t(p["major_radius"]) ?? form.torusMajor
+                form.torusMinor = t(p["minor_radius"]) ?? form.torusMinor
+            }
+        default:
+            break
+        }
+        clearOperationPreview()
+    }
+
+    /// OK on a feature's page: feature.edit with the page's parameters.
+    func commitFeatureEdit(_ id: String, _ op: Operation) async {
+        var params: JSONValue?
+        switch op {
+        case .extrude, .cutExtrude, .revolve, .primitive:
+            params = invocations(for: op)?.first?.params
+            if case .object(var o)? = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
+                // A feature that made its own body keeps doing so.
+                o.removeValue(forKey: "merge")
+                params = .object(o)
+            }
+        case .fillet:
+            let edges = selectedEdges
+            guard let body = edges.first?.split(separator: "/").first else {
+                lastError = ForgeError(.invalidParams, "select the edges to fillet")
+                return
+            }
+            params = ["body": .string(String(body)), "edges": .array(edges.map { .string($0) }), "radius": quantity(form.radius)]
+        case .combine:
+            params = ["operation": .string(form.combine), "target": .string(form.target), "tool": .string(form.tool)]
+        default:
+            params = nil
+        }
+        guard let params else { return }
+        let replace: Bool = op != .combine
+        if await run("feature.edit", ["feature": .string(id), "params": params, "replace": .bool(replace)]) != nil {
+            operation = nil
+            editingFeature = nil
+        }
+    }
+
 
     /// Number when it parses, otherwise the text (a quantity with units, e.g. "0.5 in").
     func quantity(_ text: String) -> JSONValue {
@@ -114,10 +244,26 @@ extension AppModel {
         switch op {
         case .extrude, .cutExtrude:
             guard let sk = operationSketch else { return nil }
-            return [Invocation("body.extrude", ["sketch": .string(sk), "depth": quantity(form.depth), "direction": .string(form.extrudeDirection)])]
+            var p: [String: JSONValue] = ["sketch": .string(sk), "end_condition": .string(form.endCondition.param)]
+            if form.endCondition.needsDepth { p["depth"] = quantity(form.depth) }
+            if form.reverse && form.endCondition != .midPlane && form.endCondition != .throughAllBoth { p["reverse"] = true }
+            if form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
+                var d2: [String: JSONValue] = ["end_condition": .string(form.endCondition2.param)]
+                if form.endCondition2 == .blind { d2["depth"] = quantity(form.depth2) }
+                p["direction2"] = .object(d2)
+            }
+            if op == .cutExtrude {
+                p["operation"] = "cut"
+            } else if form.merge && !bodies.isEmpty {
+                p["merge"] = true
+            }
+            if !form.scope.isEmpty { p["scope"] = .array(form.scope.map { .string($0) }) }
+            return [Invocation("body.extrude", .object(p))]
         case .revolve:
             guard let sk = operationSketch, !form.axis.isEmpty else { return nil }
-            return [Invocation("body.revolve", ["sketch": .string(sk), "axis": .string(form.axis), "angle": angleQuantity(form.angle)])]
+            var p: [String: JSONValue] = ["sketch": .string(sk), "axis": .string(form.axis), "angle": angleQuantity(form.angle)]
+            if form.merge && !bodies.isEmpty { p["merge"] = true }
+            return [Invocation("body.revolve", .object(p))]
         case .primitive(let p):
             switch p {
             case .box: return [Invocation("body.create_box", ["width": quantity(form.width), "height": quantity(form.height), "depth": quantity(form.boxDepth)])]
@@ -136,7 +282,7 @@ extension AppModel {
 
     /// Recompute the live preview of the open operation (translucent bodies in the viewport).
     func updatePreview() async {
-        guard let op = operation, let items = invocations(for: op) else {
+        guard let op = operation, editingFeature == nil, let items = invocations(for: op) else {
             clearOperationPreview()
             return
         }
@@ -190,29 +336,18 @@ extension AppModel {
         guard let op = operation else { return }
         var ok: CommandOutcome?
         let local = sketchSelection
+        if let fid = editingFeature {
+            await commitFeatureEdit(fid, op)
+            return
+        }
         switch op {
-        case .extrude, .revolve, .primitive:
+        case .extrude, .cutExtrude, .revolve, .primitive:
             guard let items = invocations(for: op) else {
                 lastError = ForgeError(.invalidParams, op == .revolve ? "choose the axis of revolution" : "choose a sketch")
                 return
             }
             if activeSketch != nil { await exitSketch() }
             for i in items { ok = await run(i.command, i.params) }
-        case .cutExtrude:
-            guard let items = invocations(for: op), !form.target.isEmpty else { return }
-            if activeSketch != nil { await exitSketch() }
-            // One undo step: the tool body and the subtraction.
-            guard await run("transaction.begin", ["label": "Cut-Extrude"]) != nil else { return }
-            if let tool = await run(items[0].command, items[0].params),
-                let id = tool.changes.created.first(where: { $0.hasPrefix("body-") }),
-                await run("body.boolean", ["operation": "cut", "target": .string(form.target), "tool": .string(id)]) != nil
-            {
-                ok = await run("transaction.commit")
-            } else {
-                let error = lastError
-                await run("transaction.rollback")
-                lastError = error
-            }
         case .fillet:
             let edges = selectedEdges
             guard let body = edges.first?.split(separator: "/").first else {
@@ -238,7 +373,7 @@ extension AppModel {
                 "entities": .array(local.map { .string($0) }), "count": count(form.patternCount), "spacing": quantity(form.patternSpacing),
                 "direction": angleQuantity(form.patternDirection),
             ]
-            if form.direction2 {
+            if form.patternDirection2On {
                 p["count2"] = count(form.patternCount2)
                 p["spacing2"] = quantity(form.patternSpacing2)
                 p["direction2"] = angleQuantity(form.patternDirection2)

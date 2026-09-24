@@ -155,6 +155,53 @@ enum Primitive: String, CaseIterable, Identifiable {
     }
 }
 
+/// A feature of the tree, as the app shows it.
+struct FeatureRow: Identifiable, Equatable {
+    var id: String
+    var name: String
+    var command: String
+    var params: JSONValue
+    var suppressed: Bool
+    var state: FeatureStatus.State
+    var error: String?
+    var createdBodies: [String]
+
+    var isSketch: Bool { command == "sketch.create" }
+    var sketchID: String? { params["sketch"]?.stringValue }
+
+    var icon: ForgeIcon {
+        switch command {
+        case "sketch.create": .sketch
+        case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
+        case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
+        case "body.fillet_edges": .fillet
+        case "body.boolean": .combine
+        case "body.transform": .move
+        case "body.delete": .trash
+        case "body.create_box": .box
+        case "body.create_cylinder", "body.create_cone": .cylinder
+        case "body.create_sphere", "body.create_torus": .sphere
+        default: .part
+        }
+    }
+
+    /// The PropertyManager page that edits it, if any.
+    var operation: Operation? {
+        switch command {
+        case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
+        case "body.revolve": .revolve
+        case "body.fillet_edges": .fillet
+        case "body.boolean": .combine
+        case "body.create_box": .primitive(.box)
+        case "body.create_cylinder": .primitive(.cylinder)
+        case "body.create_sphere": .primitive(.sphere)
+        case "body.create_cone": .primitive(.cone)
+        case "body.create_torus": .primitive(.torus)
+        default: nil
+        }
+    }
+}
+
 struct SketchRow: Identifiable, Equatable {
     var id: String
     var name: String
@@ -180,6 +227,11 @@ final class AppModel {
     var documentPath: String?
     var bodies: [BodySummary] = []
     var sketches: [SketchRow] = []
+    var features: [FeatureRow] = []
+    /// Number of active features (rollback bar position); nil = all.
+    var rollback: Int?
+    /// The feature whose page is open for editing (OK runs feature.edit instead of creating).
+    var editingFeature: String?
     var selection: [String] = []
     var inspector: JSONValue?
     var lastError: ForgeError?
@@ -262,6 +314,12 @@ final class AppModel {
                 id: $0.id, name: $0.name, plane: $0.plane.name, status: $0.report?.status, dof: $0.report?.dof ?? 0,
                 unknowns: max(0, $0.params.count - 2))
         }
+        features = doc.features.map {
+            FeatureRow(
+                id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, state: $0.status.state,
+                error: $0.status.error?.message, createdBodies: $0.createdBodies)
+        }
+        rollback = doc.rollback
         selection = doc.selection
         if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
             let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)

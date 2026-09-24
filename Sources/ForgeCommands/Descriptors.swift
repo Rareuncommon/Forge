@@ -69,6 +69,13 @@ public struct BodySummary: Codable, Sendable, Hashable {
 
 public struct BodyResult: Codable, Sendable {
     public var body: BodySummary
+    /// Every body a cut or merge changed (the first is `body`).
+    public var bodies: [String]?
+
+    public init(body: BodySummary, bodies: [String]? = nil) {
+        self.body = body
+        self.bodies = bodies
+    }
 }
 
 public struct FaceDescriptor: Codable, Sendable, Hashable {

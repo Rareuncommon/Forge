@@ -74,7 +74,7 @@ public enum FeatureEdit: Command {
         public var replace: Bool?
         public static let fieldDocs: [String: FieldDoc] = [
             "feature": "Feature id or name",
-            "params": "New parameters of the feature's command (see help.describe_command for it); merged into the current ones",
+            "params": "New parameters of the feature's command (see help.describe_command for it); merged into the current ones, null removes one",
             "replace": FieldDoc("Replace all parameters instead of merging", default: false),
         ]
     }
@@ -99,7 +99,9 @@ public enum FeatureEdit: Command {
         }
         guard let changes = p.params.objectValue else { throw ForgeError(.invalidParams, "params must be an object") }
         var merged = p.replace == true ? [:] : (f.params.objectValue ?? [:])
-        for (k, v) in changes { merged[k] = v }
+        for (k, v) in changes {
+            if v.isNull { merged.removeValue(forKey: k) } else { merged[k] = v }
+        }
         let d = try ctx.registry.descriptor(f.command)
         let problems = SchemaValidator.validate(.object(merged), against: d.paramsSchema)
         if !problems.isEmpty { throw ForgeError(.invalidParams, problems.joined(separator: "; "), entities: [f.id]) }

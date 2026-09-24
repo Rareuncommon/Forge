@@ -33,7 +33,9 @@ struct OperationPage: View {
     var body: some View {
         @Bindable var model = model
         let commit: (() -> Void)? = op.isReport || op == .addRelation ? nil : { Task { await model.commitOperation() } }
-        PMHeader(icon: op.icon, title: op.title, subtitle: subtitle, onOK: commit, onCancel: { model.cancelOperation() })
+        let editing = model.features.first { $0.id == model.editingFeature }
+        PMHeader(icon: op.icon, title: editing?.name ?? op.title, subtitle: editing == nil ? subtitle : "Editing feature", onOK: commit,
+                 onCancel: { model.cancelOperation() })
         if let message { PMMessage(text: message) }
         content
             .task(id: model.previewKey) {
@@ -77,19 +79,31 @@ struct OperationPage: View {
                     }
                     .buttonStyle(.plain)
                     .help("Reverse Direction")
-                    .disabled(model.form.endCondition == .midPlane)
+                    .disabled(model.form.endCondition == .midPlane || model.form.endCondition == .throughAllBoth)
                     Picker("End condition", selection: $model.form.endCondition) {
-                        ForEach(EndCondition.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach(EndConditionUI.allCases.filter { op == .cutExtrude || !model.bodies.isEmpty || $0.needsDepth }, id: \.self) {
+                            Text($0.rawValue).tag($0)
+                        }
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
                 }
-                PMField(label: "Depth", text: $model.form.depth, unit: "mm", icon: .smartDimension, help: "mm, or with units: 0.5 in")
+                if model.form.endCondition.needsDepth {
+                    PMField(label: "Depth", text: $model.form.depth, unit: "mm", icon: .smartDimension, help: "mm, or with units: 0.5 in")
+                }
+                if op == .extrude && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
+                    PMCheckbox(label: "Merge result", isOn: $model.form.merge)
+                }
             }
-            if op == .cutExtrude {
-                PMSection("Feature Scope") {
-                    PMPicker(label: "Body", selection: $model.form.target, icon: .part) {
-                        ForEach(model.bodies, id: \.id) { Text($0.name).tag($0.id) }
+            if model.form.endCondition != .midPlane && model.form.endCondition != .throughAllBoth {
+                PMCheckGroup(title: "Direction 2", isOn: $model.form.direction2) {
+                    Picker("End condition", selection: $model.form.endCondition2) {
+                        ForEach([EndConditionUI.blind, .throughAll].filter { $0 == .blind || !model.bodies.isEmpty }, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    if model.form.endCondition2 == .blind {
+                        PMField(label: "Depth", text: $model.form.depth2, unit: "mm", icon: .smartDimension)
                     }
                 }
             }
@@ -98,6 +112,21 @@ struct OperationPage: View {
                     ForEach(model.sketches) { Text($0.name).tag($0.id) }
                 }
                 PMNote(text: "All closed regions of the sketch are used; holes and islands are kept.")
+            }
+            if op == .cutExtrude || model.form.merge && !model.bodies.isEmpty {
+                PMSection("Feature Scope") {
+                    PMTypeList(options: [(value: true, icon: .part, title: "All bodies"), (value: false, icon: .part, title: "Selected bodies")],
+                               selection: Binding(get: { model.form.scope.isEmpty }, set: { all in
+                                   model.form.scope = all ? [] : (model.selectedBodies.isEmpty ? model.bodies.prefix(1).map(\.id) : model.selectedBodies)
+                               }))
+                    if !model.form.scope.isEmpty {
+                        ForEach(model.bodies, id: \.id) { b in
+                            PMCheckbox(label: b.name, isOn: Binding(get: { model.form.scope.contains(b.id) }, set: { on in
+                                if on { model.form.scope.append(b.id) } else { model.form.scope.removeAll { $0 == b.id } }
+                            }))
+                        }
+                    }
+                }
             }
         case .revolve:
             PMSection("Axis of Revolution") {
@@ -117,6 +146,9 @@ struct OperationPage: View {
             PMSection("Direction 1") {
                 PMPicker(label: "", selection: .constant(0), icon: .revolve) { Text("Blind").tag(0) }
                 PMField(label: "Angle", text: $model.form.angle, unit: "°", icon: .arc)
+                if !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
+                    PMCheckbox(label: "Merge result", isOn: $model.form.merge)
+                }
             }
             PMSection("Selected Contours") {
                 PMPicker(label: "Sketch", selection: Binding(get: { model.operationSketch ?? "" }, set: { model.operationSketch = $0 }), icon: .sketch) {
@@ -218,7 +250,7 @@ struct OperationPage: View {
                 PMField(label: "Instances", text: $model.form.patternCount, icon: .linearPattern)
                 PMField(label: "Angle", text: $model.form.patternDirection, unit: "°", icon: .arc)
             }
-            PMCheckGroup(title: "Direction 2", isOn: $model.form.direction2) {
+            PMCheckGroup(title: "Direction 2", isOn: $model.form.patternDirection2On) {
                 PMField(label: "Spacing", text: $model.form.patternSpacing2, unit: "mm", icon: .smartDimension)
                 PMField(label: "Instances", text: $model.form.patternCount2, icon: .linearPattern)
                 PMField(label: "Angle", text: $model.form.patternDirection2, unit: "°", icon: .arc)
