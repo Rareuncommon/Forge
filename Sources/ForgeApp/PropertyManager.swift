@@ -40,6 +40,9 @@ struct OperationForm {
     var chamferType = "equal_distance", chamferDistance = "1", chamferDistance2 = "1", chamferAngle = "45"
     var shellThickness = "1", shellOutward = false, shellFaces: [String] = []
     var draftNeutral = "", draftFaces: [String] = [], draftReverse = false, draftFeatureAngle = "3"
+    var planeReference = "top", planeOffset = "20", planeFlip = false
+    var holeType = "counterbore", holeSize = "M6", holeFit = "normal", holeEnd = "through_all", holeDepth = "10", holeThreadDepth = "8"
+    var holeReverse = false
     /// Which selection box receives picks (Draft: "neutral" or "faces").
     var activeBox = "faces"
     var merge = true
@@ -74,7 +77,9 @@ extension AppModel {
     func begin(_ op: Operation) {
         form.result = nil
         switch op {
-        case .extrude, .revolve, .cutExtrude:
+        case .plane:
+            form.planeReference = selectedFace ?? "top"
+        case .extrude, .revolve, .cutExtrude, .cutRevolve, .hole:
             if operationSketch == nil || !sketches.contains(where: { $0.id == operationSketch }) {
                 operationSketch = activeSketch ?? selection.first(where: { $0.hasPrefix("sketch-") && !$0.contains("/") }) ?? sketches.last?.id
             }
@@ -183,7 +188,20 @@ extension AppModel {
             } else {
                 form.thinOn = false
             }
-        case .revolve:
+        case .hole:
+            operationSketch = p["sketch"]?.stringValue ?? operationSketch
+            form.holeType = p["type"]?.stringValue ?? "hole"
+            form.holeSize = p["size"]?.stringValue ?? form.holeSize
+            form.holeFit = p["fit"]?.stringValue ?? "normal"
+            form.holeEnd = p["end_condition"]?.stringValue ?? "through_all"
+            form.holeDepth = t(p["depth"]) ?? form.holeDepth
+            form.holeThreadDepth = t(p["thread_depth"]) ?? form.holeThreadDepth
+            form.holeReverse = p["reverse"]?.boolValue ?? false
+        case .plane:
+            form.planeReference = p["reference"]?.stringValue ?? "top"
+            form.planeOffset = t(p["offset"]) ?? "0"
+            form.planeFlip = p["flip"]?.boolValue ?? false
+        case .revolve, .cutRevolve:
             operationSketch = p["sketch"]?.stringValue ?? operationSketch
             form.axis = p["axis"]?.stringValue ?? ""
             form.angle = t(p["angle"]) ?? "360"
@@ -241,7 +259,7 @@ extension AppModel {
     func commitFeatureEdit(_ id: String, _ op: Operation) async {
         var params: JSONValue?
         switch op {
-        case .extrude, .cutExtrude, .revolve, .primitive, .chamfer, .shell, .draft:
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft:
             params = invocations(for: op)?.first?.params
             if case .object(var o)? = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
                 // A feature that made its own body keeps doing so.
@@ -318,11 +336,25 @@ extension AppModel {
             }
             if !form.scope.isEmpty { p["scope"] = .array(form.scope.map { .string($0) }) }
             return [Invocation("body.extrude", .object(p))]
-        case .revolve:
+        case .revolve, .cutRevolve:
             guard let sk = operationSketch, !form.axis.isEmpty else { return nil }
             var p: [String: JSONValue] = ["sketch": .string(sk), "axis": .string(form.axis), "angle": angleQuantity(form.angle)]
-            if form.merge && !bodies.isEmpty { p["merge"] = true }
+            if op == .cutRevolve { p["operation"] = "cut" } else if form.merge && !bodies.isEmpty { p["merge"] = true }
             return [Invocation("body.revolve", .object(p))]
+        case .hole:
+            guard let sk = operationSketch else { return nil }
+            var p: [String: JSONValue] = [
+                "sketch": .string(sk), "type": .string(form.holeType), "size": .string(form.holeSize), "end_condition": .string(form.holeEnd),
+            ]
+            if form.holeType != "tapped" { p["fit"] = .string(form.holeFit) }
+            if form.holeEnd == "blind" { p["depth"] = quantity(form.holeDepth) }
+            if form.holeType == "tapped" { p["thread_depth"] = quantity(form.holeThreadDepth) }
+            if form.holeReverse { p["reverse"] = true }
+            return [Invocation("body.hole", .object(p))]
+        case .plane:
+            var p: [String: JSONValue] = ["reference": .string(form.planeReference), "offset": quantity(form.planeOffset)]
+            if form.planeFlip { p["flip"] = true }
+            return [Invocation("plane.create", .object(p))]
         case .chamfer:
             let edges = selectedEdges
             guard let body = edges.first?.split(separator: "/").first else { return nil }
@@ -363,7 +395,7 @@ extension AppModel {
 
     /// Recompute the live preview of the open operation (translucent bodies in the viewport).
     func updatePreview() async {
-        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve].contains(op) || { if case .primitive = op { true } else { false } }(),
+        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve, .cutRevolve, .hole].contains(op) || { if case .primitive = op { true } else { false } }(),
             let items = invocations(for: op)
         else {
             clearOperationPreview()
@@ -374,7 +406,7 @@ extension AppModel {
             let created = (changes.created + changes.modified).filter { $0.hasPrefix("body-") }
             guard let doc, !created.isEmpty else { return clearOperationPreview() }
             let ds = try DocumentScene(document: doc, bodies: created, showSketches: false)
-            let cut = op == .cutExtrude
+            let cut = op == .cutExtrude || op == .cutRevolve || op == .hole
             let fill = cut ? RGBA(0.90, 0.28, 0.22, 0.38) : RGBA(0.96, 0.64, 0.14, 0.40)
             let edge = cut ? RGBA(0.72, 0.16, 0.12) : RGBA(0.80, 0.47, 0.0)
             preview = PreviewBox(items: ds.scene.items.enumerated().map { i, item in
@@ -426,13 +458,13 @@ extension AppModel {
             return
         }
         switch op {
-        case .extrude, .cutExtrude, .revolve, .primitive, .chamfer, .shell, .draft:
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft:
             guard let items = invocations(for: op) else {
                 lastError = ForgeError(.invalidParams, [.chamfer: "select the edges to chamfer", .shell: "select a face to remove, or a body",
                                                         .draft: "select the neutral plane and the faces to draft", .revolve: "choose the axis of revolution"][op] ?? "choose a sketch")
                 return
             }
-            if activeSketch != nil { await exitSketch() }
+            if activeSketch != nil && op != .plane { await exitSketch() }
             for i in items { ok = await run(i.command, i.params) }
         case .fillet:
             let edges = selectedEdges

@@ -88,6 +88,7 @@ struct ViewportView: NSViewRepresentable {
                     view.needsDisplay = true
                 case .projection(let kind): view.setProjection(kind)
                 case .zoom(let factor): view.zoom(factor)
+                case .normalTo(let plane): view.normalTo(plane)
                 }
             }
             context.coordinator.appliedCommands = commands.count
@@ -179,6 +180,13 @@ final class ForgeMTKView: MTKView {
     func orient(_ o: ViewOrientation) {
         remember()
         renderer?.camera.setOrientation(o)
+        fit()
+    }
+
+    /// View normal to a plane (its normal toward the viewer, its y axis up).
+    func normalTo(_ plane: SketchPlane) {
+        remember()
+        renderer?.camera.setBasis(back: plane.normal, up: plane.yAxis)
         fit()
     }
 

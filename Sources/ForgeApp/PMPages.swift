@@ -50,8 +50,10 @@ struct OperationPage: View {
 
     private var message: String? {
         switch op {
-        case _ where [Operation.extrude, .cutExtrude, .revolve].contains(op) && model.sketches.isEmpty: "Create a sketch with a closed profile first."
-        case .revolve where model.form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
+        case _ where [Operation.extrude, .cutExtrude, .revolve, .cutRevolve].contains(op) && model.sketches.isEmpty: "Create a sketch with a closed profile first."
+        case .revolve where model.form.axis.isEmpty, .cutRevolve where model.form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
+        case .plane: "Select a planar face or choose a plane as the first reference, then the offset."
+        case .hole where model.sketches.isEmpty: "Sketch points on a face first: each point is a hole position."
         case .fillet where model.selectedEdges.isEmpty: "Select the edges to fillet (⇧-click adds)."
         case .chamfer where model.selectedEdges.isEmpty: "Select the edges to chamfer (⇧-click adds)."
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
@@ -157,7 +159,67 @@ struct OperationPage: View {
                     }
                 }
             }
-        case .revolve:
+        case .hole:
+            PMSection("Hole Type") {
+                PMTypeList(options: [(value: "counterbore", icon: .hole, title: "Counterbore"), (value: "countersink", icon: .hole, title: "Countersink"),
+                                     (value: "hole", icon: .hole, title: "Hole"), (value: "tapped", icon: .hole, title: "Straight Tap")],
+                           selection: $model.form.holeType)
+                PMPicker(label: "Standard", selection: .constant(0)) { Text("ISO").tag(0) }
+                PMPicker(label: "Type", selection: .constant(0)) {
+                    Text(["counterbore": "Socket Head Cap Screw (ISO 4762)", "countersink": "Countersunk Screw (ISO 10642)",
+                          "hole": "Drill / Clearance (ISO 273)", "tapped": "Tapped Hole (coarse)"][model.form.holeType] ?? "").tag(0)
+                }
+            }
+            PMSection("Hole Specifications") {
+                PMPicker(label: "Size", selection: $model.form.holeSize) {
+                    ForEach(["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12", "M16", "M20"], id: \.self) { Text($0).tag($0) }
+                }
+                if model.form.holeType != "tapped" {
+                    PMPicker(label: "Fit", selection: $model.form.holeFit) {
+                        Text("Close").tag("close")
+                        Text("Normal").tag("normal")
+                        Text("Loose").tag("loose")
+                    }
+                }
+            }
+            PMSection("End Condition") {
+                PMPicker(label: "", selection: $model.form.holeEnd) {
+                    Text("Blind").tag("blind")
+                    Text("Through All").tag("through_all")
+                }
+                if model.form.holeEnd == "blind" {
+                    PMField(label: "Depth", text: $model.form.holeDepth, unit: "mm", icon: .smartDimension)
+                }
+                if model.form.holeType == "tapped" {
+                    PMField(label: "Thread depth", text: $model.form.holeThreadDepth, unit: "mm", icon: .smartDimension)
+                }
+                PMCheckbox(label: "Reverse direction", isOn: $model.form.holeReverse)
+            }
+            PMSection("Positions") {
+                PMPicker(label: "Sketch", selection: Binding(get: { model.operationSketch ?? "" }, set: { model.operationSketch = $0 }), icon: .sketch) {
+                    ForEach(model.sketches) { Text($0.name).tag($0.id) }
+                }
+                PMNote(text: "A hole is drilled at each point of the sketch (its plane is where the holes start). Sketch the points on the face first.")
+            }
+        case .plane:
+            PMSection("First Reference") {
+                PMPicker(label: "", selection: $model.form.planeReference, icon: .plane) {
+                    Text("Front Plane").tag("front")
+                    Text("Top Plane").tag("top")
+                    Text("Right Plane").tag("right")
+                    ForEach(model.refPlanes, id: \.id) { Text($0.name).tag($0.id) }
+                    if let f = model.selectedFace { Text("Selected face (\(shortName(f)))").tag(f) }
+                    if model.form.planeReference.contains("/face-") && model.form.planeReference != model.selectedFace {
+                        Text(shortName(model.form.planeReference)).tag(model.form.planeReference)
+                    }
+                }
+                PMField(label: "Offset", text: $model.form.planeOffset, unit: "mm", icon: .smartDimension)
+                PMCheckbox(label: "Flip offset", isOn: Binding(get: { model.form.planeFlip }, set: { model.form.planeFlip = $0 }))
+            }
+            .onChange(of: model.selection) { _, _ in
+                if let f = model.selectedFace { model.form.planeReference = f }
+            }
+        case .revolve, .cutRevolve:
             PMSection("Axis of Revolution") {
                 PMPicker(label: "", selection: $model.form.axis, icon: .axis) {
                     Text("Select an axis").tag("")
@@ -175,7 +237,7 @@ struct OperationPage: View {
             PMSection("Direction 1") {
                 PMPicker(label: "", selection: .constant(0), icon: .revolve) { Text("Blind").tag(0) }
                 PMField(label: "Angle", text: $model.form.angle, unit: "°", icon: .arc)
-                if !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
+                if op == .revolve && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
                     PMCheckbox(label: "Merge result", isOn: $model.form.merge)
                 }
             }
@@ -377,7 +439,7 @@ struct OperationPage: View {
 
     private var subtitle: String {
         switch op {
-        case .extrude, .cutExtrude, .revolve: model.sketches.first { $0.id == model.operationSketch }?.name ?? "Choose a sketch"
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole: model.sketches.first { $0.id == model.operationSketch }?.name ?? "Choose a sketch"
         default: op.isSketchOperation ? "\(model.sketchSelection.count) selected" : ""
         }
     }

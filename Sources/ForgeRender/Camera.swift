@@ -64,6 +64,15 @@ public struct Camera: Sendable, Hashable {
         orientation = Quat.fromBasis(right: right, up: up, back: back)
     }
 
+    /// Look along -back with the given up direction (normal to a sketch plane: back = its
+    /// normal, up = its y axis).
+    public mutating func setBasis(back b: Vec3, up u: Vec3) {
+        let back = b.normalized
+        let right = u.cross(back).normalized
+        let up = back.cross(right)
+        orientation = Quat.fromBasis(right: right, up: up, back: back)
+    }
+
     /// Free orbit: horizontal drag rotates about the camera's up, vertical about its right.
     public mutating func orbit(dx: Double, dy: Double) {
         let qy = Quat(axis: up, angle: -dx)

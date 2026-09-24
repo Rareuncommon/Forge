@@ -86,7 +86,7 @@ enum RibbonTab: String, CaseIterable, Identifiable {
 
 /// The operation whose options are shown in the PropertyManager (with OK / Cancel).
 enum Operation: Hashable {
-    case extrude, cutExtrude, revolve, fillet, chamfer, shell, draft, combine, massProperties, measure, check
+    case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, combine, massProperties, measure, check
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
     case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
@@ -97,6 +97,9 @@ enum Operation: Hashable {
         case .extrude: "Boss-Extrude"
         case .cutExtrude: "Cut-Extrude"
         case .revolve: "Revolve"
+        case .cutRevolve: "Cut-Revolve"
+        case .hole: "Hole Specification"
+        case .plane: "Plane"
         case .fillet: "Fillet"
         case .chamfer: "Chamfer"
         case .shell: "Shell"
@@ -123,6 +126,9 @@ enum Operation: Hashable {
         case .extrude: .extrude
         case .cutExtrude: .cutExtrude
         case .revolve: .revolve
+        case .cutRevolve: .cutRevolve
+        case .hole: .hole
+        case .plane: .plane
         case .fillet: .fillet
         case .chamfer: .chamfer
         case .shell: .shell
@@ -187,6 +193,8 @@ struct FeatureRow: Identifiable, Equatable {
         case "body.boolean": .combine
         case "body.transform": .move
         case "body.delete": .trash
+        case "plane.create": .plane
+        case "body.hole": .hole
         case "body.create_box": .box
         case "body.create_cylinder", "body.create_cone": .cylinder
         case "body.create_sphere", "body.create_torus": .sphere
@@ -198,7 +206,9 @@ struct FeatureRow: Identifiable, Equatable {
     var operation: Operation? {
         switch command {
         case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
-        case "body.revolve": .revolve
+        case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
+        case "plane.create": .plane
+        case "body.hole": .hole
         case "body.fillet_edges": .fillet
         case "body.chamfer_edges": .chamfer
         case "body.shell": .shell
@@ -240,6 +250,8 @@ final class AppModel {
     var bodies: [BodySummary] = []
     var sketches: [SketchRow] = []
     var features: [FeatureRow] = []
+    /// Reference planes (Plane features).
+    var refPlanes: [RefPlane] = []
     /// Number of active features (rollback bar position); nil = all.
     var rollback: Int?
     /// The feature whose page is open for editing (OK runs feature.edit instead of creating).
@@ -332,13 +344,14 @@ final class AppModel {
                 error: $0.status.error?.message, createdBodies: $0.createdBodies)
         }
         rollback = doc.rollback
+        refPlanes = doc.orderedRefPlanes
         selection = doc.selection
         if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
             let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)
             let editing = doc.activeSketch.flatMap { doc.sketches[$0] }
             if isDark { ds.scene.items = ds.scene.items.map(Self.darkened) }
             ds.scene.items += ReferenceGeometry.items(
-                size: size, sketch: editing, allSketches: doc.orderedSketches, planes: display.planes, dark: isDark)
+                size: size, sketch: editing, allSketches: doc.orderedSketches, planes: display.planes, refPlanes: doc.orderedRefPlanes, dark: isDark)
             scene = DocumentSceneBox(value: ds)
             sceneVersion += 1
         }
@@ -406,12 +419,7 @@ final class AppModel {
     }
 
     func normalToSketch() {
-        switch sketchState.plane?.name {
-        case "Front": setOrientation(.front)
-        case "Top": setOrientation(.top)
-        case "Right": setOrientation(.right)
-        default: break
-        }
+        if let p = sketchState.plane { viewportCommands.send(.normalTo(p)) }
     }
 
     /// Bodies in the selection (a face/edge selection counts for its body).
@@ -496,7 +504,7 @@ struct DocumentSceneBox {
 /// Commands from menus to the viewport, consumed in order by the viewport coordinator
 /// (which remembers how many it has applied, so SwiftUI updates never mutate model state).
 struct ViewportCommandQueue {
-    enum Command { case orient(ViewOrientation), fit, previous, style(RenderStyle), projection(ProjectionKind), zoom(Double) }
+    enum Command { case orient(ViewOrientation), fit, previous, style(RenderStyle), projection(ProjectionKind), zoom(Double), normalTo(SketchPlane) }
     private(set) var log: [Command] = []
     mutating func send(_ c: Command) { log.append(c) }
 }

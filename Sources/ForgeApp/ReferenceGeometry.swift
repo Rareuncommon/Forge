@@ -2,6 +2,7 @@
 // on the sketch being edited, and markers for sketch points (which have no curve to draw).
 // Display only — these items have object IDs outside the document's, so picks ignore them.
 
+import ForgeCommands
 import ForgeCore
 import Foundation
 import ForgeKernel
@@ -17,7 +18,7 @@ enum ReferenceGeometry {
 
     /// Items for the current state. `size` is the model's extent (mm) used to scale planes,
     /// axes and the grid; `sketch` is the sketch being edited, if any.
-    static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, dark: Bool = false) -> [RenderItem] {
+    static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, refPlanes: [RefPlane] = [], dark: Bool = false) -> [RenderItem] {
         var out: [RenderItem] = []
         var lines = LineBuilder()
         let s = size
@@ -37,6 +38,14 @@ enum ReferenceGeometry {
             lines.add([Vec3(-h, -h, 0), Vec3(h, -h, 0), Vec3(h, h, 0), Vec3(-h, h, 0), Vec3(-h, -h, 0)], planeColor(dark))
             lines.add([Vec3(-h, 0, -h), Vec3(h, 0, -h), Vec3(h, 0, h), Vec3(-h, 0, h), Vec3(-h, 0, -h)], planeColor(dark))
             lines.add([Vec3(0, -h, -h), Vec3(0, h, -h), Vec3(0, h, h), Vec3(0, -h, h), Vec3(0, -h, -h)], planeColor(dark))
+        }
+        // Reference planes (Plane features): a square outline centred on the plane origin.
+        if planes && sketch == nil {
+            let h = s / 3
+            for r in refPlanes {
+                let p = r.plane
+                lines.add([p.point(-h, -h), p.point(h, -h), p.point(h, h), p.point(-h, h), p.point(-h, -h)], planeColor(dark))
+            }
         }
         // Origin axes: X red, Y green, Z blue.
         let a = s * 0.25

@@ -226,3 +226,99 @@ struct AppliedFeatureTests {
         #expect(names == ["Box1", "Draft1", "Shell1"])
     }
 }
+
+@Suite("Reference planes and sketches on faces")
+struct ReferencePlaneTests {
+    func topFace(_ e: Engine, _ body: String = "body-1") async throws -> String {
+        let faces = try await e.execute("query.faces", ["body": .string(body)]).result["faces"]!.arrayValue!
+        return faces.first { $0["normal"]!.arrayValue!.map { $0.doubleValue! } == [0, 1, 0] }!["id"]!.stringValue!
+    }
+
+    @Test func sketchOnAFaceFollowsTheModel() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("body.create_box", ["width": 40, "height": 10, "depth": 40])  // y from 0 to 10
+        let top = try await topFace(e)
+        try await e.execute("sketch.create", ["face": .string(top)])
+        try await e.execute("sketch.add_circle", ["center": [20, -20], "radius": 5])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 5])
+        let boss = try await e.activeDocument!.body("body-2").shape.boundingBox()
+        #expect(abs(boss.min.y - 10) < 1e-6 && abs(boss.max.y - 15) < 1e-6)
+        // Make the box taller: the sketch plane (the top face) and the boss move up.
+        try await e.execute("feature.edit", ["feature": "Box1", "params": ["height": 25]])
+        let moved = try await e.activeDocument!.body("body-2").shape.boundingBox()
+        #expect(abs(moved.min.y - 25) < 1e-6 && abs(moved.max.y - 30) < 1e-6)
+    }
+
+    @Test func offsetPlaneFeature() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        let r = try await e.execute("plane.create", ["reference": "top", "offset": 30]).result
+        #expect(r["plane"] == "plane-1" && r["normal"] == [0, 1, 0] && r["origin"] == [0, 30, 0])
+        try await e.execute("sketch.create", ["plane": "Plane1"])
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [10, 10]]])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 2])
+        #expect(abs(try await e.activeDocument!.body("body-1").shape.boundingBox().min.y - 30) < 1e-6)
+        try await e.execute("feature.edit", ["feature": "Plane1", "params": ["offset": 50]])
+        #expect(abs(try await e.activeDocument!.body("body-1").shape.boundingBox().min.y - 50) < 1e-6)
+        let names = try await e.execute("feature.list").result["features"]!.arrayValue!.map { $0["name"]!.stringValue! }
+        #expect(names == ["Plane1", "Sketch1", "Boss-Extrude1"])
+        // Deleting the plane leaves the sketch with a lost reference.
+        let states = try await e.execute("feature.delete", ["feature": "Plane1"]).result["features"]!.arrayValue!.map { $0["state"]!.stringValue! }
+        #expect(states == ["error", "ok"])
+    }
+}
+
+@Suite("Hole Wizard")
+struct HoleWizardTests {
+    /// A 40 × 40 × 10 plate (z from 0 to 10) and a sketch on its top face with one point at
+    /// (20, 20).
+    func plate() async throws -> Engine {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [40, 40]]])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 10])
+        let faces = try await e.execute("query.faces", ["body": "body-1"]).result["faces"]!.arrayValue!
+        let top = faces.first { $0["normal"]!.arrayValue!.map { $0.doubleValue! } == [0, 0, 1] }!["id"]!
+        try await e.execute("sketch.create", ["face": top])
+        try await e.execute("sketch.add_point", ["at": [20, 20]])
+        try await e.execute("sketch.exit")
+        return e
+    }
+
+    func removed(_ e: Engine) async throws -> Double {
+        16000 - (try await e.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!)
+    }
+
+    @Test func clearanceCounterboreCountersinkAndTapped() async throws {
+        let e = try await plate()
+        try await e.execute("body.hole", ["sketch": "sketch-2", "size": "M6"])
+        #expect(abs(try await removed(e) - .pi * 3.3 * 3.3 * 10) < 1e-6)
+        #expect(await e.activeDocument!.features.last?.name == "M6 Clearance Hole1")
+
+        try await e.execute("feature.edit", ["feature": "M6 Clearance Hole1", "params": ["type": "counterbore"]])
+        #expect(abs(try await removed(e) - .pi * (5.5 * 5.5 * 6.5 + 3.3 * 3.3 * 3.5)) < 1e-6)
+
+        try await e.execute("feature.edit", ["feature": "M6 Clearance Hole1", "params": ["type": "countersink"]])
+        let (R, r, h) = (6.72, 3.3, (13.44 - 6.6) / 2)
+        let cone = Double.pi * h / 3 * (R * R + R * r + r * r)
+        #expect(abs(try await removed(e) - (cone + .pi * r * r * (10 - h))) < 1e-6)
+
+        try await e.execute("feature.edit", ["feature": "M6 Clearance Hole1", "params": [
+            "type": "tapped", "size": "M4", "end_condition": "blind", "depth": 5, "thread_depth": 4,
+        ]])
+        let rt = 3.3 / 2, point = rt / tan(59 * Double.pi / 180)
+        #expect(abs(try await removed(e) - .pi * rt * rt * (5 + point / 3)) < 1e-6)
+    }
+
+    @Test func refusesBadInput() async throws {
+        let e = try await plate()
+        await #expect(throws: ForgeError.self) { try await e.execute("body.hole", ["sketch": "sketch-2", "size": "M7"]) }
+        await #expect(throws: ForgeError.self) { try await e.execute("body.hole", ["sketch": "sketch-2", "size": "M6", "reverse": true]) }
+        await #expect(throws: ForgeError.self) { try await e.execute("body.hole", ["sketch": "sketch-1", "size": "M6"]) }  // no points
+    }
+}

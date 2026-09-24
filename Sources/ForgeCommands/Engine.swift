@@ -221,7 +221,7 @@ public actor Engine {
             {
                 p["sketch"] = .string(active)
             }
-            let created = doc.bodyOrder.filter { before.bodies[$0] == nil }
+            let created = doc.bodyOrder.filter { before.bodies[$0] == nil } + doc.refPlaneOrder.filter { before.refPlanes[$0] == nil }
             var edges: Int?
             if let b = p["body"]?.stringValue, let body = try? before.body(b), let t = try? body.shape.topology() {
                 // Edge (or face) count when the references were picked: detects renumbering.

@@ -49,6 +49,10 @@ private struct FeaturesTab: View {
         RibbonGroup("Cut") {
             RibbonLarge(.cutExtrude, "Extruded\nCut", active: model.operation == .cutExtrude, enabled: hasSketch && hasBody,
                         help: "Extrude a sketch profile and remove it from a body") { model.begin(.cutExtrude) }
+            RibbonLarge(.cutRevolve, "Revolved\nCut", active: model.operation == .cutRevolve, enabled: hasSketch && hasBody,
+                        help: "Revolve a sketch profile and remove it from a body") { model.begin(.cutRevolve) }
+            RibbonLarge(.hole, "Hole\nWizard", active: model.operation == .hole, enabled: hasSketch && hasBody,
+                        help: "Standard holes (ISO) at the points of a sketch") { model.begin(.hole) }
         }
         RibbonSeparator()
         RibbonGroup("Modify") {
@@ -67,6 +71,12 @@ private struct FeaturesTab: View {
                     let bodies = model.selectedBodies
                     Task { for b in bodies { await model.run("body.delete", ["body": .string(b)]) } }
                 }
+            }
+        }
+        RibbonSeparator()
+        RibbonGroup("Reference") {
+            RibbonFlyout(icon: .plane, title: "Reference\nGeometry", active: model.operation == .plane, action: { model.begin(.plane) }) {
+                Button("Plane") { model.begin(.plane) }
             }
         }
         RibbonSeparator()
@@ -104,6 +114,13 @@ private struct SketchTab: View {
                 Menu {
                     ForEach(StandardPlane.allCases, id: \.self) { p in
                         Button("\(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
+                    }
+                    ForEach(model.refPlanes, id: \.id) { r in
+                        Button(r.name) { Task { await model.newSketch(onPlaneOrFace: r.id) } }
+                    }
+                    if let f = model.selectedFace {
+                        Divider()
+                        Button("On Selected Face") { Task { await model.newSketch(onPlaneOrFace: f) } }
                     }
                 } label: {
                     RibbonLargeLabel(icon: .sketch, title: "Sketch", chevron: true)

@@ -52,17 +52,19 @@ public struct FeatureStatus: Codable, Sendable, Hashable {
     public static let ok = FeatureStatus(state: .ok, error: nil)
 }
 
-/// Body state between features (regeneration cache).
+/// Model state between features (regeneration cache): bodies and reference planes.
 struct BodyState: Sendable {
     var bodies: [String: Body]
     var order: [String]
+    var planes: [String: RefPlane] = [:]
+    var planeOrder: [String] = []
 }
 
 extension Document {
     /// Commands whose invocations become features.
     public static let featureCommands: Set<String> = [
         "body.extrude", "body.revolve", "body.boolean", "body.transform", "body.fillet_edges", "body.chamfer_edges", "body.shell",
-        "body.draft", "body.delete",
+        "body.draft", "body.delete", "plane.create", "body.hole",
         "body.create_box", "body.create_cylinder", "body.create_sphere", "body.create_cone", "body.create_torus",
     ]
 
@@ -78,6 +80,11 @@ extension Document {
         case "body.shell": "Shell"
         case "body.draft": "Draft"
         case "body.delete": "Body-Delete/Keep"
+        case "plane.create": "Plane"
+        case "body.hole":
+            (params["size"]?.stringValue.map { $0 + " " } ?? "") + [
+                "counterbore": "Counterbore", "countersink": "Countersink", "tapped": "Tapped Hole",
+            ][params["type"]?.stringValue ?? "hole", default: "Clearance Hole"]
         case "body.create_box": "Box"
         case "body.create_cylinder": "Cylinder"
         case "body.create_sphere": "Sphere"
@@ -126,11 +133,13 @@ extension Document {
         if let i = features.firstIndex(where: { !$0.isSketch && $0.params["sketch"]?.stringValue == id }) { markDirty(from: i) }
     }
 
-    var currentBodyState: BodyState { BodyState(bodies: bodies, order: bodyOrder) }
+    var currentBodyState: BodyState { BodyState(bodies: bodies, order: bodyOrder, planes: refPlanes, planeOrder: refPlaneOrder) }
 
     mutating func restoreBodies(_ s: BodyState) {
         bodies = s.bodies
         bodyOrder = s.order
+        refPlanes = s.planes
+        refPlaneOrder = s.planeOrder
     }
 
     /// Replay the features from `start` (all when 0) and record each one's status. Errors do
@@ -158,6 +167,21 @@ extension Document {
                 continue
             }
             if f.isSketch {
+                // A sketch on a reference plane or face moves with it.
+                if let sid = f.sketchID, var sk = sketches[sid], let ref = sk.placement {
+                    do {
+                        let plane = try resolvePlacement(ref)
+                        if plane != sk.plane {
+                            sk.plane = plane
+                            sketches[sid] = sk
+                        }
+                    } catch {
+                        f.status = FeatureStatus(
+                            state: .error,
+                            error: ForgeError(.referenceLost, "the plane of \(sk.name) (\(ref)) no longer exists: \(ForgeError.wrap(error).message)", entities: [sid]))
+                        continue
+                    }
+                }
                 let report = f.sketchID.flatMap { sketches[$0]?.report }
                 f.status = report?.status == .conflicting || report?.status == .failed
                     ? FeatureStatus(state: .warning, error: ForgeError(.sketchConflict, "the sketch is over defined or cannot be solved"))

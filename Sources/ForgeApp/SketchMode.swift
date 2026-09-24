@@ -147,13 +147,26 @@ struct SketchAnnotation: Identifiable, Equatable {
 
 extension AppModel {
     func newSketch(on plane: StandardPlane) async {
+        await newSketch(placement: ["plane": .string(plane.rawValue)])
+    }
+
+    /// Sketch on a reference plane (id) or a planar face ("body-1/face-3").
+    func newSketch(onPlaneOrFace ref: String) async {
+        await newSketch(placement: ref.contains("/face-") ? ["face": .string(ref)] : ["plane": .string(ref)])
+    }
+
+    private func newSketch(placement: JSONValue) async {
         operation = nil
+        contextToolbarAt = nil
         sketchEditCount = 0
-        if await run("sketch.create", ["plane": .string(plane.rawValue)]) != nil {
-            setOrientation(plane == .front ? .front : plane == .top ? .top : .right)
+        if await run("sketch.create", placement) != nil {
+            normalToSketch()
             chooseTool(.line)
         }
     }
+
+    /// The planar face in the selection, if any (for Sketch / Plane on a face).
+    var selectedFace: String? { selection.first { $0.contains("/face-") } }
 
     func editSketch(_ id: String) async {
         operation = nil

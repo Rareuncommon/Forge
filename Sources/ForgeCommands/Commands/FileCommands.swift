@@ -23,7 +23,9 @@ enum DocumentFiles {
             name: doc.name, units: doc.units, bodies: records, sketches: doc.orderedSketches,
             nextBody: doc.nextBodyNumber, nextSketch: doc.nextSketchNumber, features: features, rollback: doc.rollback,
             nextFeature: doc.nextFeatureNumber, featureCounters: doc.featureNameCounters, baseBodies: doc.baseBodies.map(\.id),
-            bodyNames: doc.bodyNames)
+            bodyNames: doc.bodyNames,
+            refPlanes: doc.refPlaneOrder.isEmpty ? nil : try doc.orderedRefPlanes.map { try JSONCoding.toJSON($0) },
+            nextPlane: doc.nextPlaneNumber == 1 ? nil : doc.nextPlaneNumber)
         return DocumentPackage(
             manifest: DocumentPackage.Manifest(app: appVersion, kernel: Kernel.version), model: model, breps: breps,
             thumbnailPNG: try thumbnail(doc))
@@ -61,6 +63,11 @@ enum DocumentFiles {
         doc.featureNameCounters = m.featureCounters
         doc.baseBodies = bodies.filter { m.baseBodies.contains($0.id) }
         doc.bodyNames = m.bodyNames
+        for r in try (m.refPlanes ?? []).map({ try JSONCoding.fromJSON(RefPlane.self, $0) }) {
+            doc.refPlanes[r.id] = r
+            doc.refPlaneOrder.append(r.id)
+        }
+        doc.nextPlaneNumber = m.nextPlane ?? 1
         return doc
     }
 

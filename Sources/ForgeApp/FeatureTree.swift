@@ -146,7 +146,7 @@ private struct FeatureNode: View {
             select()
         }
         .contextMenu { menu }
-        .help(feature.error.map { "\(feature.name): \($0)" } ?? "\(feature.name) — double-click to edit")
+        .help(feature.error.map { "\(feature.name): \($0)" } ?? (feature.command == "plane.create" ? "\(feature.name) — double-click to sketch on it" : "\(feature.name) — double-click to edit"))
         .popover(isPresented: $renaming) {
             HStack {
                 TextField("Name", text: $newName).textFieldStyle(.roundedBorder).frame(width: 180)
@@ -190,13 +190,15 @@ private struct FeatureNode: View {
     private func select() {
         if feature.isSketch, let s = feature.sketchID {
             Task { await model.select(s, extend: NSEvent.modifierFlags.contains(.shift)) }
-        } else if !feature.createdBodies.isEmpty {
+        } else if !feature.createdBodies.isEmpty && feature.command != "plane.create" {
             Task { await model.select(feature.createdBodies) }
         }
     }
 
     private func activate() {
-        if feature.isSketch, let s = feature.sketchID {
+        if feature.command == "plane.create", let plane = feature.createdBodies.first {
+            Task { await model.newSketch(onPlaneOrFace: plane) }
+        } else if feature.isSketch, let s = feature.sketchID {
             Task { await model.editSketch(s) }
         } else if feature.operation != nil {
             model.editFeature(feature)
@@ -210,7 +212,10 @@ private struct FeatureNode: View {
     }
 
     @ViewBuilder private var menu: some View {
-        if feature.isSketch, let s = feature.sketchID {
+        if feature.command == "plane.create", let plane = feature.createdBodies.first {
+            Button("Sketch") { Task { await model.newSketch(onPlaneOrFace: plane) } }
+            Button("Edit Feature") { model.editFeature(feature) }
+        } else if feature.isSketch, let s = feature.sketchID {
             Button("Edit Sketch") { Task { await model.editSketch(s) } }
         } else {
             if feature.operation != nil { Button("Edit Feature") { model.editFeature(feature) } }

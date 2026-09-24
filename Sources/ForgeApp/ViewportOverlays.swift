@@ -376,7 +376,14 @@ struct ContextToolbar: View {
             item(.construction, "Construction Geometry") { Task { await model.toggleConstruction() } }
             item(.trash, "Delete") { Task { await model.deleteSketchSelection() } }
         } else {
-            if !model.selectedEdges.isEmpty { item(.fillet, "Fillet") { model.begin(.fillet) } }
+            if let f = model.selectedFace {
+                item(.sketch, "Sketch") { Task { await model.newSketch(onPlaneOrFace: f) } }
+                item(.plane, "Plane") { model.begin(.plane) }
+            }
+            if !model.selectedEdges.isEmpty {
+                item(.fillet, "Fillet") { model.begin(.fillet) }
+                item(.chamfer, "Chamfer") { model.begin(.chamfer) }
+            }
             if model.selection.count == 2 { item(.measure, "Measure") { model.begin(.measure) } }
             if !model.selectedBodies.isEmpty { item(.massProps, "Mass Properties") { model.begin(.massProperties) } }
             item(.zoomFit, "Zoom to Fit") { model.zoomToFit() }

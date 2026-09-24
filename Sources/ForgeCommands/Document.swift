@@ -57,8 +57,13 @@ public struct Document: Sendable {
     var dirtyFrom: Int?
     /// Body state before each feature (regeneration cache; not persisted).
     var snapshots: [BodyState] = []
-    /// Ids the next addBody calls must use (a feature re-creating its bodies on regeneration).
+    /// Ids the next addBody / addRefPlane calls must use (a feature re-creating its outputs on
+    /// regeneration).
     var pendingBodyIDs: [String] = []
+    /// Reference planes (Plane features), in creation order.
+    public internal(set) var refPlanes: [String: RefPlane] = [:]
+    public internal(set) var refPlaneOrder: [String] = []
+    var nextPlaneNumber = 1
 
     public init(id: String, name: String, units: UnitSystem = .mmgs) {
         self.id = id
@@ -71,11 +76,11 @@ public struct Document: Sendable {
 
     public mutating func addBody(name: String?, shape: Shape, producedBy: String) -> Body {
         let id: String
-        if pendingBodyIDs.isEmpty {
+        if let i = pendingBodyIDs.firstIndex(where: { $0.hasPrefix("body-") }) {
+            id = pendingBodyIDs.remove(at: i)
+        } else {
             id = "body-\(nextBodyNumber)"
             nextBodyNumber += 1
-        } else {
-            id = pendingBodyIDs.removeFirst()
         }
         let body = Body(id: id, name: name ?? "Body\(id.dropFirst(5))", shape: shape, producedBy: producedBy)
         bodies[id] = body
@@ -211,6 +216,66 @@ public struct Document: Sendable {
             .unknownEntity, "no body '\(id)' in document '\(self.id)'" + (known.isEmpty ? " (document has no bodies)" : "; bodies: \(known)"),
             entities: [id],
             suggestions: [SuggestedFix(description: "List bodies in the document", command: "query.bodies")])
+    }
+}
+
+/// A reference plane (Plane feature).
+public struct RefPlane: Codable, Sendable, Hashable {
+    public var id: String
+    public var name: String
+    public var plane: SketchPlane
+}
+
+extension Document {
+    public var orderedRefPlanes: [RefPlane] { refPlaneOrder.compactMap { refPlanes[$0] } }
+
+    mutating func addRefPlane(name: String?, plane: SketchPlane) -> RefPlane {
+        let id: String
+        if let i = pendingBodyIDs.firstIndex(where: { $0.hasPrefix("plane-") }) {
+            id = pendingBodyIDs.remove(at: i)
+        } else {
+            id = "plane-\(nextPlaneNumber)"
+            nextPlaneNumber += 1
+        }
+        var pl = plane
+        let display = name ?? "Plane\(id.dropFirst(6))"
+        pl.name = display
+        let r = RefPlane(id: id, name: display, plane: pl)
+        refPlanes[id] = r
+        if !refPlaneOrder.contains(id) { refPlaneOrder.append(id) }
+        return r
+    }
+
+    /// The plane a reference names: a standard plane (front/top/right), a reference plane
+    /// (id or name), or a planar face ("body-1/face-3").
+    public func resolvePlacement(_ ref: String) throws -> SketchPlane {
+        switch ref.lowercased() {
+        case "front", "front plane": return .front
+        case "top", "top plane": return .top
+        case "right", "right plane": return .right
+        default: break
+        }
+        if let p = refPlanes[ref] ?? orderedRefPlanes.first(where: { $0.name == ref }) { return p.plane }
+        if let r = EntityRef(parsing: ref), r.kind == .face, let i = r.index {
+            let b = try body(r.body)
+            let f = try b.shape.face(i)
+            guard f.surfaceType == .plane else {
+                throw ForgeError(.invalidParams, "\(ref) is not a planar face", entities: [ref])
+            }
+            return Self.plane(onFace: f.normal, through: f.centroid, name: "\(b.name) face \(i)")
+        }
+        throw ForgeError(
+            .unknownEntity, "no plane '\(ref)' (use front, top, right, a reference plane or a planar face such as body-1/face-3)", entities: [ref],
+            suggestions: [SuggestedFix(description: "List the document", command: "document.state")])
+    }
+
+    /// A sketch plane on a face: origin at the projection of the model origin, axes chosen
+    /// like the standard planes (horizontal x on vertical faces, x along X on horizontal ones).
+    static func plane(onFace n0: Vec3, through c: Vec3, name: String) -> SketchPlane {
+        let n = n0.normalized
+        let x: Vec3 = abs(n.dot(.unitY)) > 0.9 ? .unitX : Vec3.unitY.cross(n).normalized
+        let y = n.cross(x).normalized
+        return SketchPlane(name: name, origin: n * c.dot(n), xAxis: x, yAxis: y)
     }
 }
 

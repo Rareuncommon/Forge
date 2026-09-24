@@ -231,29 +231,42 @@ let inferDoc: FieldDoc = FieldDoc("Add relations implied by exact coordinates: c
 
 public enum SketchCreate: Command {
     public struct Params: Codable, Sendable, SchemaDocumented {
-        public var plane: StandardPlane?
+        public var plane: String?
+        public var face: String?
         public var offset: Length?
         public var name: String?
         public static let fieldDocs: [String: FieldDoc] = [
-            "plane": FieldDoc("Standard plane (Front = XY, Top = XZ, Right = YZ)", default: "front"),
-            "offset": FieldDoc("Offset of the sketch plane along its normal", default: 0),
+            "plane": FieldDoc("front, top, right (Front = XY, Top = XZ, Right = YZ) or a reference plane (id or name)", default: "front"),
+            "face": "Sketch on a planar face instead (\"body-1/face-3\"); the sketch moves with the face when the model regenerates",
+            "offset": FieldDoc("Offset of a standard plane along its normal", default: 0),
             "name": FieldDoc("Display name", default: "Sketch<n>"),
         ]
     }
     public struct Output: Codable, Sendable { public var sketch: SketchSummary }
 
     public static let name = "sketch.create"
-    public static let summary = "Create a 2D sketch on a standard plane and start editing it"
+    public static let summary = "Create a 2D sketch on a standard plane, a reference plane or a planar face, and start editing it"
     public static let category = CommandCategory.sketch
     public static let undo = UndoBehavior.undoable
-    public static let errors: [ErrorCode] = [.preconditionFailed]
-    public static let examples: [JSONValue] = [["plane": "front"], ["plane": "top", "offset": "10 mm", "name": "Base"]]
+    public static let errors: [ErrorCode] = [.preconditionFailed, .unknownEntity, .invalidParams]
+    public static let examples: [JSONValue] = [
+        ["plane": "front"], ["plane": "top", "offset": "10 mm", "name": "Base"], ["face": "body-1/face-5"], ["plane": "Plane1"],
+    ]
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        var plane = (p.plane ?? .front).plane
-        if let o = p.offset { plane.origin = plane.origin + plane.normal * o.millimeters }
-        let s = doc.addSketch(name: p.name, plane: plane)
+        let ref = p.face ?? p.plane ?? "front"
+        var plane = try doc.resolvePlacement(ref)
+        let standard = StandardPlane(rawValue: ref.lowercased()) != nil
+        if let o = p.offset {
+            guard standard else { throw ForgeError(.invalidParams, "offset applies to standard planes; create an offset Plane (plane.create) instead") }
+            plane.origin = plane.origin + plane.normal * o.millimeters
+        }
+        var s = doc.addSketch(name: p.name, plane: plane)
+        if !standard {
+            s.placement = p.face ?? doc.refPlanes[ref]?.id ?? doc.orderedRefPlanes.first { $0.name == ref }?.id
+            doc.sketches[s.id] = s
+        }
         doc.activeSketch = s.id
         ctx.document = doc
         return Output(sketch: SketchSummary(s, active: true))

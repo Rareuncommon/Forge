@@ -155,6 +155,9 @@ public struct Sketch: Codable, Sendable, Hashable {
     public let id: String
     public var name: String
     public var plane: SketchPlane
+    /// What the plane comes from, when it follows the model: a reference plane id or a planar
+    /// face ("body-1/face-3"). Regeneration moves the plane with it; nil = fixed plane.
+    public var placement: String?
     public internal(set) var params: [Double] = []
     public internal(set) var entities: [String: SketchEntity] = [:]
     public internal(set) var entityOrder: [String] = []
@@ -166,7 +169,7 @@ public struct Sketch: Codable, Sendable, Hashable {
     /// Persisted form (document files): everything except the derived solver report, which
     /// is recomputed on load.
     enum CodingKeys: String, CodingKey {
-        case id, name, plane, params, entities, constraints
+        case id, name, plane, placement, params, entities, constraints
         case entityOrder = "entity_order"
         case nextEntity = "next_entity"
         case nextConstraint = "next_constraint"
