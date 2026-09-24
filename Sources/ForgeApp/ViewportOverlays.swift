@@ -196,7 +196,8 @@ struct AxisTriad: View {
                     path.addLine(to: end)
                     ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                     if len > 0.2 {
-                        let label = CGPoint(x: c.x + d.dx / len * 31 * min(1, len + 0.3), y: c.y + d.dy / len * 31 * min(1, len + 0.3))
+                        let reach: Double = 31 * min(1, len + 0.3) / len
+                        let label = CGPoint(x: c.x + d.dx * reach, y: c.y + d.dy * reach)
                         ctx.draw(Text(name).font(.system(size: 11, weight: .semibold)).foregroundStyle(color), at: label)
                     }
                 }

@@ -34,6 +34,8 @@ public enum ErrorCode: String, Codable, Sendable, CaseIterable {
     case sketchConflict = "sketch_conflict"
     case sketchRedundant = "sketch_redundant"
     case solverFailed = "solver_failed"
+    /// A feature's reference to upstream geometry no longer resolves (docs/adr/0002).
+    case referenceLost = "reference_lost"
     case internalError = "internal_error"
 }
 

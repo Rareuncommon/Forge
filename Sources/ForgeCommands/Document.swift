@@ -29,18 +29,36 @@ public struct Document: Sendable {
     public let id: String
     public var name: String
     public var units: UnitSystem
-    public private(set) var bodyOrder: [String] = []
-    public private(set) var bodies: [String: Body] = [:]
+    public internal(set) var bodyOrder: [String] = []
+    public internal(set) var bodies: [String: Body] = [:]
     /// Explicit, queryable selection (SPEC §5.4: no hidden state). Entity reference strings.
     public var selection: [String] = []
     var nextBodyNumber = 1
 
     /// Sketches in creation order.
     public private(set) var sketchOrder: [String] = []
-    public private(set) var sketches: [String: Sketch] = [:]
+    public internal(set) var sketches: [String: Sketch] = [:]
     /// The sketch being edited (explicit edit-mode state, SPEC §5.4). Sketch commands default to it.
     public var activeSketch: String?
     var nextSketchNumber = 1
+
+    /// The feature tree (docs/adr/0011): every body-producing command, in regeneration order.
+    /// Bodies are the result of replaying it (see Features.swift).
+    public internal(set) var features: [Feature] = []
+    /// Features at index >= rollback are rolled back (not regenerated); nil = none.
+    public internal(set) var rollback: Int?
+    var nextFeatureNumber = 1
+    var featureNameCounters: [String: Int] = [:]
+    /// Bodies that exist without a feature (from v1 files): the start of every regeneration.
+    public internal(set) var baseBodies: [Body] = []
+    /// Display names given with body.rename, applied after regeneration.
+    var bodyNames: [String: String] = [:]
+    /// First feature whose inputs changed since the last regeneration.
+    var dirtyFrom: Int?
+    /// Body state before each feature (regeneration cache; not persisted).
+    var snapshots: [BodyState] = []
+    /// Ids the next addBody calls must use (a feature re-creating its bodies on regeneration).
+    var pendingBodyIDs: [String] = []
 
     public init(id: String, name: String, units: UnitSystem = .mmgs) {
         self.id = id
@@ -52,8 +70,13 @@ public struct Document: Sendable {
     public var orderedBodies: [Body] { bodyOrder.compactMap { bodies[$0] } }
 
     public mutating func addBody(name: String?, shape: Shape, producedBy: String) -> Body {
-        let id = "body-\(nextBodyNumber)"
-        nextBodyNumber += 1
+        let id: String
+        if pendingBodyIDs.isEmpty {
+            id = "body-\(nextBodyNumber)"
+            nextBodyNumber += 1
+        } else {
+            id = pendingBodyIDs.removeFirst()
+        }
         let body = Body(id: id, name: name ?? "Body\(id.dropFirst(5))", shape: shape, producedBy: producedBy)
         bodies[id] = body
         bodyOrder.append(id)
@@ -70,6 +93,7 @@ public struct Document: Sendable {
     public mutating func renameBody(_ id: String, to name: String) throws {
         guard bodies[id] != nil else { throw unknownBody(id) }
         bodies[id]!.name = name
+        bodyNames[id] = name
     }
 
     public mutating func removeBody(_ id: String) throws {
@@ -132,6 +156,7 @@ public struct Document: Sendable {
     public mutating func updateSketch(_ s: Sketch) {
         precondition(sketches[s.id] != nil)
         sketches[s.id] = s
+        markDirty(usingSketch: s.id)
         pruneSelection()
     }
 
@@ -140,6 +165,11 @@ public struct Document: Sendable {
         sketches.removeValue(forKey: s.id)
         sketchOrder.removeAll { $0 == s.id }
         if activeSketch == s.id { activeSketch = nil }
+        if let i = features.firstIndex(where: { $0.isSketch && $0.sketchID == s.id }) {
+            features.remove(at: i)
+            markDirty(from: i)
+        }
+        markDirty(usingSketch: s.id)
         pruneSelection()
     }
 

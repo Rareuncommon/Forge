@@ -21,14 +21,14 @@ public enum RelationType: String, Codable, Sendable, CaseIterable, SchemaEnum {
     case coincident, onEntity = "on_entity", horizontal, vertical, parallel, perpendicular, tangent, equal,
         symmetric, midpoint, concentric, collinear, coradial, fix
 
-    var kind: ConstraintKind { ConstraintKind(rawValue: rawValue)! }
+    public var kind: ConstraintKind { ConstraintKind(rawValue: rawValue)! }
 }
 
 /// Dimension types accepted by sketch.add_dimension (SPEC 7.1 "Dimensions").
 public enum DimensionType: String, Codable, Sendable, CaseIterable, SchemaEnum {
     case distance, horizontalDistance = "horizontal_distance", verticalDistance = "vertical_distance", radius, diameter, angle, offset
 
-    var kind: ConstraintKind { ConstraintKind(rawValue: rawValue)! }
+    public var kind: ConstraintKind { ConstraintKind(rawValue: rawValue)! }
 }
 
 public struct SketchSummary: Codable, Sendable, Hashable {

@@ -176,6 +176,10 @@ public actor Engine {
         } catch {
             throw ForgeError.wrap(error)
         }
+        if let docID, let before, var doc = ctx.session.documents[docID]?.document {
+            Self.maintainFeatureTree(&doc, before: before, command: command, params: params, registry: registry)
+            ctx.session.documents[docID]!.document = doc
+        }
         let after = docID.flatMap { ctx.session.documents[$0]?.document }
         let changes = d.undo == .undoable ? ChangeSet.diff(before, after) : ChangeSet()
         let outcome = CommandOutcome(command: command, document: ctx.documentID ?? ctx.session.activeDocumentID, dryRun: dryRun, result: result, changes: changes)
@@ -204,6 +208,29 @@ public actor Engine {
             state.documents[docID] = s
         }
         return outcome
+    }
+
+    /// After a command: record body-producing commands and new sketches as features
+    /// (docs/adr/0011), and regenerate when a sketch or feature they depend on changed.
+    static func maintainFeatureTree(_ doc: inout Document, before: Document, command: String, params: JSONValue, registry: CommandRegistry) {
+        if Document.featureCommands.contains(command) {
+            var p = params.objectValue ?? [:]
+            // Freeze defaults that depend on edit state, so the feature replays the same way.
+            if p["sketch"] == nil, let active = before.activeSketch,
+                (try? registry.descriptor(command))?.paramsSchema["properties"]?["sketch"] != nil
+            {
+                p["sketch"] = .string(active)
+            }
+            let created = doc.bodyOrder.filter { before.bodies[$0] == nil }
+            var edges: Int?
+            if command == "body.fillet_edges", let b = p["body"]?.stringValue, let body = try? before.body(b) {
+                edges = try? body.shape.topology().edges
+            }
+            doc.recordFeature(command: command, params: .object(p), createdBodies: created, edgeCount: edges)
+        } else if command == "sketch.create", let id = doc.sketchOrder.first(where: { before.sketches[$0] == nil }) {
+            doc.recordFeature(command: "sketch.create", params: ["sketch": .string(id)], createdBodies: [], sketchName: doc.sketches[id]?.name)
+        }
+        if let from = doc.dirtyFrom { doc.regenerate(from: from, registry: registry) }
     }
 
     /// Run commands against a scratch copy of the session and return the document they

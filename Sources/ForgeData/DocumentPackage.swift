@@ -7,13 +7,14 @@ import Foundation
 ///     Name.forgepart/
 ///       manifest.json          format, schema version, kind, app/kernel versions, units
 ///       model.json             authoritative, human-diffable document content
-///       bodies/<id>.brep       canonical binary BREP of direct (non-feature) bodies
+///       bodies/<id>.brep       canonical binary BREP of every body (base bodies, and the
+///                              regeneration result of the feature tree)
 ///       thumbnails/thumbnail.png
 ///
 /// JSON is written with sorted keys and 2-space indentation, and BREP is canonical, so saving
 /// an unchanged document reproduces identical bytes (git- and PDM-friendly).
 public struct DocumentPackage: Sendable, Equatable {
-    public static let currentSchema = 1
+    public static let currentSchema = 2
     public static let formatName = "forge-document"
 
     public var manifest: Manifest
@@ -64,6 +65,41 @@ public struct DocumentPackage: Sendable, Equatable {
         }
     }
 
+    /// A feature of the tree (schema 2): the command it replays and its parameters.
+    public struct FeatureRecord: Codable, Sendable, Equatable {
+        public var id: String
+        public var name: String
+        public var command: String
+        public var params: JSONValue
+        public var suppressed: Bool
+        public var createdBodies: [String]
+        public var edgeCount: Int?
+        /// Status at save time (ok, warning, error, suppressed, rolled_back) and its message.
+        public var state: String
+        public var error: ForgeError?
+
+        public init(
+            id: String, name: String, command: String, params: JSONValue, suppressed: Bool, createdBodies: [String], edgeCount: Int?,
+            state: String, error: ForgeError?
+        ) {
+            self.id = id
+            self.name = name
+            self.command = command
+            self.params = params
+            self.suppressed = suppressed
+            self.createdBodies = createdBodies
+            self.edgeCount = edgeCount
+            self.state = state
+            self.error = error
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, command, params, suppressed, state, error
+            case createdBodies = "created_bodies"
+            case edgeCount = "edge_count"
+        }
+    }
+
     public struct Model: Codable, Sendable, Equatable {
         public var name: String
         public var units: UnitSystem
@@ -71,20 +107,42 @@ public struct DocumentPackage: Sendable, Equatable {
         public var sketches: [Sketch]
         public var nextBody: Int
         public var nextSketch: Int
+        /// Schema 2: the feature tree, the rollback position, bodies that exist without a
+        /// feature (from schema 1 files), display names given with body.rename.
+        public var features: [FeatureRecord]
+        public var rollback: Int?
+        public var nextFeature: Int
+        public var featureCounters: [String: Int]
+        public var baseBodies: [String]
+        public var bodyNames: [String: String]
 
-        public init(name: String, units: UnitSystem, bodies: [BodyRecord], sketches: [Sketch], nextBody: Int, nextSketch: Int) {
+        public init(
+            name: String, units: UnitSystem, bodies: [BodyRecord], sketches: [Sketch], nextBody: Int, nextSketch: Int,
+            features: [FeatureRecord] = [], rollback: Int? = nil, nextFeature: Int = 1, featureCounters: [String: Int] = [:],
+            baseBodies: [String] = [], bodyNames: [String: String] = [:]
+        ) {
             self.name = name
             self.units = units
             self.bodies = bodies
             self.sketches = sketches
             self.nextBody = nextBody
             self.nextSketch = nextSketch
+            self.features = features
+            self.rollback = rollback
+            self.nextFeature = nextFeature
+            self.featureCounters = featureCounters
+            self.baseBodies = baseBodies
+            self.bodyNames = bodyNames
         }
 
         enum CodingKeys: String, CodingKey {
-            case name, units, bodies, sketches
+            case name, units, bodies, sketches, features, rollback
             case nextBody = "next_body"
             case nextSketch = "next_sketch"
+            case nextFeature = "next_feature"
+            case featureCounters = "feature_counters"
+            case baseBodies = "base_bodies"
+            case bodyNames = "body_names"
         }
     }
 
@@ -182,5 +240,17 @@ public struct DocumentPackage: Sendable, Equatable {
 
 /// Schema migrations: `steps[n]` converts model.json from schema n to n + 1.
 public enum Migrations {
-    public static let steps: [Int: @Sendable (JSONValue) throws -> JSONValue] = [:]
+    public static let steps: [Int: @Sendable (JSONValue) throws -> JSONValue] = [
+        // 1 → 2: the feature tree. Schema 1 bodies had no features: they become base bodies.
+        1: { model in
+            guard case .object(var o) = model else { throw ForgeError(.ioError, "model.json is not an object") }
+            let ids = (o["bodies"]?.arrayValue ?? []).compactMap { $0["id"]?.stringValue }
+            o["features"] = .array([])
+            o["next_feature"] = .number(1)
+            o["feature_counters"] = .object([:])
+            o["base_bodies"] = .array(ids.map { .string($0) })
+            o["body_names"] = .object([:])
+            return .object(o)
+        }
+    ]
 }

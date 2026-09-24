@@ -14,9 +14,16 @@ enum DocumentFiles {
             breps[b.id] = try b.shape.brepData()
             records.append(DocumentPackage.BodyRecord(id: b.id, name: b.name, producedBy: b.producedBy, brep: "bodies/\(b.id).brep"))
         }
+        let features = doc.features.map {
+            DocumentPackage.FeatureRecord(
+                id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, createdBodies: $0.createdBodies,
+                edgeCount: $0.edgeCount, state: $0.status.state.rawValue, error: $0.status.error)
+        }
         let model = DocumentPackage.Model(
             name: doc.name, units: doc.units, bodies: records, sketches: doc.orderedSketches,
-            nextBody: doc.nextBodyNumber, nextSketch: doc.nextSketchNumber)
+            nextBody: doc.nextBodyNumber, nextSketch: doc.nextSketchNumber, features: features, rollback: doc.rollback,
+            nextFeature: doc.nextFeatureNumber, featureCounters: doc.featureNameCounters, baseBodies: doc.baseBodies.map(\.id),
+            bodyNames: doc.bodyNames)
         return DocumentPackage(
             manifest: DocumentPackage.Manifest(app: appVersion, kernel: Kernel.version), model: model, breps: breps,
             thumbnailPNG: try thumbnail(doc))
@@ -39,9 +46,22 @@ enum DocumentFiles {
             guard let data = pkg.breps[r.id] else { throw ForgeError(.ioError, "missing BREP for \(r.id)") }
             return Body(id: r.id, name: r.name, shape: try Shape.fromBREP(data), producedBy: r.producedBy)
         }
-        return Document.restore(
+        var doc = Document.restore(
             id: id, name: pkg.model.name, units: pkg.model.units, bodies: bodies, sketches: pkg.model.sketches,
             nextBody: pkg.model.nextBody, nextSketch: pkg.model.nextSketch)
+        // The saved bodies are the regeneration result; the tree regenerates on its next change.
+        let m = pkg.model
+        doc.features = m.features.map {
+            Feature(
+                id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, createdBodies: $0.createdBodies,
+                status: FeatureStatus(state: FeatureStatus.State(rawValue: $0.state) ?? .ok, error: $0.error), edgeCount: $0.edgeCount)
+        }
+        doc.rollback = m.rollback
+        doc.nextFeatureNumber = m.nextFeature
+        doc.featureNameCounters = m.featureCounters
+        doc.baseBodies = bodies.filter { m.baseBodies.contains($0.id) }
+        doc.bodyNames = m.bodyNames
+        return doc
     }
 
     static func url(_ path: String) -> URL { URL(fileURLWithPath: (path as NSString).expandingTildeInPath) }

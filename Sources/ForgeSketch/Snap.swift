@@ -28,6 +28,11 @@ public struct SketchSnap: Sendable, Equatable {
     public struct Guide: Sendable, Equatable {
         public var from: Point2
         public var to: Point2
+
+        public init(from: Point2, to: Point2) {
+            self.from = from
+            self.to = to
+        }
     }
 
     public init(point: Point2, kind: Kind, target: String? = nil, guides: [Guide] = []) {

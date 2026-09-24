@@ -69,6 +69,14 @@ extension CommandRegistry {
         r.register(BodyFilletEdges.self)
         r.register(BodyDelete.self)
         r.register(BodyRename.self)
+        // feature tree
+        r.register(FeatureList.self)
+        r.register(FeatureEdit.self)
+        r.register(FeatureRename.self)
+        r.register(FeatureSuppress.self)
+        r.register(FeatureDelete.self)
+        r.register(FeatureRollback.self)
+        r.register(DocumentRegenerate.self)
         // queries
         r.register(QueryBodies.self)
         r.register(QueryFaces.self)
