@@ -322,3 +322,62 @@ struct HoleWizardTests {
         await #expect(throws: ForgeError.self) { try await e.execute("body.hole", ["sketch": "sketch-1", "size": "M6"]) }  // no points
     }
 }
+
+@Suite("Patterns and mirror")
+struct PatternTests {
+    func volume(_ e: Engine) async throws -> Double {
+        try await e.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!
+    }
+
+    /// A 40 × 40 × 10 plate centred on the origin (z from 0 to 10), and a sketch on its top face.
+    func plate() async throws -> (Engine, JSONValue) {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("sketch.create", ["plane": "front"])
+        try await e.execute("sketch.add_rectangle", ["points": [[-20, -20], [20, 20]]])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-1", "depth": 10])
+        let faces = try await e.execute("query.faces", ["body": "body-1"]).result["faces"]!.arrayValue!
+        return (e, faces.first { $0["normal"]!.arrayValue!.map { $0.doubleValue! } == [0, 0, 1] }!["id"]!)
+    }
+
+    @Test func linearPatternOfHolesFollowsTheSeed() async throws {
+        let (e, top) = try await plate()
+        try await e.execute("sketch.create", ["face": top])
+        try await e.execute("sketch.add_point", ["at": [-12, -12]])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.hole", ["sketch": "sketch-2", "type": "hole", "size": "M3"])
+        try await e.execute("pattern.linear", ["features": ["M3 Clearance Hole1"], "direction": "x", "spacing": 12, "count": 3,
+                                               "direction2": "y", "spacing2": 12, "count2": 2])
+        #expect(abs(try await volume(e) - (16000 - 6 * .pi * 1.7 * 1.7 * 10)) < 1e-6)
+        // A bigger seed: every instance follows.
+        try await e.execute("feature.edit", ["feature": "M3 Clearance Hole1", "params": ["size": "M4"]])
+        #expect(abs(try await volume(e) - (16000 - 6 * .pi * 2.25 * 2.25 * 10)) < 1e-6)
+        #expect(await e.activeDocument!.features.last?.name == "LPattern1")
+    }
+
+    @Test func circularPatternAndMirrorOfBosses() async throws {
+        let (e, top) = try await plate()
+        try await e.execute("sketch.create", ["face": top])
+        try await e.execute("sketch.add_circle", ["center": [10, 0], "radius": 2])
+        try await e.execute("sketch.exit")
+        try await e.execute("body.extrude", ["sketch": "sketch-2", "depth": 5, "merge": true])
+        let boss = Double.pi * 4 * 5
+        #expect(abs(try await volume(e) - (16000 + boss)) < 1e-6)
+        try await e.execute("pattern.circular", ["features": ["Boss-Extrude2"], "axis": "z", "count": 4])
+        #expect(abs(try await volume(e) - (16000 + 4 * boss)) < 1e-6)
+        try await e.execute("feature.suppress", ["feature": "CirPattern1"])
+        try await e.execute("pattern.mirror", ["features": ["Boss-Extrude2"], "plane": "right"])
+        #expect(abs(try await volume(e) - (16000 + 2 * boss)) < 1e-6)
+        #expect(await e.activeDocument!.bodies.count == 1)
+    }
+
+    @Test func unsupportedSeedsAreRefused() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("body.create_box", ["width": 10, "height": 10, "depth": 10])
+        await #expect(throws: ForgeError.self) {
+            try await e.execute("pattern.linear", ["features": ["Box1"], "direction": "x", "spacing": 20, "count": 2])
+        }
+    }
+}

@@ -93,6 +93,27 @@ public struct Transform3: Codable, Sendable, Hashable {
         Transform3(m: [1, 0, 0, t.x, 0, 1, 0, t.y, 0, 0, 1, t.z])
     }
 
+    /// Mirror about the plane through `origin` with normal `normal`: p' = p − 2n (n·(p − o)).
+    public static func reflection(origin o: Vec3, normal: Vec3) -> Transform3 {
+        let n = normal.normalized
+        let t = n * (2 * n.dot(o))
+        return Transform3(m: [
+            1 - 2 * n.x * n.x, -2 * n.x * n.y, -2 * n.x * n.z, t.x,
+            -2 * n.x * n.y, 1 - 2 * n.y * n.y, -2 * n.y * n.z, t.y,
+            -2 * n.x * n.z, -2 * n.y * n.z, 1 - 2 * n.z * n.z, t.z,
+        ])
+    }
+
+    /// `self` then `b` (b ∘ self).
+    public func then(_ b: Transform3) -> Transform3 {
+        var r = [Double](repeating: 0, count: 12)
+        for i in 0..<3 {
+            for j in 0..<3 { r[4 * i + j] = (0..<3).reduce(0) { $0 + b.m[4 * i + $1] * m[4 * $1 + j] } }
+            r[4 * i + 3] = (0..<3).reduce(b.m[4 * i + 3]) { $0 + b.m[4 * i + $1] * m[4 * $1 + 3] }
+        }
+        return Transform3(m: r)
+    }
+
     /// Rotation by `angle` radians about `axis` through `origin` (Rodrigues).
     public static func rotation(axis: Vec3, angle: Double, origin: Vec3 = .zero) -> Transform3 {
         let k = axis.normalized

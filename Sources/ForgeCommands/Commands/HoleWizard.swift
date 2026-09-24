@@ -62,9 +62,12 @@ public enum BodyHole: Command {
         public var threadDepth: Length?
         public var reverse: Bool?
         public var scope: [String]?
+        public var instances: [[Double]]?
+        public var instancesOnly: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case sketch, type, size, fit, diameter, depth, reverse, scope
+            case sketch, type, size, fit, diameter, depth, reverse, scope, instances
+            case instancesOnly = "instances_only"
             case endCondition = "end_condition"
             case drillPoint = "drill_point"
             case counterboreDiameter = "counterbore_diameter"
@@ -87,6 +90,8 @@ public enum BodyHole: Command {
             "thread_depth": "Tapped holes: thread depth (recorded as the cosmetic thread; the hole is the tap drill)",
             "reverse": FieldDoc("Drill along the sketch normal instead of against it", default: false),
             "scope": FieldDoc("Bodies the holes cut", default: "all bodies"),
+            "instances": "Pattern instances: extra placements of the same holes, as 3×4 row-major transforms",
+            "instances_only": FieldDoc("Drill only the instances (used by pattern.* features)", default: false),
         ]
         public func validate() throws {
             guard size != nil || diameter != nil else { throw ForgeError(.invalidParams, "give a size (M6…) or a diameter") }
@@ -193,7 +198,8 @@ public enum BodyHole: Command {
             if let cs = csink { parts.append(try Kernel.cone(origin: top, axis: dir, radius1: cs / 2, radius2: d / 2, height: (cs - d) / 2)) }
             for part in parts { tool = try tool.map { try Kernel.boolean(.fuse, $0, part) } ?? part }
         }
-        let modified = try FeatureScope.cut(tool!, &doc, p.scope, producedBy: name)
+        let tools = try FeatureScope.tools(tool!, p.instances, only: p.instancesOnly)
+        let modified = try FeatureScope.apply(tools, cut: true, merge: false, &doc, p.scope, name: nil, producedBy: name)
         ctx.document = doc
         let thread = type == .tapped ? iso.map { "\($0.name)x\(String(format: "%.2g", $0.pitch))" } : nil
         return Output(

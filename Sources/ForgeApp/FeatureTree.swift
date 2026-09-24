@@ -188,6 +188,11 @@ private struct FeatureNode: View {
     }
 
     private func select() {
+        // With a pattern or mirror open, clicking a feature adds or removes it as a seed.
+        if let op = model.operation, [Operation.linearPattern, .circularPattern, .mirror].contains(op), !feature.isSketch {
+            if let i = model.form.seeds.firstIndex(of: feature.id) { model.form.seeds.remove(at: i) } else { model.form.seeds.append(feature.id) }
+            return
+        }
         if feature.isSketch, let s = feature.sketchID {
             Task { await model.select(s, extend: NSEvent.modifierFlags.contains(.shift)) }
         } else if !feature.createdBodies.isEmpty && feature.command != "plane.create" {

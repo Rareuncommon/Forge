@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 872 · in progress: 101 · done: 22 · verified: 0
+**Totals:** 995 rows — not started: 849 · in progress: 124 · done: 22 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -51,7 +51,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/scripting-js` | JavaScriptCore scripting (§5.3) | not started | — | — | — |  |
 | `P/scripting-python` | Python via forge-cli/socket (§5.3) | not started | — | — | — |  |
 | `P/macro-recorder` | Macro recorder with semantic references (§5.3) | not started | — | — | — |  |
-| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | not started | — | — | — |  |
+| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeCommandsTests/FileTests.swift | execute:feature.* | recorded body commands replayed on change; rollback, suppress, delete, rename, edit, error isolation, stable body ids, file schema 2; reorder/freeze/folders pending; persistent names (ADR 0002) pending |
 | `P/persistent-naming` | Persistent naming (§4.2) | not started | — | — | — |  |
 | `P/semantic-refs` | Semantic references (§4.3) | not started | — | — | — |  |
 | `P/parameters` | Global variables, equations, linked dims, design tables, configurations (§4.4) | not started | — | — | — |  |
@@ -200,7 +200,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `7.2/reference-geometry/planes` | Reference geometry: planes | not started | ForgeModel | — | — |  |
+| `7.2/reference-geometry/planes` | Reference geometry: planes | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:plane.create | offset from standard plane, reference plane or planar face (follows the face); sketches on planes and faces |
 | `7.2/reference-geometry/planes/all-definitions` | ↳ all definitions | not started | ForgeModel | — | — |  |
 | `7.2/reference-geometry/axes` | Reference geometry: axes | not started | ForgeModel | — | — |  |
 | `7.2/reference-geometry/coordinate-systems` | Reference geometry: coordinate systems | not started | ForgeModel | — | — |  |
@@ -217,12 +217,12 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/reference-geometry/reference-curves/curve-through-reference-points` | ↳ curve through reference points | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/extrude` | Boss/base & cut: extrude | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | kernel-level from sketch profiles (holes, islands); parametric feature, cut and end conditions in M2 |
 | `7.2/boss-base-and-cut/extrude/blind` | ↳ blind | in progress | ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | normal/reverse |
-| `7.2/boss-base-and-cut/extrude/through-all` | ↳ through all | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/up-to-next-vertex-surface-offset` | ↳ up to next/vertex/surface/offset | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/mid-plane` | ↳ mid-plane | in progress | ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude(mid_plane) |  |
-| `7.2/boss-base-and-cut/extrude/thin-feature` | ↳ thin feature | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/draft` | ↳ draft | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/extrude/direction-2` | ↳ direction-2 | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/extrude/through-all` | ↳ through all | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | through_all and through_all_both (depth from the bodies in scope) |
+| `7.2/boss-base-and-cut/extrude/up-to-next-vertex-surface-offset` | ↳ up to next/vertex/surface/offset | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | up_to_vertex; up to next/surface/offset not started |
+| `7.2/boss-base-and-cut/extrude/mid-plane` | ↳ mid-plane | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | end_condition mid_plane |
+| `7.2/boss-base-and-cut/extrude/thin-feature` | ↳ thin feature | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.extrude | closed profiles: one direction (either side), mid plane, two directions; open-profile thin features pending |
+| `7.2/boss-base-and-cut/extrude/draft` | ↳ draft | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.extrude | Direction 1, inward/outward |
+| `7.2/boss-base-and-cut/extrude/direction-2` | ↳ direction-2 | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | blind, through all, up to vertex |
 | `7.2/boss-base-and-cut/extrude/contour-selection` | ↳ contour selection | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/revolve` | Boss/base & cut: revolve | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.revolve | about a sketch line, any angle; parametric feature in M2 |
 | `7.2/boss-base-and-cut/sweep` | Boss/base & cut: sweep | not started | ForgeModel | — | — |  |
@@ -247,31 +247,31 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/applied/fillet/setback` | ↳ setback | not started | ForgeModel | — | — |  |
 | `7.2/applied/fillet/filletxpert` | ↳ FilletXpert | not started | ForgeModel | — | — |  |
 | `7.2/applied/fillet/conic-curvature-continuous-profiles` | ↳ conic/curvature-continuous profiles | not started | ForgeModel | — | — |  |
-| `7.2/applied/chamfer` | Applied: chamfer | not started | ForgeModel | — | — |  |
-| `7.2/applied/chamfer/angle-distance` | ↳ angle-distance | not started | ForgeModel | — | — |  |
-| `7.2/applied/chamfer/distance-distance` | ↳ distance-distance | not started | ForgeModel | — | — |  |
+| `7.2/applied/chamfer` | Applied: chamfer | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.chamfer_edges | edge chamfers on transient edge indices (warns on renumbering) |
+| `7.2/applied/chamfer/angle-distance` | ↳ angle-distance | in progress | ForgeKernel / ForgeCommands | Tests/ForgeKernelTests/KernelTests.swift | execute:body.chamfer_edges |  |
+| `7.2/applied/chamfer/distance-distance` | ↳ distance-distance | in progress | ForgeKernel / ForgeCommands | Tests/ForgeKernelTests/KernelTests.swift | execute:body.chamfer_edges | equal or two distances |
 | `7.2/applied/chamfer/vertex` | ↳ vertex | not started | ForgeModel | — | — |  |
 | `7.2/applied/chamfer/offset-face` | ↳ offset face | not started | ForgeModel | — | — |  |
 | `7.2/applied/chamfer/face-face` | ↳ face-face | not started | ForgeModel | — | — |  |
-| `7.2/applied/draft` | Applied: draft | not started | ForgeModel | — | — |  |
-| `7.2/applied/draft/neutral-plane` | ↳ neutral plane | not started | ForgeModel | — | — |  |
+| `7.2/applied/draft` | Applied: draft | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.draft | neutral plane type |
+| `7.2/applied/draft/neutral-plane` | ↳ neutral plane | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.draft |  |
 | `7.2/applied/draft/parting-line` | ↳ parting line | not started | ForgeModel | — | — |  |
 | `7.2/applied/draft/step` | ↳ step | not started | ForgeModel | — | — |  |
 | `7.2/applied/draft/draftxpert` | ↳ DraftXpert | not started | ForgeModel | — | — |  |
-| `7.2/applied/shell` | Applied: shell | not started | ForgeModel | — | — |  |
+| `7.2/applied/shell` | Applied: shell | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.shell | faces to remove or closed hollow; inward/outward |
 | `7.2/applied/shell/multi-thickness` | ↳ multi-thickness | not started | ForgeModel | — | — |  |
 | `7.2/applied/rib` | Applied: rib | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard` | Applied: hole wizard | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard/counterbore` | ↳ counterbore | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard/countersink` | ↳ countersink | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard/straight` | ↳ straight | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard/tapped` | ↳ tapped | not started | ForgeModel | — | — |  |
+| `7.2/applied/hole-wizard` | Applied: hole wizard | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | ISO metric M2–M20 at sketch points; blind (drill point) or through all |
+| `7.2/applied/hole-wizard/counterbore` | ↳ counterbore | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | ISO 4762 |
+| `7.2/applied/hole-wizard/countersink` | ↳ countersink | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | 90°, ISO 10642 |
+| `7.2/applied/hole-wizard/straight` | ↳ straight | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | ISO 273 close/normal/loose |
+| `7.2/applied/hole-wizard/tapped` | ↳ tapped | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | tap drill; thread recorded, not modelled |
 | `7.2/applied/hole-wizard/pipe-tap` | ↳ pipe tap | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/legacy` | ↳ legacy | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/slot` | ↳ slot | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/counterbore-countersink-slot` | ↳ counterbore/countersink slot | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/ansi` | ↳ ANSI | not started | ForgeModel | — | — |  |
-| `7.2/applied/hole-wizard/iso` | ↳ ISO | not started | ForgeModel | — | — |  |
+| `7.2/applied/hole-wizard/iso` | ↳ ISO | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | metric coarse M2–M20 |
 | `7.2/applied/hole-wizard/din` | ↳ DIN | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/jis` | ↳ JIS | not started | ForgeModel | — | — |  |
 | `7.2/applied/hole-wizard/gb` | ↳ GB | not started | ForgeModel | — | — |  |
@@ -303,16 +303,16 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/applied/snap-hook-groove` | Applied: snap hook/groove | not started | ForgeModel | — | — |  |
 | `7.2/applied/vent` | Applied: vent | not started | ForgeModel | — | — |  |
 | `7.2/applied/fastening-features` | Applied: fastening features | not started | ForgeModel | — | — |  |
-| `7.2/patterns-and-mirror/linear` | Patterns & mirror: linear | not started | ForgeModel | — | — |  |
-| `7.2/patterns-and-mirror/circular` | Patterns & mirror: circular | not started | ForgeModel | — | — |  |
+| `7.2/patterns-and-mirror/linear` | Patterns & mirror: linear | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:pattern.linear | of extrusions, revolutions and holes; one or two directions |
+| `7.2/patterns-and-mirror/circular` | Patterns & mirror: circular | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:pattern.circular | about x/y/z, an edge or a sketch line; equal spacing |
 | `7.2/patterns-and-mirror/curve-driven` | Patterns & mirror: curve-driven | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/sketch-driven` | Patterns & mirror: sketch-driven | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/table-driven` | Patterns & mirror: table-driven | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/fill-pattern` | Patterns & mirror: fill pattern | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/variable-pattern` | Patterns & mirror: variable pattern | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/chain-pattern` | Patterns & mirror: chain pattern | not started | ForgeModel | — | — |  |
-| `7.2/patterns-and-mirror/mirror` | Patterns & mirror: mirror | not started | ForgeModel | — | — |  |
-| `7.2/patterns-and-mirror/mirror/features` | ↳ features | not started | ForgeModel | — | — |  |
+| `7.2/patterns-and-mirror/mirror` | Patterns & mirror: mirror | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:pattern.mirror | about a plane or planar face |
+| `7.2/patterns-and-mirror/mirror/features` | ↳ features | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:pattern.mirror | extrusions, revolutions, holes |
 | `7.2/patterns-and-mirror/mirror/faces` | ↳ faces | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/mirror/bodies` | ↳ bodies | not started | ForgeModel | — | — |  |
 | `7.2/patterns-and-mirror/geometry-pattern` | Patterns & mirror: geometry pattern | not started | ForgeModel | — | — |  |

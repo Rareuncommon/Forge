@@ -86,7 +86,8 @@ enum RibbonTab: String, CaseIterable, Identifiable {
 
 /// The operation whose options are shown in the PropertyManager (with OK / Cancel).
 enum Operation: Hashable {
-    case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, combine, massProperties, measure, check
+    case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, linearPattern, circularPattern, mirror, combine
+    case massProperties, measure, check
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
     case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
@@ -99,6 +100,9 @@ enum Operation: Hashable {
         case .revolve: "Revolve"
         case .cutRevolve: "Cut-Revolve"
         case .hole: "Hole Specification"
+        case .linearPattern: "Linear Pattern"
+        case .circularPattern: "Circular Pattern"
+        case .mirror: "Mirror"
         case .plane: "Plane"
         case .fillet: "Fillet"
         case .chamfer: "Chamfer"
@@ -128,6 +132,9 @@ enum Operation: Hashable {
         case .revolve: .revolve
         case .cutRevolve: .cutRevolve
         case .hole: .hole
+        case .linearPattern: .linearPattern
+        case .circularPattern: .circularPattern
+        case .mirror: .mirror
         case .plane: .plane
         case .fillet: .fillet
         case .chamfer: .chamfer
@@ -195,6 +202,9 @@ struct FeatureRow: Identifiable, Equatable {
         case "body.delete": .trash
         case "plane.create": .plane
         case "body.hole": .hole
+        case "pattern.linear": .linearPattern
+        case "pattern.circular": .circularPattern
+        case "pattern.mirror": .mirror
         case "body.create_box": .box
         case "body.create_cylinder", "body.create_cone": .cylinder
         case "body.create_sphere", "body.create_torus": .sphere
@@ -209,6 +219,9 @@ struct FeatureRow: Identifiable, Equatable {
         case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
         case "plane.create": .plane
         case "body.hole": .hole
+        case "pattern.linear": .linearPattern
+        case "pattern.circular": .circularPattern
+        case "pattern.mirror": .mirror
         case "body.fillet_edges": .fillet
         case "body.chamfer_edges": .chamfer
         case "body.shell": .shell

@@ -221,6 +221,10 @@ public actor Engine {
             {
                 p["sketch"] = .string(active)
             }
+            // Seed features by id, so renaming them does not break the pattern.
+            if let seeds = p["features"]?.arrayValue {
+                p["features"] = .array(seeds.map { s in s.stringValue.flatMap { try? doc.featureIndex($0) }.map { .string(doc.features[$0].id) } ?? s })
+            }
             let created = doc.bodyOrder.filter { before.bodies[$0] == nil } + doc.refPlaneOrder.filter { before.refPlanes[$0] == nil }
             var edges: Int?
             if let b = p["body"]?.stringValue, let body = try? before.body(b), let t = try? body.shape.topology() {

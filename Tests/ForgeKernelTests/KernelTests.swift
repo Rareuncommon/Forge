@@ -260,3 +260,17 @@ struct KernelFeatureTests {
         #expect(throws: ForgeError.self) { try Kernel.offsetFace(sq, by: -6) }
     }
 }
+
+@Suite("Kernel: transforms")
+struct KernelTransformTests {
+    @Test func reflectionAndComposition() throws {
+        let box = try Kernel.box(origin: Vec3(1, 2, 3), size: Vec3(4, 5, 6))
+        let m = try Kernel.transform(box, .reflection(origin: Vec3(10, 0, 0), normal: Vec3(1, 0, 0)))
+        #expect(abs(try m.massProperties().volume - 120) < 1e-9)
+        let bb = try m.boundingBox()
+        #expect((bb.min - Vec3(15, 2, 3)).length < 1e-6 && (bb.max - Vec3(19, 7, 9)).length < 1e-6)
+        #expect(try m.check().isValid)
+        let t = Transform3.translation(Vec3(1, 0, 0)).then(.rotation(axis: .unitZ, angle: .pi / 2))
+        #expect((t.apply(Vec3(1, 0, 0)) - Vec3(0, 2, 0)).length < 1e-12)
+    }
+}

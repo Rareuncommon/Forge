@@ -74,6 +74,18 @@ private struct FeaturesTab: View {
             }
         }
         RibbonSeparator()
+        RibbonGroup("Pattern") {
+            RibbonFlyout(icon: model.operation == .circularPattern ? .circularPattern : .linearPattern,
+                         title: model.operation == .circularPattern ? "Circular\nPattern" : "Linear\nPattern",
+                         active: model.operation == .linearPattern || model.operation == .circularPattern, enabled: hasBody,
+                         action: { model.begin(.linearPattern) }) {
+                Button("Linear Pattern") { model.begin(.linearPattern) }
+                Button("Circular Pattern") { model.begin(.circularPattern) }
+            }
+            RibbonLarge(.mirror, "Mirror", active: model.operation == .mirror, enabled: hasBody,
+                        help: "Mirror features about a plane or planar face") { model.begin(.mirror) }
+        }
+        RibbonSeparator()
         RibbonGroup("Reference") {
             RibbonFlyout(icon: .plane, title: "Reference\nGeometry", active: model.operation == .plane, action: { model.begin(.plane) }) {
                 Button("Plane") { model.begin(.plane) }

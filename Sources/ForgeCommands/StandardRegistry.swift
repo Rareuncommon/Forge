@@ -72,6 +72,9 @@ extension CommandRegistry {
         r.register(BodyDraft.self)
         r.register(PlaneCreate.self)
         r.register(BodyHole.self)
+        r.register(PatternLinear.self)
+        r.register(PatternCircular.self)
+        r.register(PatternMirror.self)
         r.register(BodyDelete.self)
         r.register(BodyRename.self)
         // feature tree

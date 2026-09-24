@@ -64,7 +64,7 @@ extension Document {
     /// Commands whose invocations become features.
     public static let featureCommands: Set<String> = [
         "body.extrude", "body.revolve", "body.boolean", "body.transform", "body.fillet_edges", "body.chamfer_edges", "body.shell",
-        "body.draft", "body.delete", "plane.create", "body.hole",
+        "body.draft", "body.delete", "plane.create", "body.hole", "pattern.linear", "pattern.circular", "pattern.mirror",
         "body.create_box", "body.create_cylinder", "body.create_sphere", "body.create_cone", "body.create_torus",
     ]
 
@@ -81,6 +81,9 @@ extension Document {
         case "body.draft": "Draft"
         case "body.delete": "Body-Delete/Keep"
         case "plane.create": "Plane"
+        case "pattern.linear": "LPattern"
+        case "pattern.circular": "CirPattern"
+        case "pattern.mirror": "Mirror"
         case "body.hole":
             (params["size"]?.stringValue.map { $0 + " " } ?? "") + [
                 "counterbore": "Counterbore", "countersink": "Countersink", "tapped": "Tapped Hole",

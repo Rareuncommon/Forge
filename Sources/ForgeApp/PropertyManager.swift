@@ -43,6 +43,12 @@ struct OperationForm {
     var planeReference = "top", planeOffset = "20", planeFlip = false
     var holeType = "counterbore", holeSize = "M6", holeFit = "normal", holeEnd = "through_all", holeDepth = "10", holeThreadDepth = "8"
     var holeReverse = false
+    /// Patterns and mirror: the seed features (ids), directions and counts.
+    var seeds: [String] = []
+    var linDirection = "x", linSpacing = "20", linCount = "3", linReverse = false
+    var linDirection2On = false, linDirection2 = "y", linSpacing2 = "20", linCount2 = "2"
+    var cirAxis = "y", cirAngle = "360", cirCount = "6", cirEqual = true, cirReverse = false
+    var mirrorPlane = "right"
     /// Which selection box receives picks (Draft: "neutral" or "faces").
     var activeBox = "faces"
     var merge = true
@@ -79,6 +85,14 @@ extension AppModel {
         switch op {
         case .plane:
             form.planeReference = selectedFace ?? "top"
+        case .linearPattern, .circularPattern, .mirror:
+            // The last pattern-able feature is the usual seed.
+            let last = features.last { ["body.extrude", "body.revolve", "body.hole"].contains($0.command) && !$0.suppressed }
+            form.seeds = last.map { [$0.id] } ?? []
+            if op == .mirror, let f = selectedFace { form.mirrorPlane = f }
+            if let e = selectedEdges.first {
+                if op == .linearPattern { form.linDirection = e } else if op == .circularPattern { form.cirAxis = e }
+            }
         case .extrude, .revolve, .cutExtrude, .cutRevolve, .hole:
             if operationSketch == nil || !sketches.contains(where: { $0.id == operationSketch }) {
                 operationSketch = activeSketch ?? selection.first(where: { $0.hasPrefix("sketch-") && !$0.contains("/") }) ?? sketches.last?.id
@@ -188,6 +202,22 @@ extension AppModel {
             } else {
                 form.thinOn = false
             }
+        case .linearPattern, .circularPattern, .mirror:
+            form.seeds = p["features"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            form.linDirection = p["direction"]?.stringValue ?? form.linDirection
+            form.linSpacing = t(p["spacing"]) ?? form.linSpacing
+            form.linCount = p["count"]?.intValue.map(String.init) ?? form.linCount
+            form.linReverse = p["reverse"]?.boolValue ?? false
+            form.linDirection2On = p["direction2"] != nil
+            form.linDirection2 = p["direction2"]?.stringValue ?? form.linDirection2
+            form.linSpacing2 = t(p["spacing2"]) ?? form.linSpacing2
+            form.linCount2 = p["count2"]?.intValue.map(String.init) ?? form.linCount2
+            form.cirAxis = p["axis"]?.stringValue ?? form.cirAxis
+            form.cirAngle = t(p["angle"]) ?? "360"
+            form.cirCount = p["count"]?.intValue.map(String.init) ?? form.cirCount
+            form.cirEqual = p["equal_spacing"]?.boolValue ?? true
+            form.cirReverse = p["reverse"]?.boolValue ?? false
+            form.mirrorPlane = p["plane"]?.stringValue ?? form.mirrorPlane
         case .hole:
             operationSketch = p["sketch"]?.stringValue ?? operationSketch
             form.holeType = p["type"]?.stringValue ?? "hole"
@@ -259,7 +289,7 @@ extension AppModel {
     func commitFeatureEdit(_ id: String, _ op: Operation) async {
         var params: JSONValue?
         switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft:
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft, .linearPattern, .circularPattern, .mirror:
             params = invocations(for: op)?.first?.params
             if case .object(var o)? = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
                 // A feature that made its own body keeps doing so.
@@ -351,6 +381,30 @@ extension AppModel {
             if form.holeType == "tapped" { p["thread_depth"] = quantity(form.holeThreadDepth) }
             if form.holeReverse { p["reverse"] = true }
             return [Invocation("body.hole", .object(p))]
+        case .linearPattern:
+            guard !form.seeds.isEmpty else { return nil }
+            var p: [String: JSONValue] = [
+                "features": .array(form.seeds.map { .string($0) }), "direction": .string(form.linDirection), "spacing": quantity(form.linSpacing),
+                "count": .number(Double(Int(form.linCount) ?? 2)),
+            ]
+            if form.linReverse { p["reverse"] = true }
+            if form.linDirection2On {
+                p["direction2"] = .string(form.linDirection2)
+                p["spacing2"] = quantity(form.linSpacing2)
+                p["count2"] = .number(Double(Int(form.linCount2) ?? 1))
+            }
+            return [Invocation("pattern.linear", .object(p))]
+        case .circularPattern:
+            guard !form.seeds.isEmpty else { return nil }
+            var p: [String: JSONValue] = [
+                "features": .array(form.seeds.map { .string($0) }), "axis": .string(form.cirAxis), "angle": angleQuantity(form.cirAngle),
+                "count": .number(Double(Int(form.cirCount) ?? 2)), "equal_spacing": .bool(form.cirEqual),
+            ]
+            if form.cirReverse { p["reverse"] = true }
+            return [Invocation("pattern.circular", .object(p))]
+        case .mirror:
+            guard !form.seeds.isEmpty else { return nil }
+            return [Invocation("pattern.mirror", ["features": .array(form.seeds.map { .string($0) }), "plane": .string(form.mirrorPlane)])]
         case .plane:
             var p: [String: JSONValue] = ["reference": .string(form.planeReference), "offset": quantity(form.planeOffset)]
             if form.planeFlip { p["flip"] = true }
@@ -395,7 +449,7 @@ extension AppModel {
 
     /// Recompute the live preview of the open operation (translucent bodies in the viewport).
     func updatePreview() async {
-        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve, .cutRevolve, .hole].contains(op) || { if case .primitive = op { true } else { false } }(),
+        guard let op = operation, editingFeature == nil, [Operation.extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .linearPattern, .circularPattern, .mirror].contains(op) || { if case .primitive = op { true } else { false } }(),
             let items = invocations(for: op)
         else {
             clearOperationPreview()
@@ -442,7 +496,9 @@ extension AppModel {
         guard let op = operation else { return "" }
         let f = form
         return [op.title, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
-                String(f.merge), f.scope.joined(separator: ","), String(f.draftOn), f.draftAngle, String(f.draftOutward), String(f.thinOn), f.thinType,
+                String(f.merge), f.scope.joined(separator: ","), f.seeds.joined(separator: ","), f.linDirection, f.linSpacing, f.linCount, String(f.linReverse),
+                String(f.linDirection2On), f.linDirection2, f.linSpacing2, f.linCount2, f.cirAxis, f.cirAngle, f.cirCount, String(f.cirEqual),
+                String(f.cirReverse), f.mirrorPlane, f.holeType, f.holeSize, f.holeFit, f.holeEnd, f.holeDepth, String(f.holeReverse), String(f.draftOn), f.draftAngle, String(f.draftOutward), String(f.thinOn), f.thinType,
                 f.thinThickness, f.thinThickness2, String(f.thinReverse), f.axis, f.angle, f.width, f.height, f.boxDepth, f.cylRadius, f.cylHeight,
                 f.sphereRadius, f.coneBase, f.coneTop, f.coneHeight, f.torusMajor, f.torusMinor, String(sceneVersion)].joined(separator: "|")
     }
@@ -458,10 +514,12 @@ extension AppModel {
             return
         }
         switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft:
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .chamfer, .shell, .draft, .linearPattern, .circularPattern, .mirror:
             guard let items = invocations(for: op) else {
                 lastError = ForgeError(.invalidParams, [.chamfer: "select the edges to chamfer", .shell: "select a face to remove, or a body",
-                                                        .draft: "select the neutral plane and the faces to draft", .revolve: "choose the axis of revolution"][op] ?? "choose a sketch")
+                                                        .draft: "select the neutral plane and the faces to draft", .revolve: "choose the axis of revolution",
+                                                        .linearPattern: "choose the features to pattern", .circularPattern: "choose the features to pattern",
+                                                        .mirror: "choose the features to mirror"][op] ?? "choose a sketch")
                 return
             }
             if activeSketch != nil && op != .plane { await exitSketch() }

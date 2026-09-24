@@ -155,6 +155,34 @@ enum FeatureScope {
         return modified
     }
 
+    /// The seed tool and its pattern instances (placements are 3×4 row-major transforms).
+    static func tools(_ seed: Shape, _ instances: [[Double]]?, only: Bool?) throws -> [Shape] {
+        let copies = try (instances ?? []).map { m -> Shape in
+            guard m.count == 12 else { throw ForgeError(.invalidParams, "each instance is a 3×4 transform (12 numbers)") }
+            return try Kernel.transform(seed, Transform3(m: m))
+        }
+        return (only == true ? [] : [seed]) + copies
+    }
+
+    /// Combine tools the way a feature does: cut them, merge them, or make new bodies.
+    /// Returns the ids of the bodies changed or created (the first is the feature's body).
+    static func apply(_ tools: [Shape], cut: Bool, merge: Bool, _ doc: inout Document, _ scope: [String]?, name: String?, producedBy: String) throws -> [String] {
+        if cut {
+            guard var tool = tools.first else { return [] }
+            for t in tools.dropFirst() { tool = try Kernel.boolean(.fuse, tool, t) }
+            return try Self.cut(tool, &doc, scope, producedBy: producedBy)
+        }
+        var out: [String] = []
+        for t in tools {
+            if merge, let id = try Self.merge(t, &doc, scope, producedBy: producedBy) {
+                if !out.contains(id) { out.append(id) }
+            } else {
+                out.append(doc.addBody(name: out.isEmpty ? name : nil, shape: t, producedBy: producedBy).id)
+            }
+        }
+        return out
+    }
+
     /// Merge `solid` into the bodies in scope it touches (the first keeps its id, the others
     /// are consumed); returns that id, or nil when it touches none.
     static func merge(_ solid: Shape, _ doc: inout Document, _ scope: [String]?, producedBy: String) throws -> String? {
@@ -185,10 +213,13 @@ public enum BodyExtrude: Command {
         public var merge: Bool?
         public var scope: [String]?
         public var name: String?
+        public var instances: [[Double]]?
+        public var instancesOnly: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case sketch, depth, direction, reverse, vertex, direction2, draft, thin, operation, merge, scope, name
+            case sketch, depth, direction, reverse, vertex, direction2, draft, thin, operation, merge, scope, name, instances
             case endCondition = "end_condition"
+            case instancesOnly = "instances_only"
         }
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": FieldDoc("Sketch whose closed profile is extruded", default: "the sketch being edited"),
@@ -206,6 +237,8 @@ public enum BodyExtrude: Command {
             "merge": FieldDoc("Boss: merge the result into the bodies it touches instead of making a new body", default: false),
             "scope": FieldDoc("Bodies a cut or merge affects", default: "all bodies"),
             "name": FieldDoc("Body display name for a new body", default: "Body<n>"),
+            "instances": "Pattern instances: extra placements of the same extrusion, as 3×4 row-major transforms (used by pattern.* features)",
+            "instances_only": FieldDoc("Build only the instances, not the original (used by pattern.* features)", default: false),
         ]
         public func validate() throws {
             let ec = endCondition ?? (direction == .midPlane ? .midPlane : .blind)
@@ -346,18 +379,10 @@ public enum BodyExtrude: Command {
             solid = try Kernel.extrude(start, by: n * (b - a))
         }
 
-        if p.operation == .cut {
-            let modified = try FeatureScope.cut(solid, &doc, p.scope, producedBy: name)
-            ctx.document = doc
-            return Output(body: try BodySummary(try doc.body(modified[0])), bodies: modified)
-        }
-        if p.merge == true, let id = try FeatureScope.merge(solid, &doc, p.scope, producedBy: name) {
-            ctx.document = doc
-            return Output(body: try BodySummary(try doc.body(id)), bodies: [id])
-        }
-        let body = doc.addBody(name: p.name, shape: solid, producedBy: name)
+        let tools = try FeatureScope.tools(solid, p.instances, only: p.instancesOnly)
+        let ids = try FeatureScope.apply(tools, cut: p.operation == .cut, merge: p.merge == true, &doc, p.scope, name: p.name, producedBy: name)
         ctx.document = doc
-        return Output(body: try BodySummary(body))
+        return Output(body: try BodySummary(try doc.body(ids[0])), bodies: ids.count > 1 || p.operation == .cut || p.merge == true ? ids : nil)
     }
 }
 
@@ -370,7 +395,16 @@ public enum BodyRevolve: Command {
         public var merge: Bool?
         public var scope: [String]?
         public var name: String?
+        public var instances: [[Double]]?
+        public var instancesOnly: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case sketch, axis, angle, operation, merge, scope, name, instances
+            case instancesOnly = "instances_only"
+        }
         public static let fieldDocs: [String: FieldDoc] = [
+            "instances": "Pattern instances: extra placements of the same revolution, as 3×4 row-major transforms",
+            "instances_only": FieldDoc("Build only the instances (used by pattern.* features)", default: false),
             "operation": FieldDoc("boss (add material) or cut (remove it from the bodies in scope)", default: "boss"),
             "merge": FieldDoc("Boss: merge the result into the bodies it touches", default: false),
             "scope": FieldDoc("Bodies a cut or merge affects", default: "all bodies"),
@@ -412,17 +446,9 @@ public enum BodyRevolve: Command {
             e.entities = ["\(sk.id)/\(axisID)"]
             throw e
         }
-        if p.operation == .cut {
-            let modified = try FeatureScope.cut(solid, &doc, p.scope, producedBy: name)
-            ctx.document = doc
-            return Output(body: try BodySummary(try doc.body(modified[0])), bodies: modified)
-        }
-        if p.merge == true, let id = try FeatureScope.merge(solid, &doc, p.scope, producedBy: name) {
-            ctx.document = doc
-            return Output(body: try BodySummary(try doc.body(id)), bodies: [id])
-        }
-        let body = doc.addBody(name: p.name, shape: solid, producedBy: name)
+        let tools = try FeatureScope.tools(solid, p.instances, only: p.instancesOnly)
+        let ids = try FeatureScope.apply(tools, cut: p.operation == .cut, merge: p.merge == true, &doc, p.scope, name: p.name, producedBy: name)
         ctx.document = doc
-        return Output(body: try BodySummary(body))
+        return Output(body: try BodySummary(try doc.body(ids[0])), bodies: ids.count > 1 || p.operation == .cut || p.merge == true ? ids : nil)
     }
 }

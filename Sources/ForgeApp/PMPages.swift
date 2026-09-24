@@ -54,6 +54,8 @@ struct OperationPage: View {
         case .revolve where model.form.axis.isEmpty, .cutRevolve where model.form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
         case .plane: "Select a planar face or choose a plane as the first reference, then the offset."
         case .hole where model.sketches.isEmpty: "Sketch points on a face first: each point is a hole position."
+        case .linearPattern, .circularPattern, .mirror:
+            "Click features in the tree to add or remove them (extrusions, revolutions, holes). Select an edge in the view for a direction or axis."
         case .fillet where model.selectedEdges.isEmpty: "Select the edges to fillet (⇧-click adds)."
         case .chamfer where model.selectedEdges.isEmpty: "Select the edges to chamfer (⇧-click adds)."
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
@@ -201,6 +203,40 @@ struct OperationPage: View {
                 }
                 PMNote(text: "A hole is drilled at each point of the sketch (its plane is where the holes start). Sketch the points on the face first.")
             }
+        case .linearPattern:
+            PMSection("Direction 1") {
+                DirectionPicker(selection: $model.form.linDirection, reverse: $model.form.linReverse)
+                PMField(label: "Spacing", text: $model.form.linSpacing, unit: "mm", icon: .smartDimension)
+                PMField(label: "Instances", text: $model.form.linCount, icon: .linearPattern)
+            }
+            PMCheckGroup(title: "Direction 2", isOn: $model.form.linDirection2On) {
+                DirectionPicker(selection: $model.form.linDirection2, reverse: .constant(false))
+                PMField(label: "Spacing", text: $model.form.linSpacing2, unit: "mm", icon: .smartDimension)
+                PMField(label: "Instances", text: $model.form.linCount2, icon: .linearPattern)
+            }
+            SeedFeatures()
+        case .circularPattern:
+            PMSection("Direction 1") {
+                DirectionPicker(selection: $model.form.cirAxis, reverse: $model.form.cirReverse, axis: true)
+                PMField(label: "Angle", text: $model.form.cirAngle, unit: "°", icon: .arc)
+                PMField(label: "Instances", text: $model.form.cirCount, icon: .circularPattern)
+                PMCheckbox(label: "Equal spacing", isOn: $model.form.cirEqual)
+            }
+            SeedFeatures()
+        case .mirror:
+            PMSection("Mirror Face/Plane") {
+                PMPicker(label: "", selection: $model.form.mirrorPlane, icon: .plane) {
+                    Text("Front Plane").tag("front")
+                    Text("Top Plane").tag("top")
+                    Text("Right Plane").tag("right")
+                    ForEach(model.refPlanes, id: \.id) { Text($0.name).tag($0.id) }
+                    if let f = model.selectedFace { Text("Selected face (\(shortName(f)))").tag(f) }
+                    if model.form.mirrorPlane.contains("/face-") && model.form.mirrorPlane != model.selectedFace {
+                        Text(shortName(model.form.mirrorPlane)).tag(model.form.mirrorPlane)
+                    }
+                }
+            }
+            SeedFeatures()
         case .plane:
             PMSection("First Reference") {
                 PMPicker(label: "", selection: $model.form.planeReference, icon: .plane) {
@@ -833,6 +869,49 @@ struct SelectionPage: View {
             if let info = model.inspector {
                 PMSection("Properties") { KeyValueList(value: info) }
             }
+        }
+    }
+}
+
+/// Direction or axis: x/y/z, the selected straight edge, or one chosen before.
+private struct DirectionPicker: View {
+    @Environment(AppModel.self) private var model
+    @Binding var selection: String
+    @Binding var reverse: Bool
+    var axis = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { reverse.toggle() } label: {
+                IconView(icon: .prevView, size: 15).foregroundStyle(reverse ? Theme.accentText : Theme.text2)
+                    .frame(width: 28, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(reverse ? Theme.accentSoft : Theme.surface))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.fieldLine))
+            }
+            .buttonStyle(.plain)
+            .help("Reverse Direction")
+            Picker("Direction", selection: $selection) {
+                Text(axis ? "X axis" : "X").tag("x")
+                Text(axis ? "Y axis" : "Y").tag("y")
+                Text(axis ? "Z axis" : "Z").tag("z")
+                if let e = model.selectedEdges.first { Text("Selected edge (\(shortName(e)))").tag(e) }
+                if selection.contains("/") && selection != model.selectedEdges.first { Text(shortName(selection)).tag(selection) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+        }
+    }
+}
+
+/// The seed features of a pattern or mirror (click features in the tree to toggle them).
+private struct SeedFeatures: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        PMSection("Features and Faces") {
+            PMSelectionBox(
+                items: model.form.seeds.map { id in (icon: model.features.first { $0.id == id }?.icon ?? .part, text: model.features.first { $0.id == id }?.name ?? id) },
+                placeholder: "Features to pattern", active: true)
         }
     }
 }

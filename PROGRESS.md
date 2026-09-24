@@ -1,18 +1,29 @@
 # Progress
 
-## Session 3 — 2026-09-23 — Design-driven UI, SolidWorks research
+## Session 3 — 2026-09-23/24 — SolidWorks research, design, feature tree, part features
 
-- **Research:** `docs/research/solidworks.md` covers SolidWorks UI anatomy, the full feature
-  inventory with options, and a priority list mapped to FEATURES.md IDs. Its top missing items
-  drive the roadmap: the parametric feature tree (ADR 0011), extrude end conditions and cuts,
-  sketch on face, chamfer, Hole Wizard, reference geometry, patterns and mirror, shell.
-- **Design:** the Claude Design canvas (`docs/design`, three artboards) defines the UI. The
-  icons are Forge's own and live in `Sources/ForgeApp/Icons.swift`, which both the mockups
-  and the app draw from.
-- **App:** rebuilt to the design (toolbar, ribbon, tree, PropertyManager, viewport overlays,
-  more sketch tools; see commit c45ee33). CI run #22 compiles it on macOS. It has not been run
-  interactively since the rebuild.
-- **Next:** M2 feature tree per ADR 0011, then the research priority list.
+- **Research:** `docs/research/solidworks.md` (UI anatomy, full feature inventory, priority
+  list). It is the reference for how every tool behaves and which PropertyManager page it has.
+- **Design:** Claude Design canvas in `docs/design`; the app's icons are drawn from the same
+  paths (`Sources/ForgeApp/Icons.swift`).
+- **Feature tree (ADR 0011, first cut):** body-producing commands are recorded as features
+  and replayed on change (sketch edits regenerate the solids built from them); edit,
+  rename, suppress, delete, rollback, error isolation, stable body ids; file schema 2.
+  Persistent names (ADR 0002) are still pending: fillet/chamfer/shell/draft reference
+  transient indices and warn when the referenced body's topology count changes.
+- **Part features:** Extrude end conditions (blind, through all, through all both, mid
+  plane, up to vertex), reverse, Direction 2, draft, thin (closed profiles), merge, cut with
+  scope; Revolve boss/cut; Chamfer; Shell; Draft (neutral plane); Plane (offset from
+  plane or face) and sketches on planes/faces that follow them; Hole Wizard (ISO);
+  Linear/Circular Pattern and Mirror of extrusions, revolutions and holes.
+- **Sketcher UX:** SolidWorks inference snapping (endpoints, midpoints, on-curve, H/V,
+  dotted alignment guides), per-tool PropertyManager pages with variants, Smart Dimension
+  with a Modify box, live translucent previews, SolidWorks keys and mouse navigation,
+  context toolbar, shortcut bar, Cancel Sketch.
+- **CI:** every push green on Linux (OCCT 7.6) and macOS (OCCT 8.0.1, app build); the new
+  kernel functions are also tested against OCCT 8.0.1 locally.
+- **Next:** persistent naming (ADR 0002) for face/edge references; Rib, Sweep, Loft,
+  Convert Entities, up-to-surface end conditions, materials, equations, configurations.
 
 ## Session 2 — 2026-09-23 — Milestone 1 (sketcher) + first sketch-to-solid
 
