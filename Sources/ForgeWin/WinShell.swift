@@ -17,7 +17,8 @@ import Observation
 final class WinShell {
     let model = AppModel()
     private(set) var app: OpaquePointer?
-    private(set) var viewport: WinViewport!
+    /// Nil while the window is being created (Win32 sends WM_SIZE… before fw_app_create returns).
+    private(set) var viewport: WinViewport?
 
     // What the native controls were built from (events index into these).
     private var ribbonButtons: [RibbonButton] = []
@@ -124,7 +125,7 @@ final class WinShell {
     }
 
     func sync() {
-        guard app != nil else { return }
+        guard app != nil, let viewport else { return }
         // Entering a sketch shows the sketch tools; leaving it goes back to features (as on macOS).
         let nowSketching = model.activeSketch != nil
         if nowSketching != sketching {
@@ -283,7 +284,7 @@ final class WinShell {
 
     private func pushMenus() {
         guard let app else { return }
-        let (display, style, canNormal) = observe({ (model.display, viewport.style, model.activeSketch != nil) }) { $0.dirtyMenus = true }
+        let (display, style, canNormal) = observe({ (model.display, viewport?.style ?? .shadedWithEdges, model.activeSketch != nil) }) { $0.dirtyMenus = true }
         fw_set_menu_check(app, Int32(FW_MENU_PERSPECTIVE), display.perspective ? 1 : 0)
         fw_set_menu_check(app, Int32(FW_MENU_PLANES), display.planes ? 1 : 0)
         fw_set_menu_check(app, Int32(FW_MENU_RELATIONS), display.relations ? 1 : 0)
@@ -328,7 +329,7 @@ final class WinShell {
         case FW_EV_CLOSE:
             break
         default:
-            viewport.handle(e, text: text)
+            viewport?.handle(e, text: text)
         }
         sync()
     }

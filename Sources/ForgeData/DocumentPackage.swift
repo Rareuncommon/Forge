@@ -196,7 +196,21 @@ public struct DocumentPackage: Sendable, Equatable {
                 try data.write(to: f)
             }
             if fm.fileExists(atPath: url.path) {
+                #if os(Windows)
+                // Foundation on Windows has no replaceItemAt: move the old package aside, move the
+                // new one in, then delete the old one (restored if the move fails).
+                let old = parent.appendingPathComponent(".\(url.lastPathComponent).old-\(UUID().uuidString)")
+                try fm.moveItem(at: url, to: old)
+                do {
+                    try fm.moveItem(at: tmp, to: url)
+                } catch {
+                    try? fm.moveItem(at: old, to: url)
+                    throw error
+                }
+                try? fm.removeItem(at: old)
+                #else
                 _ = try fm.replaceItemAt(url, withItemAt: tmp)
+                #endif
             } else {
                 try fm.moveItem(at: tmp, to: url)
             }
