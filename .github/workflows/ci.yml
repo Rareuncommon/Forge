@@ -88,3 +88,39 @@ jobs:
       - name: Build app (Metal + SwiftUI)
         if: always()
         run: swift build --product ForgeApp
+
+  windows:
+    # The engine, tests and forge-cli on Windows (Swift 6.4, OCCT's official MSVC x64 build),
+    # then the native Windows app (docs/adr/0012-windows-app.md).
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          source: swift.org
+          swift-version: swift-6.4.0-release
+          swift-build: 6.4.0-RELEASE
+      - name: Restore OCCT
+        uses: actions/cache@v5
+        with:
+          path: Vendor/occt/windows-x64
+          key: occt-windows-x64-${{ hashFiles('scripts/fetch-occt-windows.sh') }}
+      - name: Fetch OCCT
+        run: scripts/fetch-occt-windows.sh
+      - name: Build engine and tests
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          swift --version
+          swift build --build-tests
+      - name: Test
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          swift test
+      - name: Golden models through forge-cli
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          .build/debug/forge-cli.exe run Tests/GoldenModelTests/Models/*.json --quiet

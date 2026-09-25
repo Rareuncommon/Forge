@@ -251,6 +251,8 @@ package final class AppModel {
     package var shortcutBarAt: CGPoint?
     package var orientationPaletteShown = false
 
+    package init() {}
+
     package func bootstrap() async {
         await run("document.new", ["name": "Part1"])
     }

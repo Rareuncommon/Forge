@@ -6,6 +6,8 @@ import Foundation
 import Glibc
 #elseif canImport(Darwin)
 import Darwin
+#elseif os(Windows)
+import ucrt
 #endif
 
 /// Serialised, newline-delimited writes to a file descriptor.
@@ -25,12 +27,16 @@ final class LineWriter: @unchecked Sendable {
             let n = bytes[offset...].withUnsafeBytes { raw in
                 #if canImport(Glibc)
                 Glibc.write(fd, raw.baseAddress, raw.count)
+                #elseif os(Windows)
+                Int(ucrt._write(fd, raw.baseAddress, UInt32(raw.count)))
                 #else
                 Darwin.write(fd, raw.baseAddress, raw.count)
                 #endif
             }
             if n <= 0 {
+                #if !os(Windows)
                 if n < 0 && errno == EINTR { continue }
+                #endif
                 return
             }
             offset += n
@@ -45,8 +51,12 @@ func lines(from fd: Int32) -> AsyncStream<String> {
             var buffer = [UInt8]()
             var chunk = [UInt8](repeating: 0, count: 65536)
             while true {
+                #if os(Windows)
+                let n = chunk.withUnsafeMutableBytes { raw in Int(_read(fd, raw.baseAddress, UInt32(raw.count))) }
+                #else
                 let n = chunk.withUnsafeMutableBytes { raw in read(fd, raw.baseAddress, raw.count) }
                 if n < 0 && errno == EINTR { continue }
+                #endif
                 if n <= 0 { break }
                 buffer.append(contentsOf: chunk[0..<n])
                 while let nl = buffer.firstIndex(of: 0x0A) {
@@ -75,10 +85,18 @@ public func serveConnection(engine: Engine, input: Int32, output: Int32) async {
 /// MCP over stdio (the standard transport for local MCP servers).
 public enum StdioTransport {
     public static func run(engine: Engine) async {
+        #if os(Windows)
+        // Binary mode: no CRLF translation of the newline-delimited JSON.
+        _ = _setmode(0, 0x8000)
+        _ = _setmode(1, 0x8000)
+        await serveConnection(engine: engine, input: 0, output: 1)
+        #else
         await serveConnection(engine: engine, input: STDIN_FILENO, output: STDOUT_FILENO)
+        #endif
     }
 }
 
+#if !os(Windows)
 /// MCP over a local Unix-domain socket, so an app instance can be driven by several local
 /// agents at once. All connections share one Engine (one command bus).
 public final class UnixSocketTransport: @unchecked Sendable {
@@ -144,3 +162,21 @@ public final class UnixSocketTransport: @unchecked Sendable {
         unlink(path)
     }
 }
+#else
+/// MCP over a local socket is not available on Windows yet (named pipes / AF_UNIX via
+/// WinSock). Use the stdio transport.
+public final class UnixSocketTransport: @unchecked Sendable {
+    public let path: String
+
+    public init(path: String) { self.path = path }
+
+    // NOT IMPLEMENTED: Windows local-socket transport (FEATURES.md: 1.x mcp socket on Windows).
+    public func start(engine: Engine) throws {
+        throw ForgeError(
+            .unsupported, "the local socket transport is not available on Windows yet; run forge-cli mcp over stdio",
+            suggestions: [SuggestedFix(description: "Serve MCP over stdio", command: "forge-cli mcp")])
+    }
+
+    public func stop() {}
+}
+#endif

@@ -16,19 +16,29 @@ let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().pa
 
 #if os(macOS)
 let defaultOCCTPrefix = "\(packageRoot)/Vendor/occt/darwin-arm64"
+#elseif os(Windows)
+// Windows: an OCCT install for MSVC x64 (official release zip or CMake install), see
+// docs/adr/0012-windows-app.md. There is no system location.
+let defaultOCCTPrefix = "\(packageRoot)/Vendor/occt/windows-x64"
 #else
 let defaultOCCTPrefix = "/usr"
 #endif
 let occtPrefix = env["FORGE_OCCT_PREFIX"] ?? defaultOCCTPrefix
-let occtInclude = "\(occtPrefix)/include/opencascade"
+
+func existing(_ paths: [String]) -> [String] { paths.filter { FileManager.default.fileExists(atPath: $0) } }
+
+// Unix installs use include/opencascade; OCCT's Windows layout uses inc/.
+let occtInclude = existing(["\(occtPrefix)/include/opencascade", "\(occtPrefix)/inc"]).first ?? "\(occtPrefix)/include/opencascade"
 
 let occtLibDirs: [String] = {
     var dirs = ["\(occtPrefix)/lib"]
     #if os(Linux)
     dirs.append("\(occtPrefix)/lib/x86_64-linux-gnu")
     dirs.append("\(occtPrefix)/lib/aarch64-linux-gnu")
+    #elseif os(Windows)
+    dirs.append("\(occtPrefix)/win64/vc14/lib")
     #endif
-    return dirs.filter { FileManager.default.fileExists(atPath: $0) }
+    return existing(dirs)
 }()
 
 /// "de" = OCCT >= 7.8 DataExchange toolkits (TKDESTEP, TKDESTL, TKDEIGES); "legacy" = TKSTEP etc.
@@ -36,7 +46,7 @@ let occtLayout: String = {
     if let forced = env["FORGE_OCCT_LAYOUT"] { return forced }
     for dir in occtLibDirs {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        if files.contains(where: { $0.hasPrefix("libTKDESTEP") }) { return "de" }
+        if files.contains(where: { $0.hasPrefix("libTKDESTEP") || $0.hasPrefix("TKDESTEP") }) { return "de" }
     }
     return "legacy"
 }()
@@ -50,7 +60,16 @@ let occtDataExchangeLibs = occtLayout == "de"
     ? ["TKDE", "TKDESTEP", "TKDESTL", "TKDEIGES"]
     : ["TKSTEP", "TKSTEPBase", "TKSTEPAttr", "TKSTEP209", "TKSTL", "TKIGES"]
 
+#if os(Windows)
+// No rpath on Windows: the OCCT DLLs must be on PATH at run time.
+let occtLinkerFlags: [String] = occtLibDirs.map { "-L\($0)" }
+let occtCxxFlags: [String] = ["-I\(occtInclude)", "-Wno-deprecated-declarations", "-Wno-deprecated-enum-enum-conversion"]
+    // OCCT's release libraries are built with the release C++ library settings.
+    + ["-D_ITERATOR_DEBUG_LEVEL=0", "-DWNT"]
+#else
 let occtLinkerFlags: [String] = occtLibDirs.flatMap { ["-L\($0)", "-Xlinker", "-rpath", "-Xlinker", $0] }
+let occtCxxFlags: [String] = ["-I\(occtInclude)", "-Wno-deprecated-declarations", "-Wno-deprecated-enum-enum-conversion"]
+#endif
 
 let strictSwift: [SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
@@ -62,7 +81,7 @@ var targets: [Target] = [
         name: "CForgeKernel",
         path: "Sources/CForgeKernel",
         cxxSettings: [
-            .unsafeFlags(["-I\(occtInclude)", "-Wno-deprecated-declarations", "-Wno-deprecated-enum-enum-conversion"]),
+            .unsafeFlags(occtCxxFlags),
         ],
         linkerSettings: (occtCoreLibs + occtDataExchangeLibs).map { .linkedLibrary($0) }
             + [.unsafeFlags(occtLinkerFlags)]

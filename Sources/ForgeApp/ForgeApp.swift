@@ -15,6 +15,9 @@ import ForgeSketch
 import ForgeUI
 import SwiftUI
 
+/// The PropertyManager operation (ForgeUI's, not Foundation's `Operation`).
+typealias Operation = ForgeUI.Operation
+
 @main
 struct ForgeApp: App {
     @State private var model = AppModel()

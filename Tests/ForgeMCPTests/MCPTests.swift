@@ -165,6 +165,7 @@ struct MCPServerTests {
     }
 }
 
+#if !os(Windows)
 @Suite("MCP Unix socket transport")
 struct SocketTests {
     @Test func initializeOverSocket() async throws {
@@ -200,3 +201,4 @@ struct SocketTests {
         #expect(response["result"]?["protocolVersion"] == "2025-06-18")
     }
 }
+#endif

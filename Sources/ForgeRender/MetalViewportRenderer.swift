@@ -35,20 +35,13 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     private var sceneBounds: BoundingBox?
     private var previewBounds: BoundingBox?
 
-    struct GPUItem {
-        var objectID: UInt32
-        var triangles: (any MTLBuffer)?
-        var triangleVertexCount: Int
-        var lines: (any MTLBuffer)?
-        var lineVertexCount: Int
-        var color: RGBA
-    }
+    typealias GPUItem = ViewportBatch<any MTLBuffer>
 
     // Vertex layouts (must match the MSL structs below).
     // TriVertex: packed_float3 position, packed_float3 normal, uint element, uint highlighted = 32 bytes
     // LineVertex: packed_float3 position, uint element, uint highlighted, packed_float3 color = 32 bytes
-    static let triStride = 32
-    static let lineStride = 32
+    static let triStride = ViewportVertices.triangleStride
+    static let lineStride = ViewportVertices.lineStride
 
     public init?(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice(), colorFormat: MTLPixelFormat = .bgra8Unorm_srgb) {
         guard let device, let queue = device.makeCommandQueue() else { return nil }
@@ -118,61 +111,11 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
     }
 
     private func gpuItem(_ item: RenderItem) -> GPUItem {
-            let m = item.mesh
-            var tri = [UInt8]()
-            tri.reserveCapacity(m.triangleCount * 3 * Self.triStride)
-            for t in 0..<m.triangleCount {
-                let face = m.triangleFaces[t]
-                let hl: UInt32 = item.highlightAll || item.highlightedFaces.contains(face) ? 1 : 0
-                for k in 0..<3 {
-                    let v = Int(m.indices[3 * t + k])
-                    append(&tri, floats: [m.positions[3 * v], m.positions[3 * v + 1], m.positions[3 * v + 2]])
-                    append(&tri, floats: [m.normals[3 * v], m.normals[3 * v + 1], m.normals[3 * v + 2]])
-                    append(&tri, uints: [face + 1, hl])
-                }
-            }
-            var lines = [UInt8]()
-            for e in 0..<m.edgeCount {
-                let s = Int(m.edgeOffsets[e]), en = Int(m.edgeOffsets[e + 1])
-                guard en - s >= 2 else { continue }
-                let id = (m.edgeIDs[e] + 1) | RenderImage.edgeFlag
-                let hl: UInt32 = item.highlightAll || item.highlightedEdges.contains(m.edgeIDs[e]) ? 1 : 0
-                let color = item.edgeColors[m.edgeIDs[e]] ?? RGBA.edge
-                for k in s..<(en - 1) {
-                    for p in [k, k + 1] {
-                        append(&lines, floats: [m.edgePoints[3 * p], m.edgePoints[3 * p + 1], m.edgePoints[3 * p + 2]])
-                        append(&lines, uints: [id, hl])
-                        append(&lines, floats: [color.r, color.g, color.b])
-                    }
-                }
-            }
-            return GPUItem(
-                objectID: item.objectID,
-                triangles: tri.isEmpty ? nil : device.makeBuffer(bytes: tri, length: tri.count, options: .storageModeShared),
-                triangleVertexCount: m.triangleCount * 3,
-                lines: lines.isEmpty ? nil : device.makeBuffer(bytes: lines, length: lines.count, options: .storageModeShared),
-                lineVertexCount: lines.count / Self.lineStride, color: item.color)
+        GPUItem(item) { bytes in device.makeBuffer(bytes: bytes, length: bytes.count, options: .storageModeShared) }
     }
 
-    private func append(_ buf: inout [UInt8], floats: [Float]) {
-        for f in floats { withUnsafeBytes(of: f.bitPattern.littleEndian) { buf.append(contentsOf: $0) } }
-    }
-
-    private func append(_ buf: inout [UInt8], uints: [UInt32]) {
-        for u in uints { withUnsafeBytes(of: u.littleEndian) { buf.append(contentsOf: $0) } }
-    }
-
-    /// Uniforms: float4x4 viewProj; float4 color; float4 highlight; float4 lightDir; float4 viewDir; uint4 ids.
-    private func uniforms(aspect: Double, item: GPUItem, lineColor: RGBA? = nil) -> [Float] {
-        let bounds = [sceneBounds, previewBounds].compactMap { $0 }.reduce(BoundingBox?.none) { acc, b in acc.map { $0.union(b) } ?? b }
-        let radius = bounds.map { max(($0.center - camera.target).length + $0.diagonal / 2, 1e-3) } ?? 1
-        let vp = camera.projectionMatrix(aspect: aspect, sceneRadius: radius) * camera.viewMatrix
-        let light = (camera.back + camera.up * 0.25 + camera.right * 0.15).normalized
-        let c = lineColor ?? (style == .hiddenLinesRemoved ? .white : item.color)
-        let hlrFlag: UInt32 = style == .hiddenLinesRemoved ? 1 : 0
-        return vp.floats + [c.r, c.g, c.b, c.a] + [RGBA.highlight.r, RGBA.highlight.g, RGBA.highlight.b, 1]
-            + [Float(light.x), Float(light.y), Float(light.z), 0] + [Float(camera.back.x), Float(camera.back.y), Float(camera.back.z), 0]
-            + [Float(bitPattern: item.objectID + 1), Float(bitPattern: hlrFlag), 0, 0]
+    private func frame(aspect: Double) -> ViewportFrame {
+        ViewportFrame(camera: camera, style: style, hiddenObjects: hiddenObjects, sceneBounds: sceneBounds, previewBounds: previewBounds, aspect: aspect)
     }
 
     // MARK: MTKViewDelegate
@@ -196,76 +139,37 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         cmd.commit()
     }
 
+    /// Execute the shared draw plan (ViewportFrame.draws) with this back end's pipelines.
     private func encode(_ enc: any MTLRenderCommandEncoder, aspect: Double, pick: Bool) {
-        enc.setDepthStencilState(depthState)
-        if style != .wireframe {
-            enc.setRenderPipelineState(pick ? pickTrianglePipeline : shadedPipeline)
-            for item in items {
-                guard let tri = item.triangles, pick || !hiddenObjects.contains(item.objectID) else { continue }
-                var u = uniforms(aspect: aspect, item: item)
-                enc.setVertexBuffer(tri, offset: 0, index: 0)
-                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
-                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-                enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
+        let draws = frame(aspect: aspect).draws(scene: items, preview: preview, overlay: overlay, pick: pick)
+        var pipeline: ViewportPipeline?
+        var depth: ViewportDepth?
+        for d in draws {
+            if d.pipeline != pipeline {
+                pipeline = d.pipeline
+                enc.setRenderPipelineState(
+                    switch d.pipeline {
+                    case .shaded: shadedPipeline
+                    case .lines: linePipeline
+                    case .preview: previewPipeline
+                    case .pickTriangles: pickTrianglePipeline
+                    case .pickLines: pickLinePipeline
+                    })
             }
-        }
-        enc.setRenderPipelineState(pick ? pickLinePipeline : linePipeline)
-        for item in items {
-            // In "shaded" style body edges are hidden, but line-only items (sketches, reference
-            // geometry) are always drawn.
-            guard let lines = item.lines, style != .shaded || item.triangles == nil, pick || !hiddenObjects.contains(item.objectID) else { continue }
-            var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
-            enc.setVertexBuffer(lines, offset: 0, index: 0)
+            if d.depth != depth {
+                depth = d.depth
+                enc.setDepthStencilState(
+                    switch d.depth {
+                    case .write: depthState
+                    case .test: previewDepthState
+                    case .none: overlayDepthState
+                    })
+            }
+            var u = d.uniforms
+            enc.setVertexBuffer(d.buffer, offset: 0, index: 0)
             enc.setVertexBytes(&u, length: u.count * 4, index: 1)
             enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-            enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
-        }
-        if !pick && !preview.isEmpty {
-            // Opaque previews (a modified body shown in place of the original): depth-tested
-            // and written like the scene.
-            let opaque = preview.filter { $0.color.a >= 0.999 }
-            if !opaque.isEmpty {
-                enc.setDepthStencilState(depthState)
-                enc.setRenderPipelineState(shadedPipeline)
-                for item in opaque {
-                    guard let tri = item.triangles else { continue }
-                    var u = uniforms(aspect: aspect, item: item)
-                    enc.setVertexBuffer(tri, offset: 0, index: 0)
-                    enc.setVertexBytes(&u, length: u.count * 4, index: 1)
-                    enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-                    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
-                }
-            }
-            enc.setRenderPipelineState(linePipeline)
-            for item in preview {
-                guard let lines = item.lines else { continue }
-                var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
-                enc.setVertexBuffer(lines, offset: 0, index: 0)
-                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
-                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-                enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
-            }
-            enc.setDepthStencilState(previewDepthState)
-            enc.setRenderPipelineState(previewPipeline)
-            for item in preview where item.color.a < 0.999 {
-                guard let tri = item.triangles else { continue }
-                var u = uniforms(aspect: aspect, item: item)
-                enc.setVertexBuffer(tri, offset: 0, index: 0)
-                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
-                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-                enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: item.triangleVertexCount)
-            }
-        }
-        if !pick && !overlay.isEmpty {
-            enc.setDepthStencilState(overlayDepthState)
-            for item in overlay {
-                guard let lines = item.lines else { continue }
-                var u = uniforms(aspect: aspect, item: item, lineColor: .edge)
-                enc.setVertexBuffer(lines, offset: 0, index: 0)
-                enc.setVertexBytes(&u, length: u.count * 4, index: 1)
-                enc.setFragmentBytes(&u, length: u.count * 4, index: 1)
-                enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: item.lineVertexCount)
-            }
+            enc.drawPrimitives(type: d.pipeline == .lines || d.pipeline == .pickLines ? .line : .triangle, vertexStart: 0, vertexCount: d.vertexCount)
         }
     }
 
