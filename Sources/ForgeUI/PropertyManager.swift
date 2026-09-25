@@ -98,6 +98,11 @@ extension AppModel {
             if operationSketch == nil || !sketches.contains(where: { $0.id == operationSketch }) {
                 operationSketch = activeSketch ?? selection.first(where: { $0.hasPrefix("sketch-") && !$0.contains("/") }) ?? sketches.last?.id
             }
+            if op == .revolve || op == .cutRevolve {
+                // The first centerline (else line) of the sketch is the usual axis.
+                let lines = revolveAxisOptions
+                if !lines.contains(form.axis) { form.axis = lines.first ?? "" }
+            }
             form.direction2 = false
             form.draftOn = false
             form.thinOn = false

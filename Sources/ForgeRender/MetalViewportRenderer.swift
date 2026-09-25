@@ -147,23 +147,25 @@ public final class MetalViewportRenderer: NSObject, MTKViewDelegate {
         for d in draws {
             if d.pipeline != pipeline {
                 pipeline = d.pipeline
-                enc.setRenderPipelineState(
+                let state: any MTLRenderPipelineState =
                     switch d.pipeline {
                     case .shaded: shadedPipeline
                     case .lines: linePipeline
                     case .preview: previewPipeline
                     case .pickTriangles: pickTrianglePipeline
                     case .pickLines: pickLinePipeline
-                    })
+                    }
+                enc.setRenderPipelineState(state)
             }
             if d.depth != depth {
                 depth = d.depth
-                enc.setDepthStencilState(
+                let state: any MTLDepthStencilState =
                     switch d.depth {
                     case .write: depthState
                     case .test: previewDepthState
                     case .none: overlayDepthState
-                    })
+                    }
+                enc.setDepthStencilState(state)
             }
             var u = d.uniforms
             enc.setVertexBuffer(d.buffer, offset: 0, index: 0)

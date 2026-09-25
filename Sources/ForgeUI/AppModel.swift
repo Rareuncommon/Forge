@@ -251,7 +251,15 @@ package final class AppModel {
     package var shortcutBarAt: CGPoint?
     package var orientationPaletteShown = false
 
+    /// Lines of each sketch, construction lines first (revolve axis choices).
+    package var sketchLineIDs: [String: [String]] = [:]
+    /// Point coordinates being typed in an entity page (by "point.x" / "point.y").
+    package var pointEdits: [String: String] = [:]
+
     package init() {}
+
+    /// Axis choices of a revolve: the lines of its sketch.
+    package var revolveAxisOptions: [String] { operationSketch.flatMap { sketchLineIDs[$0] } ?? [] }
 
     package func bootstrap() async {
         await run("document.new", ["name": "Part1"])
@@ -294,6 +302,10 @@ package final class AppModel {
         rollback = doc.rollback
         refPlanes = doc.orderedRefPlanes
         selection = doc.selection
+        sketchLineIDs = Dictionary(uniqueKeysWithValues: doc.orderedSketches.map { sk in
+            let lines = sk.orderedEntities.filter { $0.kind == .line }
+            return (sk.id, (lines.filter(\.construction) + lines.filter { !$0.construction }).map(\.id))
+        })
         if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
             let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)
             let editing = doc.activeSketch.flatMap { doc.sketches[$0] }

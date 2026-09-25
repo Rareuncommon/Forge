@@ -23,6 +23,11 @@ if [ ! -f "$dest/.fetched" ]; then
     [ -f "$dest/occt.zip" ] || { echo "could not download OCCT" >&2; exit 1; }
     (cd "$dest" && unzip -q -o occt.zip -d occt && rm occt.zip)
     if [ -f "$dest/3rdparty.zip" ]; then (cd "$dest" && unzip -q -o 3rdparty.zip -d 3rdparty && rm 3rdparty.zip); fi
+    # The release assets wrap the actual archives (opencascade-<v>-vc14-64.zip…): unpack those too.
+    while read -r inner; do
+        [ -n "$inner" ] || continue
+        unzip -q -o "$inner" -d "$(dirname "$inner")" && rm "$inner"
+    done < <(find "$dest" -name '*.zip')
     touch "$dest/.fetched"
 fi
 
