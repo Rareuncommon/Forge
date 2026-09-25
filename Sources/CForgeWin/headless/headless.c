@@ -60,3 +60,5 @@ void fw_line2d(fw_app *p0, float x0, float y0, float x1, float y1, float width, 
 void fw_frame_end(fw_app *p0) {  }
 int fw_pick_begin(fw_app *p0) { return 0; }
 int fw_pick_end(fw_app *p0, int x0, int y0, int w, int h, uint32_t *objects, uint32_t *elements) { return 0; }
+uint8_t *fw_capture(fw_app *p0, int *width, int *height) { return NULL; }
+void fw_app_quit(fw_app *p0) {  }

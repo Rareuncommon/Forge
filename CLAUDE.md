@@ -11,6 +11,11 @@ relevant ADRs in docs/adr/ before changing architecture.
 - Against OCCT 8: `FORGE_OCCT_PREFIX=<prefix> swift test --scratch-path .build-occt8`
   (build OCCT with `scripts/build-occt.sh --prefix <prefix>`).
 - `python3 scripts/features.py --check` — FEATURES.md in sync with SPEC.md §7.
+- Windows (docs/adr/0012): `scripts/fetch-occt-windows.sh`, `. Vendor/occt/windows-x64/forge-env.sh`,
+  then `swift build --product ForgeWin` (Git Bash, Swift 6.4). Off Windows,
+  `FORGE_WIN_CHECK=1 swift build --product ForgeWin` type-checks the Windows front end.
+- App logic belongs in ForgeUI (shared by macOS and Windows, tested in Tests/ForgeUITests);
+  a PropertyManager page change goes in both `PanelSpec.swift` and the macOS `PMPages.swift`.
 
 ## Rules (from SPEC §0)
 

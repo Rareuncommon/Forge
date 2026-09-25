@@ -1,5 +1,35 @@
 # Progress
 
+## Session 4 — 2026-09-25 — Native Windows app
+
+The user asked for a Windows port; chose a native app over a shared web UI (docs/adr/0012).
+
+- **ForgeUI** (new target, no UI framework): the app model moved out of the macOS app —
+  AppModel, operations and invocations, previews, sketch tools, dimensions, overlays — plus
+  `PanelSpec` / `RibbonSpec` / `TreeSpec` (PropertyManager, ribbon and tree as data) and
+  `PlatformServices` for native dialogs. Tested headless (Tests/ForgeUITests: picks
+  accumulate during fillet, multi-edge fillet commit, fillet/new-body previews, panel pages).
+- **ForgeRender.ViewportPlan**: vertex packing, uniforms and draw order shared by the Metal
+  and Direct3D renderers (tests on Linux).
+- **CForgeWin** (C++, Windows): Win32 shell (menus, accelerators, ribbon, TreeView tree,
+  generated PropertyManager, status bar, Modify box, dialogs) and a Direct3D 11 + Direct2D
+  renderer with GPU picking; plain C API. Compiled with MinGW and run under Wine with a C
+  driver replaying real draw lists (screenshots checked).
+- **ForgeWin** (Swift): the Windows front end on ForgeUI; builds on Windows, type-checked on
+  Linux against a headless shell API (`FORGE_WIN_CHECK=1`).
+- **Engine on Windows**: Package.swift finds OCCT's Windows layout; MCP stdio over the CRT
+  (the Unix-socket transport reports unsupported on Windows — NOT IMPLEMENTED there);
+  `scripts/fetch-occt-windows.sh` (official OCCT 8.0.0 MSVC build); CI `windows` job builds,
+  tests, runs the golden models, builds ForgeWin and runs its screenshot self-test.
+
+### Not done / known gaps (Windows)
+
+- Ribbon and tree have no icons yet (text buttons); the SVG icon set is not rendered on Windows.
+- No command palette (Ctrl+K), context toolbar, shortcut bar (S) or view orientation
+  palette (Space) on Windows yet; menus and the ribbon cover the commands.
+- MCP local-socket transport on Windows (named pipe or AF_UNIX) not implemented.
+- Installer / packaging (the OCCT and Swift runtime DLLs must be on PATH).
+
 ## Session 3 — 2026-09-23/24 — SolidWorks research, design, feature tree, part features
 
 - **Research:** `docs/research/solidworks.md` (UI anatomy, full feature inventory, priority

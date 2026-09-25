@@ -125,9 +125,23 @@ jobs:
       - name: Golden models through forge-cli
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
-          .build/debug/forge-cli.exe run Tests/GoldenModelTests/Models/*.json --quiet
+          "$(swift build --show-bin-path)/forge-cli.exe" run Tests/GoldenModelTests/Models/*.json --quiet
       - name: Build the Windows app (Win32 + Direct3D 11)
         if: always()
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
           swift build --product ForgeWin
+      - name: Run the Windows app (screenshot self-test)
+        if: always()
+        continue-on-error: true
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          timeout 180 "$(swift build --show-bin-path)/ForgeWin.exe" --screenshot forgewin.png || echo "exit $?"
+          ls -la forgewin.png
+          python -c "import base64,sys; sys.stdout.write(base64.b64encode(open('forgewin.png','rb').read()).decode())" | fold -w 150 | sed 's/^/PNG64 /'
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: forgewin-screenshot
+          path: forgewin.png
+          if-no-files-found: ignore

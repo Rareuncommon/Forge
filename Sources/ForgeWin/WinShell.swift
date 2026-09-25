@@ -65,6 +65,54 @@ final class WinShell {
         self.app = nil
     }
 
+    /// `--screenshot <file>`: build a small part, open a fillet with its live preview, save a
+    /// PNG of the window (half size) and quit. CI uses it to see the real app.
+    func selfTest(screenshot path: String) {
+        Task {
+            while model.log.isEmpty {  // the document from start() exists
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            await model.run("body.create_box", ["width": 60, "height": 40, "depth": 30])
+            model.zoomToFit()
+            await model.select("body-1/edge-0", extend: false)
+            model.begin(.fillet)
+            await model.select("body-1/edge-1", extend: false)
+            model.form.radius = "6"
+            await model.updatePreview()
+            sync()
+            try? await Task.sleep(for: .seconds(2))
+            if let app { fw_view_invalidate(app) }
+            try? await Task.sleep(for: .seconds(1))
+            saveScreenshot(path)
+            if let app { fw_app_quit(app) }
+        }
+    }
+
+    private func saveScreenshot(_ path: String) {
+        guard let app else { return }
+        var w: Int32 = 0, h: Int32 = 0
+        guard let pixels = fw_capture(app, &w, &h) else {
+            FileHandle.standardError.write(Data("screenshot: capture failed\n".utf8))
+            return
+        }
+        defer { fw_free(pixels) }
+        // Half size (2×2 average) keeps the file small.
+        let W = Int(w) / 2, H = Int(h) / 2
+        var out = [UInt8](repeating: 255, count: W * H * 4)
+        for y in 0..<H {
+            for x in 0..<W {
+                for c in 0..<3 {
+                    var sum = 0
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        sum += Int(pixels[((2 * y + dy) * Int(w) + 2 * x + dx) * 4 + c])
+                    }
+                    out[(y * W + x) * 4 + c] = UInt8(sum / 4)
+                }
+            }
+        }
+        try? PNG.encode(rgba: out, width: W, height: H).write(to: URL(fileURLWithPath: path))
+    }
+
     // MARK: pushing the model to the native controls
 
     private func observe<T>(_ read: () -> T, _ mark: @escaping @MainActor (WinShell) -> Void) -> T {

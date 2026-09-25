@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 995 rows — not started: 849 · in progress: 124 · done: 22 · verified: 0
+**Totals:** 998 rows — not started: 849 · in progress: 126 · done: 23 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -34,7 +34,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/golden-models` | Golden-model regression suite (§9) | in progress | Tests | Tests/GoldenModelTests | compare_to_spec | 22 models (16 body, 6 sketch) with analytic expectations |
 | `P/determinism` | Deterministic regeneration, bit-for-bit (§3) | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests | — | bit-identical BREP across regenerations tested; persistent IDs pending (M2) |
 | `P/mcp-stdio` | MCP server over stdio (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | own JSON-RPC implementation (docs/adr/0006); protocol 2025-11-25 with fallbacks |
-| `P/mcp-socket` | MCP server over local Unix socket (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | 0600 permissions |
+| `P/mcp-socket` | MCP server over local Unix socket (§5) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | — | 0600 permissions; macOS/Linux only — on Windows NOT IMPLEMENTED (reports unsupported; stdio works) |
 | `P/mcp-discovery` | MCP tools: list_commands, describe_command, search_commands (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | list_commands, describe_command, search_commands |  |
 | `P/mcp-document` | MCP tools: new_document, list_documents, get_document_state (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | new_document, list_documents, activate_document, get_document_state |  |
 | `P/mcp-open-save` | MCP tools: open, save (§5.2) | in progress | ForgeMCP | Tests/ForgeCommandsTests/FileTests.swift | open, save | bodies + sketches; no feature tree yet |
@@ -60,6 +60,9 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/metal-viewport` | Metal viewport: shaded+edges, orbit/pan/zoom, GPU picking (§2, M0) | in progress | ForgeRender | — | — | unverified: written, never compiled (Linux session). See PROGRESS.md |
 | `P/headless-render` | Headless software renderer + PNG (render_view backend) | done | ForgeRender | Tests/ForgeRenderTests/RenderTests.swift | render_view |  |
 | `P/app-shell` | SwiftUI app shell (§1.4) | in progress | ForgeApp | — | — | redesigned from docs/design (Claude Design); compiles on macOS CI; runs on the user's Mac |
+| `P/app-model-shared` | Shared app model for every front end: ForgeUI (docs/adr/0012) | done | ForgeUI | Tests/ForgeUITests/AppModelTests.swift | — | AppModel, operations, previews, sketch tools; PanelSpec / RibbonSpec / TreeSpec as data; PlatformServices for dialogs |
+| `P/windows-app` | Native Windows app: Win32 + Direct3D 11 shell, ForgeWin front end (docs/adr/0012) | in progress | CForgeWin / ForgeWin | CI windows job (build + --screenshot self-test); Linux type-check (FORGE_WIN_CHECK=1); Wine check of the C++ shell | — | ribbon, tree, PropertyManager, viewport (D3D11 + picking + D2D labels), sketching, dialogs; no icons, command palette, context/shortcut bars or installer yet |
+| `P/windows-engine` | Engine, tests and forge-cli on Windows (MSVC OCCT) | in progress | all engine modules | CI windows job | — | OCCT 8.0.0 official MSVC build via scripts/fetch-occt-windows.sh; MCP socket transport not available on Windows |
 | `P/command-palette` | Command palette ⌘K with inline parameter entry (§6.1) | in progress | ForgeApp | — | — | searches all commands; runs parameterless ones directly, JSON entry otherwise; inline typed entry pending |
 | `P/inspector` | Inspector panel instead of modal PropertyManagers (§6.2) | in progress | ForgeApp | — | — | PropertyManager panels (OK/Cancel, groups, selection boxes) for every UI operation; read-only entity descriptors |
 | `P/handles` | Direct-manipulation handles (§6.3) | not started | — | — | — |  |

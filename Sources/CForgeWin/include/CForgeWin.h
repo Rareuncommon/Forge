@@ -146,6 +146,11 @@ char *fw_save_dialog(fw_app *, const char *suggested_name);
 char *fw_open_dialog(fw_app *);
 void fw_message(fw_app *, const char *title, const char *message, int error);
 void fw_free(void *);
+/// Capture the main window's client area as RGBA8 rows (top row first); free with fw_free.
+/// NULL on failure.
+uint8_t *fw_capture(fw_app *, int *width, int *height);
+/// Close the main window (as if the user did).
+void fw_app_quit(fw_app *);
 
 // MARK: viewport rendering (Direct3D 11; pipelines and depth modes as ForgeRender.ViewportPlan)
 

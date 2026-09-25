@@ -1598,6 +1598,50 @@ extern "C" void fw_message(fw_app *a, const char *title, const char *message, in
 
 extern "C" void fw_free(void *p) { free(p); }
 
+extern "C" uint8_t *fw_capture(fw_app *a, int *width, int *height) {
+    RECT rc;
+    GetClientRect(a->hwnd, &rc);
+    int w = rc.right, h = rc.bottom;
+    if (w <= 0 || h <= 0) return nullptr;
+    HDC screen = GetDC(a->hwnd);
+    HDC mem = CreateCompatibleDC(screen);
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;  // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    void *bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(mem, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    uint8_t *out = nullptr;
+    if (bmp && bits) {
+        HGDIOBJ old = SelectObject(mem, bmp);
+        // PW_CLIENTONLY | PW_RENDERFULLCONTENT: includes the Direct3D content.
+        if (!PrintWindow(a->hwnd, mem, 0x1 | 0x2)) BitBlt(mem, 0, 0, w, h, screen, 0, 0, SRCCOPY);
+        GdiFlush();
+        out = (uint8_t *)malloc((size_t)w * h * 4);
+        const uint8_t *src = (const uint8_t *)bits;
+        for (int i = 0; i < w * h; ++i) {
+            out[4 * i] = src[4 * i + 2];
+            out[4 * i + 1] = src[4 * i + 1];
+            out[4 * i + 2] = src[4 * i];
+            out[4 * i + 3] = 255;
+        }
+        SelectObject(mem, old);
+    }
+    if (bmp) DeleteObject(bmp);
+    DeleteDC(mem);
+    ReleaseDC(a->hwnd, screen);
+    if (out) {
+        *width = w;
+        *height = h;
+    }
+    return out;
+}
+
+extern "C" void fw_app_quit(fw_app *a) { PostMessageW(a->hwnd, WM_CLOSE, 0, 0); }
+
 extern "C" void fw_view_invalidate(fw_app *a) { InvalidateRect(a->view, nullptr, FALSE); }
 
 extern "C" void fw_view_size(fw_app *a, int *width, int *height) {
