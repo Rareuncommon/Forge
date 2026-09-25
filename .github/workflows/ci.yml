@@ -152,7 +152,8 @@ jobs:
             K="$(find Vendor/occt -name TKernel.dll | head -1)"
             echo "--- TKernel.dll ($K)"; ldd "$K" 2>&1 | grep -i -E "not found|tbb|jemalloc" || true
             echo "--- tbb / jemalloc files"; find Vendor/occt -iname "tbb12*.dll" -o -iname "jemalloc*.dll" | head
-            echo "--- forge-cli.exe imports"; ldd "$(dirname "$EXE")/forge-cli.exe" 2>&1 | grep -v -i "windows/system32" | head -40
+            python -m pip install --quiet pefile
+            python scripts/windows-dll-check.py "$(cygpath -w "$(dirname "$EXE")/forge-cli.exe")" "$(cygpath -w "$EXE")"
           } >> app-run.log 2>&1
       - uses: actions/upload-artifact@v5
         if: always()
