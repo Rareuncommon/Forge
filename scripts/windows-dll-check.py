@@ -20,7 +20,7 @@ def check(path, depth=0):
             continue
         seen.add(key)
         try:
-            handle = ctypes.WinDLL(name)
+            handle = ctypes.WinDLL(name, winmode=0)  # standard search order (PATH)
             where = ctypes.create_unicode_buffer(1024)
             ctypes.windll.kernel32.GetModuleFileNameW(ctypes.c_void_p(handle._handle), where, 1024)
             if depth == 0:
@@ -28,7 +28,7 @@ def check(path, depth=0):
             if "system32" not in where.value.lower():
                 check(where.value, depth + 1)
         except OSError as e:
-            print(f"FAIL {name} (imported by {os.path.basename(path)}): {e}")
+            print(f"FAIL {name} (imported by {os.path.basename(path)}): winerror {getattr(e, "winerror", None)} {e}")
 
 
 for p in sys.argv[1:]:
