@@ -121,27 +121,41 @@ jobs:
       - name: Test
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
-          swift test
+          swift test 2>&1 | tee test.log
       - name: Golden models through forge-cli
+        if: always()
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
-          "$(swift build --show-bin-path)/forge-cli.exe" run Tests/GoldenModelTests/Models/*.json --quiet
+          BIN="$(swift build --show-bin-path)"
+          "$BIN/forge-cli.exe" run Tests/GoldenModelTests/Models/*.json --quiet 2>&1 | tee golden.log
       - name: Build the Windows app (Win32 + Direct3D 11)
         if: always()
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
-          swift build --product ForgeWin
+          swift build --product ForgeWin 2>&1 | tee app-build.log
       - name: Run the Windows app (screenshot self-test)
         if: always()
         continue-on-error: true
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
-          timeout 180 "$(swift build --show-bin-path)/ForgeWin.exe" --screenshot forgewin.png || echo "exit $?"
-          ls -la forgewin.png
-          python -c "import base64,sys; sys.stdout.write(base64.b64encode(open('forgewin.png','rb').read()).decode())" | fold -w 150 | sed 's/^/PNG64 /'
+          BIN="$(swift build --show-bin-path)"
+          { echo "bin: $BIN"; ls "$BIN" | grep -i -E "forgewin|forge-cli" ; } > app-run.log 2>&1
+          EXE="$(find "$BIN" .build -maxdepth 4 -name ForgeWin.exe 2>/dev/null | head -1)"
+          echo "exe: $EXE" >> app-run.log
+          timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1; echo "exit $?" >> app-run.log
+          ls -la forgewin.png >> app-run.log 2>&1 || true
       - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: forgewin-screenshot
           path: forgewin.png
           if-no-files-found: ignore
+      - name: Report
+        if: always()
+        run: |
+          echo "=== test failures"; grep -E "✘|error:|fatal" test.log | head -60 || true
+          grep -E "Test run with|Executed" test.log | tail -8 || true
+          echo "=== golden"; grep -v "^PASS" golden.log | head -20 || true; grep -c "^PASS" golden.log || true
+          echo "=== app build"; grep -E "error|Build complete" app-build.log | head -20 || true
+          echo "=== app run"; cat app-run.log || true
+          if [ -f forgewin.png ]; then python -c "import base64,sys; sys.stdout.write(base64.b64encode(open('forgewin.png','rb').read()).decode())" | fold -w 150 | sed 's/^/PNG64 /'; fi
