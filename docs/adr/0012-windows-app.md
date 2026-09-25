@@ -59,6 +59,18 @@ Options checked against live sources (2026-09):
   - runs `ForgeWin --screenshot`, which builds a part, opens Fillet with its live preview and
     saves a PNG.
 
+First CI capture of the real app (windows-2025 runner, `ForgeWin --screenshot`): ribbon,
+tree with the rollback bar, the Fillet PropertyManager with two picked edges, and the live
+fillet preview in the Direct3D viewport.
+
+![ForgeWin on the Windows CI runner](../images/forgewin-ci.png)
+
+Loading notes found on the way: OCCT's STEP/STL exchange loads TKService, which imports
+FreeImage, FreeType, FFmpeg and OpenVR, so their directories must be on PATH. OCCT's bundled
+`msvc-vc14-64` runtime must not be, because it is older than the system's and shadows it.
+Foundation on Windows lacks `FileManager.replaceItemAt`, so documents are swapped by moving
+the old package aside instead.
+
 ## Consequences
 
 - The macOS SwiftUI pages and the shared `PanelSpec` describe the same pages twice; a change

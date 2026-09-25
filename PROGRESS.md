@@ -20,7 +20,8 @@ The user asked for a Windows port; chose a native app over a shared web UI (docs
 - **Engine on Windows**: Package.swift finds OCCT's Windows layout; MCP stdio over the CRT
   (the Unix-socket transport reports unsupported on Windows — NOT IMPLEMENTED there);
   `scripts/fetch-occt-windows.sh` (official OCCT 8.0.0 MSVC build); CI `windows` job builds,
-  tests, runs the golden models, builds ForgeWin and runs its screenshot self-test.
+  tests, runs the golden models, builds ForgeWin and runs its screenshot self-test. All
+  green on windows-2025; the app's own capture is docs/images/forgewin-ci.png.
 
 ### Not done / known gaps (Windows)
 
