@@ -144,6 +144,13 @@ jobs:
           echo "exe: $EXE" >> app-run.log
           timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1; echo "exit $?" >> app-run.log
           ls -la forgewin.png >> app-run.log 2>&1 || true
+          {
+            echo "--- PATH (occt / 3rdparty)"; echo "$PATH" | tr ':' '\n' | grep -i -E "occt|3rdparty" || true
+            echo "--- missing DLLs of ForgeWin.exe"; ldd "$EXE" 2>&1 | grep -i -E "not found|\?" || echo "(none)"
+            K="$(find Vendor/occt -name TKernel.dll | head -1)"
+            echo "--- TKernel.dll ($K)"; ldd "$K" 2>&1 | grep -i -E "not found|tbb|jemalloc" || true
+            echo "--- tbb / jemalloc files"; find Vendor/occt -iname "tbb12*.dll" -o -iname "jemalloc*.dll" | head
+          } >> app-run.log 2>&1
       - uses: actions/upload-artifact@v5
         if: always()
         with:
