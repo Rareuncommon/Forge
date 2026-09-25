@@ -4,6 +4,7 @@
 
 import ForgeCore
 import ForgeRender
+import ForgeUI
 import SwiftUI
 
 struct ViewportArea: View {

@@ -3,21 +3,20 @@
 // SolidWorks-style inference: endpoints, midpoints, curves, horizontal/vertical, dotted
 // alignment guides) and picks the command.
 
-import AppKit
 import ForgeCommands
 import ForgeCore
 import ForgeRender
 import ForgeSketch
-import SwiftUI
+import Foundation
 
 /// A sketch tool. Tools with variants (rectangle types, arc types…) keep the variant in
 /// SketchUIState and show it in their PropertyManager page, as SolidWorks does.
-enum SketchTool: String, CaseIterable, Identifiable {
+package enum SketchTool: String, CaseIterable, Identifiable {
     case line, rectangle, circle, arc, slot, polygon, spline, ellipse, point
     case fillet, chamfer, trim, extend, dimension
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .line: "Line"
         case .rectangle: "Rectangle"
@@ -36,7 +35,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: ForgeIcon {
+    package var icon: ForgeIcon {
         switch self {
         case .line: .line
         case .rectangle: .rectangle
@@ -56,33 +55,33 @@ enum SketchTool: String, CaseIterable, Identifiable {
     }
 }
 
-enum LineKind: String, CaseIterable { case line = "Line", centerline = "Centerline", midpoint = "Midpoint Line" }
-enum LineOrientation: String, CaseIterable { case asSketched = "As sketched", horizontal = "Horizontal", vertical = "Vertical" }
-enum RectangleType: String, CaseIterable {
+package enum LineKind: String, CaseIterable { case line = "Line", centerline = "Centerline", midpoint = "Midpoint Line" }
+package enum LineOrientation: String, CaseIterable { case asSketched = "As sketched", horizontal = "Horizontal", vertical = "Vertical" }
+package enum RectangleType: String, CaseIterable {
     case corner = "Corner Rectangle", center = "Center Rectangle", threePoint = "3 Point Corner Rectangle", parallelogram = "Parallelogram"
 }
-enum CircleType: String, CaseIterable { case center = "Circle", perimeter = "Perimeter Circle" }
-enum ArcType: String, CaseIterable { case center = "Centerpoint Arc", tangent = "Tangent Arc", threePoint = "3 Point Arc" }
-enum SlotType: String, CaseIterable { case straight = "Straight Slot", center = "Centerpoint Straight Slot" }
-enum EllipseType: String, CaseIterable { case full = "Ellipse", partial = "Partial Ellipse" }
-enum ChamferType: String, CaseIterable { case angleDistance = "Angle-distance", distanceDistance = "Distance-distance" }
-enum TrimMode: String, CaseIterable { case power = "Power trim", closest = "Trim to closest" }
+package enum CircleType: String, CaseIterable { case center = "Circle", perimeter = "Perimeter Circle" }
+package enum ArcType: String, CaseIterable { case center = "Centerpoint Arc", tangent = "Tangent Arc", threePoint = "3 Point Arc" }
+package enum SlotType: String, CaseIterable { case straight = "Straight Slot", center = "Centerpoint Straight Slot" }
+package enum EllipseType: String, CaseIterable { case full = "Ellipse", partial = "Partial Ellipse" }
+package enum ChamferType: String, CaseIterable { case angleDistance = "Angle-distance", distanceDistance = "Distance-distance" }
+package enum TrimMode: String, CaseIterable { case power = "Power trim", closest = "Trim to closest" }
 
 /// Rubber-band preview of the geometry the next click would create, in sketch coordinates,
 /// with the inference the cursor found.
-struct SketchPreview {
-    var polylines: [[Point2]] = []
-    var marker: Point2?
-    var snap: SketchSnap.Kind = .none
+package struct SketchPreview {
+    package var polylines: [[Point2]] = []
+    package var marker: Point2?
+    package var snap: SketchSnap.Kind = .none
     /// Dotted alignment guides (visual only, like SolidWorks' blue inference lines).
-    var guides: [SketchSnap.Guide] = []
+    package var guides: [SketchSnap.Guide] = []
     /// A dotted relation line from the start point (horizontal/vertical: becomes a relation).
-    var relationGuide: SketchSnap.Guide?
+    package var relationGuide: SketchSnap.Guide?
 }
 
 extension SketchSnap.Kind {
     /// Pointer glyph shown next to the cursor.
-    var tag: String? {
+    package var tag: String? {
         switch self {
         case .none, .aligned: nil
         case .point: "⊙"
@@ -95,66 +94,66 @@ extension SketchSnap.Kind {
 }
 
 /// Sketch-mode state kept by the app model.
-struct SketchUIState {
-    var tool: SketchTool?
-    var pending: [Point2] = []
+package struct SketchUIState {
+    package var tool: SketchTool?
+    package var pending: [Point2] = []
     /// Ids of existing points the pending clicks landed on (for relations such as midpoint).
-    var pendingTargets: [String?] = []
+    package var pendingTargets: [String?] = []
     /// First point of the current line chain: clicking it again closes the chain.
-    var chainStart: Point2?
-    var preview: SketchPreview?
+    package var chainStart: Point2?
+    package var preview: SketchPreview?
     // Tool options (the PropertyManager page of each tool).
-    var lineKind = LineKind.line
-    var lineOrientation = LineOrientation.asSketched
-    var rectangleType = RectangleType.corner
-    var circleType = CircleType.center
-    var arcType = ArcType.center
-    var slotType = SlotType.straight
-    var ellipseType = EllipseType.full
-    var chamferType = ChamferType.distanceDistance
-    var trimMode = TrimMode.power
-    var forConstruction = false
-    var filletRadius = 2.0
-    var chamferDistance = 2.0
-    var chamferDistance2 = 2.0
-    var chamferEqual = true
-    var chamferAngle = 45.0
-    var polygonSides = 6
-    var polygonInscribed = true
+    package var lineKind = LineKind.line
+    package var lineOrientation = LineOrientation.asSketched
+    package var rectangleType = RectangleType.corner
+    package var circleType = CircleType.center
+    package var arcType = ArcType.center
+    package var slotType = SlotType.straight
+    package var ellipseType = EllipseType.full
+    package var chamferType = ChamferType.distanceDistance
+    package var trimMode = TrimMode.power
+    package var forConstruction = false
+    package var filletRadius = 2.0
+    package var chamferDistance = 2.0
+    package var chamferDistance2 = 2.0
+    package var chamferEqual = true
+    package var chamferAngle = 45.0
+    package var polygonSides = 6
+    package var polygonInscribed = true
     /// Snap targets: sketch point positions (u, v) by id, refreshed after each command.
-    var points: [(id: String, u: Double, v: Double)] = []
-    var plane: SketchPlane?
+    package var points: [(id: String, u: Double, v: Double)] = []
+    package var plane: SketchPlane?
     /// The sketch being edited (a value copy, refreshed after each command).
-    var sketch: Sketch?
+    package var sketch: Sketch?
     /// Tangent arc: the line or arc it continues from.
-    var tangentBase: String?
+    package var tangentBase: String?
     /// Curves already trimmed during the current power-trim drag.
-    var trimmedInDrag: Set<String> = []
+    package var trimmedInDrag: Set<String> = []
     /// Live result of the open sketch operation (offset, mirror, pattern, move…): the curves
     /// it would add or change, in sketch coordinates.
-    var opPreview: [[Point2]] = []
+    package var opPreview: [[Point2]] = []
 }
 
 /// A dimension or relation glyph shown in the viewport for the sketch being edited.
-struct SketchAnnotation: Identifiable, Equatable {
-    enum Kind { case dimension, relation }
-    var id: String
-    var kind: Kind
-    var text: String
-    var anchor: Vec3
+package struct SketchAnnotation: Identifiable, Equatable {
+    package enum Kind { case dimension, relation }
+    package var id: String
+    package var kind: Kind
+    package var text: String
+    package var anchor: Vec3
     /// Glyphs sharing an anchor are laid side by side.
-    var slot: Int
-    var driven: Bool
-    var problem: Bool
+    package var slot: Int
+    package var driven: Bool
+    package var problem: Bool
 }
 
 extension AppModel {
-    func newSketch(on plane: StandardPlane) async {
+    package func newSketch(on plane: StandardPlane) async {
         await newSketch(placement: ["plane": .string(plane.rawValue)])
     }
 
     /// Sketch on a reference plane (id) or a planar face ("body-1/face-3").
-    func newSketch(onPlaneOrFace ref: String) async {
+    package func newSketch(onPlaneOrFace ref: String) async {
         await newSketch(placement: ref.contains("/face-") ? ["face": .string(ref)] : ["plane": .string(ref)])
     }
 
@@ -169,9 +168,9 @@ extension AppModel {
     }
 
     /// The planar face in the selection, if any (for Sketch / Plane on a face).
-    var selectedFace: String? { selection.last { $0.contains("/face-") } }
+    package var selectedFace: String? { selection.last { $0.contains("/face-") } }
 
-    func editSketch(_ id: String) async {
+    package func editSketch(_ id: String) async {
         operation = nil
         if await run("sketch.edit", ["sketch": .string(id)]) != nil {
             sketchEditCount = 0
@@ -179,7 +178,7 @@ extension AppModel {
         }
     }
 
-    func exitSketch() async {
+    package func exitSketch() async {
         sketchState.tool = nil
         sketchState.pending = []
         dimensionEdit = nil
@@ -190,13 +189,9 @@ extension AppModel {
 
     /// Cancel Sketch (confirmation corner ✗): undo every change made since the sketch was
     /// opened, then leave it — a new sketch disappears.
-    func cancelSketch() async {
-        let alert = NSAlert()
-        alert.messageText = "Discard the changes to this sketch?"
-        alert.informativeText = sketchEditCount == 0 ? "There are no changes." : "\(sketchEditCount) change\(sketchEditCount == 1 ? "" : "s") will be undone."
-        alert.addButton(withTitle: "Discard Changes")
-        alert.addButton(withTitle: "Keep Editing")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+    package func cancelSketch() async {
+        let changes = sketchEditCount == 0 ? "There are no changes." : "\(sketchEditCount) change\(sketchEditCount == 1 ? "" : "s") will be undone."
+        guard platform.confirm("Discard the changes to this sketch?", changes, confirm: "Discard Changes", cancel: "Keep Editing") else { return }
         let n = sketchEditCount
         sketchState.tool = nil
         sketchState.pending = []
@@ -207,7 +202,7 @@ extension AppModel {
         sketchEditCount = 0
     }
 
-    func chooseTool(_ tool: SketchTool?) {
+    package func chooseTool(_ tool: SketchTool?) {
         sketchState.tool = tool
         sketchState.pending = []
         sketchState.pendingTargets = []
@@ -219,20 +214,20 @@ extension AppModel {
         clearPreview()
     }
 
-    func clearPreview() {
+    package func clearPreview() {
         sketchState.preview = nil
         hoverLines = []
         overlayVersion += 1
     }
 
     /// Local ids of the selected entities of the sketch being edited.
-    var sketchSelection: [String] {
+    package var sketchSelection: [String] {
         guard let id = activeSketch else { return [] }
         return selection.compactMap { $0.hasPrefix(id + "/") ? String($0.dropFirst(id.count + 1)) : nil }
     }
 
     /// The inference the cursor finds (docs/research §1.12), honouring the line orientation.
-    func snapped(_ raw: Point2, tolerance: Double) -> SketchSnap {
+    package func snapped(_ raw: Point2, tolerance: Double) -> SketchSnap {
         guard let sk = sketchState.sketch else { return SketchSnap(point: raw, kind: .none) }
         let tool = sketchState.tool
         let drawingLine = tool == .line && !sketchState.pending.isEmpty
@@ -250,7 +245,7 @@ extension AppModel {
 
     /// Cursor moved over the sketch plane (nil: left the viewport). Updates the preview and
     /// the tooltip shown next to the cursor.
-    func sketchHover(_ raw: Point2?, tolerance: Double, viewPoint: CGPoint) {
+    package func sketchHover(_ raw: Point2?, tolerance: Double, viewPoint: CGPoint) {
         guard let tool = sketchState.tool, let raw else {
             cursorSketchPoint = nil
             if sketchState.preview != nil { clearPreview() }
@@ -384,7 +379,7 @@ extension AppModel {
     }
 
     /// Corners of the rectangle being drawn (2 clicks for corner/center, 3 for the others).
-    func rectangleCorners(_ pts: [Point2]) -> [Point2]? {
+    package func rectangleCorners(_ pts: [Point2]) -> [Point2]? {
         switch sketchState.rectangleType {
         case .corner:
             guard pts.count >= 2 else { return nil }
@@ -411,12 +406,12 @@ extension AppModel {
     }
 
     /// Slot arc centres from the two clicks (centerpoint slot: the first click is the middle).
-    func slotCentres(_ p0: Point2, _ p1: Point2) -> (Point2, Point2) {
+    package func slotCentres(_ p0: Point2, _ p1: Point2) -> (Point2, Point2) {
         sketchState.slotType == .center ? (Point2(2 * p0.u - p1.u, 2 * p0.v - p1.v), p1) : (p0, p1)
     }
 
     /// Where a tangent arc from the end of `base` to `p` runs (mirrors sketch.add_arc tangent).
-    func tangentArcPreview(base: String, to p: Point2) -> (points: [Point2], radius: Double)? {
+    package func tangentArcPreview(base: String, to p: Point2) -> (points: [Point2], radius: Double)? {
         guard let sk = sketchState.sketch, let e = sk.entities[base] else { return nil }
         let P: (Double, Double), t: (Double, Double)
         switch e.kind {
@@ -447,7 +442,7 @@ extension AppModel {
         return (pts, abs(r))
     }
 
-    static func ellipsePolyline(_ c: Point2, _ a: Double, _ b: Double, _ rot: Double) -> [Point2] {
+    package static func ellipsePolyline(_ c: Point2, _ a: Double, _ b: Double, _ rot: Double) -> [Point2] {
         (0...72).map { i in
             let t = 2 * Double.pi * Double(i) / 72
             let x = a * cos(t), y = b * sin(t)
@@ -455,14 +450,14 @@ extension AppModel {
         }
     }
 
-    static func distanceToLine(_ p: Point2, _ a: Point2, _ b: Point2) -> Double {
+    package static func distanceToLine(_ p: Point2, _ a: Point2, _ b: Point2) -> Double {
         let dx = b.u - a.u, dy = b.v - a.v
         let len = hypot(dx, dy)
         guard len > 0 else { return hypot(p.u - a.u, p.v - a.v) }
         return abs((p.u - a.u) * dy - (p.v - a.v) * dx) / len
     }
 
-    static func slotOutline(_ a: Point2, _ b: Point2, _ r: Double) -> [Point2] {
+    package static func slotOutline(_ a: Point2, _ b: Point2, _ r: Double) -> [Point2] {
         let ang = atan2(b.v - a.v, b.u - a.u)
         var out: [Point2] = []
         for i in 0...24 {
@@ -477,7 +472,7 @@ extension AppModel {
     }
 
     /// Polyline of the arc from a to b passing through m (a straight segment if collinear).
-    static func arcThrough(_ a: Point2, _ m: Point2, _ b: Point2) -> [Point2] {
+    package static func arcThrough(_ a: Point2, _ m: Point2, _ b: Point2) -> [Point2] {
         guard let cc = try? Sketch.circumcircle(a.tuple, m.tuple, b.tuple) else { return [a, b] }
         let (c, r) = (cc.center, cc.radius)
         func ang(_ p: Point2) -> Double { atan2(p.v - c.1, p.u - c.0) }
@@ -491,7 +486,7 @@ extension AppModel {
         }
     }
 
-    func refreshSketchState() async {
+    package func refreshSketchState() async {
         guard let doc = await engine.activeDocument, let id = doc.activeSketch, let sk = doc.sketches[id] else {
             activeSketch = nil
             sketchState.plane = nil
@@ -513,7 +508,7 @@ extension AppModel {
     }
 
     /// Dimension labels and relation glyphs for a sketch.
-    static func annotations(_ sk: Sketch) -> [SketchAnnotation] {
+    package static func annotations(_ sk: Sketch) -> [SketchAnnotation] {
         let problems = Set((sk.report?.conflicting ?? []) + (sk.report?.redundant ?? []))
         var out: [SketchAnnotation] = []
         var used: [String: Int] = [:]
@@ -543,7 +538,7 @@ extension AppModel {
         return out
     }
 
-    static func glyph(_ k: ConstraintKind) -> String? {
+    package static func glyph(_ k: ConstraintKind) -> String? {
         switch k {
         case .horizontal: "H"
         case .vertical: "V"
@@ -562,7 +557,7 @@ extension AppModel {
     }
 
     /// Where an entity's annotations sit, in sketch coordinates.
-    static func anchor(_ sk: Sketch, _ id: String) -> Point2? {
+    package static func anchor(_ sk: Sketch, _ id: String) -> Point2? {
         guard let e = sk.entities[id] else { return nil }
         func p(_ pid: String) -> Point2 { let (u, v) = sk.point(pid); return Point2(u, v) }
         switch e.kind {
@@ -592,7 +587,7 @@ extension AppModel {
 
     /// A click on the sketch plane with a tool active. `curve` is the sketch curve under the
     /// cursor, if any (trim, extend, tangent arc, Smart Dimension).
-    func sketchClick(_ raw: Point2, tolerance: Double, curve: String?, clickCount: Int = 1, viewPoint: CGPoint = .zero) async {
+    package func sketchClick(_ raw: Point2, tolerance: Double, curve: String?, clickCount: Int = 1, viewPoint: CGPoint = .zero) async {
         guard let tool = sketchState.tool else { return }
         let local = curve.flatMap { $0.split(separator: "/").last.map(String.init) }
         if clickCount >= 2 {
@@ -800,7 +795,7 @@ extension AppModel {
     }
 
     /// Power trim: dragging across curves trims each piece the pointer crosses.
-    func sketchDrag(_ raw: Point2, curve: String?) async {
+    package func sketchDrag(_ raw: Point2, curve: String?) async {
         guard sketchState.tool == .trim, sketchState.trimMode == .power,
             let local = curve.flatMap({ $0.split(separator: "/").last.map(String.init) }), !sketchState.trimmedInDrag.contains(local)
         else { return }
@@ -817,12 +812,12 @@ extension AppModel {
         clearPreview()
     }
 
-    static func localID(_ ref: String) -> String { ref.split(separator: "/").last.map(String.init) ?? ref }
+    package static func localID(_ ref: String) -> String { ref.split(separator: "/").last.map(String.init) ?? ref }
 
     private func pt(_ q: Point2) -> JSONValue { [.number(q.u), .number(q.v)] }
 
     /// The line or arc whose end is at `p` (where a tangent arc can start).
-    func tangentBaseEnding(at p: Point2) -> String? {
+    package func tangentBaseEnding(at p: Point2) -> String? {
         guard let sk = sketchState.sketch else { return nil }
         for e in sk.orderedEntities.reversed() where e.kind == .line || e.kind == .arc {
             let end = sk.point(e.kind == .line ? e.points[1] : e.points[2])
@@ -832,7 +827,7 @@ extension AppModel {
     }
 
     /// Lines with an endpoint coincident with a point (sharing it, or at the same place).
-    func linesMeeting(at pointID: String) -> [String] {
+    package func linesMeeting(at pointID: String) -> [String] {
         guard let sk = sketchState.sketch else { return [] }
         let (u, v) = sk.point(pointID)
         return sk.orderedEntities.filter { e in
@@ -843,7 +838,7 @@ extension AppModel {
     }
 
     /// What to do next with a sketch tool (its PropertyManager message and the status bar).
-    func toolMessage(_ tool: SketchTool) -> String {
+    package func toolMessage(_ tool: SketchTool) -> String {
         let st = sketchState
         switch tool {
         case .line:
@@ -883,7 +878,7 @@ extension AppModel {
     }
 
     /// Esc: cancel the pending entity, then the tool, then the operation.
-    func cancelSketchOperation() {
+    package func cancelSketchOperation() {
         if dimensionEdit != nil {
             dimensionEdit = nil
             return
@@ -897,20 +892,20 @@ extension AppModel {
     }
 
     /// Kinds of the selected sketch entities, in selection order.
-    var sketchSelectionKinds: [SketchEntityKind] {
+    package var sketchSelectionKinds: [SketchEntityKind] {
         guard let sk = sketchState.sketch else { return [] }
         return sketchSelection.compactMap { sk.entities[$0]?.kind }
     }
 
     /// Change a dimension's value (double-click on its label).
-    func setDimension(_ constraint: String, to value: String) async {
+    package func setDimension(_ constraint: String, to value: String) async {
         let v = value.trimmingCharacters(in: .whitespaces)
         guard !v.isEmpty else { return }
         await run("sketch.set_dimension", ["constraint": .string(constraint), "value": Double(v).map { .number($0) } ?? .string(v)])
     }
 
     /// Relations that make sense for the current selection (the command still validates).
-    var applicableRelations: [RelationType] {
+    package var applicableRelations: [RelationType] {
         let kinds = sketchSelectionKinds
         let curves: Set<SketchEntityKind> = [.circle, .arc]
         let lines = kinds.filter { $0 == .line }.count, points = kinds.filter { $0 == .point }.count
@@ -933,7 +928,7 @@ extension AppModel {
         }
     }
 
-    func addRelation(_ type: RelationType) async {
+    package func addRelation(_ type: RelationType) async {
         var ids = sketchSelection
         // Points first: "point on line", "midpoint of line"; the axis last for symmetry.
         if let sk = sketchState.sketch {
@@ -946,13 +941,13 @@ extension AppModel {
         await run("sketch.add_relation", ["type": .string(type.rawValue), "entities": .array(ids.map { .string($0) })])
     }
 
-    func toggleConstruction() async {
+    package func toggleConstruction() async {
         let ids = sketchSelection
         guard let sk = sketchState.sketch, let first = ids.first, let e = sk.entities[first] else { return }
         await run("sketch.set_construction", ["entities": .array(ids.map { .string($0) }), "construction": .bool(!e.construction)])
     }
 
-    func deleteSketchSelection() async {
+    package func deleteSketchSelection() async {
         let ids = sketchSelection
         guard !ids.isEmpty else { return }
         await run("sketch.delete", ["items": .array(ids.map { .string($0) })])
@@ -960,7 +955,7 @@ extension AppModel {
 }
 
 extension Operation {
-    var isSketchOperation: Bool {
+    package var isSketchOperation: Bool {
         switch self {
         case .addRelation, .displayRelations, .sketchOffset, .sketchMirror, .sketchLinearPattern, .sketchCircularPattern,
             .sketchMove, .sketchRotate, .sketchScale:

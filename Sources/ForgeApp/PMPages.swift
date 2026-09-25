@@ -5,6 +5,7 @@
 import ForgeCommands
 import ForgeCore
 import ForgeSketch
+import ForgeUI
 import SwiftUI
 
 func entityIcon(_ ref: String) -> ForgeIcon {

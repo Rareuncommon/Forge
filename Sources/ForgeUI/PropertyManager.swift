@@ -6,13 +6,14 @@ import ForgeCommands
 import ForgeCore
 import ForgeRender
 import ForgeSketch
-import SwiftUI
+import Foundation
+import Observation
 
 /// SolidWorks' end conditions as shown in the Extrude page (the engine's body.extrude names).
-enum EndConditionUI: String, CaseIterable {
+package enum EndConditionUI: String, CaseIterable {
     case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane"
 
-    var param: String {
+    package var param: String {
         switch self {
         case .blind: "blind"
         case .throughAll: "through_all"
@@ -21,66 +22,66 @@ enum EndConditionUI: String, CaseIterable {
         }
     }
 
-    init?(param: String) {
+    package init?(param: String) {
         guard let v = Self.allCases.first(where: { $0.param == param }) else { return nil }
         self = v
     }
 
-    var needsDepth: Bool { self == .blind || self == .midPlane }
+    package var needsDepth: Bool { self == .blind || self == .midPlane }
 }
 
 /// Values being edited in the PropertyManager. Lengths are text so units work ("0.5 in").
-struct OperationForm {
-    var depth = "10"
-    var endCondition = EndConditionUI.blind
-    var reverse = false
-    var direction2 = false, endCondition2 = EndConditionUI.blind, depth2 = "10"
-    var draftOn = false, draftAngle = "3", draftOutward = false
-    var thinOn = false, thinType = "one_direction", thinThickness = "1", thinThickness2 = "1", thinReverse = false
-    var chamferType = "equal_distance", chamferDistance = "1", chamferDistance2 = "1", chamferAngle = "45"
-    var shellThickness = "1", shellOutward = false, shellFaces: [String] = []
-    var draftNeutral = "", draftFaces: [String] = [], draftReverse = false, draftFeatureAngle = "3"
-    var planeReference = "top", planeOffset = "20", planeFlip = false
-    var holeType = "counterbore", holeSize = "M6", holeFit = "normal", holeEnd = "through_all", holeDepth = "10", holeThreadDepth = "8"
-    var holeReverse = false
+package struct OperationForm {
+    package var depth = "10"
+    package var endCondition = EndConditionUI.blind
+    package var reverse = false
+    package var direction2 = false, endCondition2 = EndConditionUI.blind, depth2 = "10"
+    package var draftOn = false, draftAngle = "3", draftOutward = false
+    package var thinOn = false, thinType = "one_direction", thinThickness = "1", thinThickness2 = "1", thinReverse = false
+    package var chamferType = "equal_distance", chamferDistance = "1", chamferDistance2 = "1", chamferAngle = "45"
+    package var shellThickness = "1", shellOutward = false, shellFaces: [String] = []
+    package var draftNeutral = "", draftFaces: [String] = [], draftReverse = false, draftFeatureAngle = "3"
+    package var planeReference = "top", planeOffset = "20", planeFlip = false
+    package var holeType = "counterbore", holeSize = "M6", holeFit = "normal", holeEnd = "through_all", holeDepth = "10", holeThreadDepth = "8"
+    package var holeReverse = false
     /// Patterns and mirror: the seed features (ids), directions and counts.
-    var seeds: [String] = []
-    var linDirection = "x", linSpacing = "20", linCount = "3", linReverse = false
-    var linDirection2On = false, linDirection2 = "y", linSpacing2 = "20", linCount2 = "2"
-    var cirAxis = "y", cirAngle = "360", cirCount = "6", cirEqual = true, cirReverse = false
-    var mirrorPlane = "right"
+    package var seeds: [String] = []
+    package var linDirection = "x", linSpacing = "20", linCount = "3", linReverse = false
+    package var linDirection2On = false, linDirection2 = "y", linSpacing2 = "20", linCount2 = "2"
+    package var cirAxis = "y", cirAngle = "360", cirCount = "6", cirEqual = true, cirReverse = false
+    package var mirrorPlane = "right"
     /// Which selection box receives picks (Draft: "neutral" or "faces").
-    var activeBox = "faces"
-    var merge = true
+    package var activeBox = "faces"
+    package var merge = true
     /// Cut / merge scope: empty = all bodies.
-    var scope: [String] = []
-    var axis = ""
-    var angle = "360"
-    var radius = "2"
-    var combine = "fuse"
-    var target = ""
-    var tool = ""
-    var width = "50", height = "30", boxDepth = "20"
-    var cylRadius = "10", cylHeight = "40"
-    var sphereRadius = "15"
-    var coneBase = "10", coneTop = "0", coneHeight = "20"
-    var torusMajor = "20", torusMinor = "4"
-    var offsetDistance = "2", offsetReverse = false, offsetBoth = false, offsetCaps = false, offsetBaseConstruction = false
-    var mirrorAxis = ""
-    var patternCount = "3", patternSpacing = "10", patternDirection = "0"
-    var patternDirection2On = false, patternCount2 = "2", patternSpacing2 = "10", patternDirection2 = "90"
-    var circularCount = "6", circularAngle = "360", circularCenter = "0, 0"
-    var moveDX = "10", moveDY = "0", copy = false, keepRelations = true
-    var rotateAngle = "90", rotateCenter = "0, 0"
-    var scaleFactor = "2", scaleCenter = "0, 0"
-    var result: JSONValue?
+    package var scope: [String] = []
+    package var axis = ""
+    package var angle = "360"
+    package var radius = "2"
+    package var combine = "fuse"
+    package var target = ""
+    package var tool = ""
+    package var width = "50", height = "30", boxDepth = "20"
+    package var cylRadius = "10", cylHeight = "40"
+    package var sphereRadius = "15"
+    package var coneBase = "10", coneTop = "0", coneHeight = "20"
+    package var torusMajor = "20", torusMinor = "4"
+    package var offsetDistance = "2", offsetReverse = false, offsetBoth = false, offsetCaps = false, offsetBaseConstruction = false
+    package var mirrorAxis = ""
+    package var patternCount = "3", patternSpacing = "10", patternDirection = "0"
+    package var patternDirection2On = false, patternCount2 = "2", patternSpacing2 = "10", patternDirection2 = "90"
+    package var circularCount = "6", circularAngle = "360", circularCenter = "0, 0"
+    package var moveDX = "10", moveDY = "0", copy = false, keepRelations = true
+    package var rotateAngle = "90", rotateCenter = "0, 0"
+    package var scaleFactor = "2", scaleCenter = "0, 0"
+    package var result: JSONValue?
 
 
 }
 
 extension AppModel {
     /// Start an operation: its page appears in the PropertyManager.
-    func begin(_ op: Operation) {
+    package func begin(_ op: Operation) {
         form.result = nil
         switch op {
         case .plane:
@@ -141,7 +142,7 @@ extension AppModel {
         }
     }
 
-    func cancelOperation() {
+    package func cancelOperation() {
         operation = nil
         editingFeature = nil
         form.result = nil
@@ -151,12 +152,12 @@ extension AppModel {
     // MARK: editing a feature (double-click in the tree): its page, filled from its params
 
     /// Editing a feature that made its own body (merge does not apply to it).
-    var editingFeatureCreatesBody: Bool? {
+    package var editingFeatureCreatesBody: Bool? {
         editingFeature.flatMap { id in features.first { $0.id == id } }.map { !$0.createdBodies.isEmpty }
     }
 
     /// Text for a parameter value in a field ("25", "0.5 in").
-    static func fieldText(_ v: JSONValue?) -> String? {
+    package static func fieldText(_ v: JSONValue?) -> String? {
         switch v {
         case .number(let d)?: String(format: "%g", d)
         case .string(let s)?: s.hasSuffix(" deg") ? String(s.dropLast(4)) : s
@@ -164,7 +165,7 @@ extension AppModel {
         }
     }
 
-    func editFeature(_ f: FeatureRow) {
+    package func editFeature(_ f: FeatureRow) {
         guard let op = f.operation else { return }
         let p = f.params
         begin(op)
@@ -286,7 +287,7 @@ extension AppModel {
     }
 
     /// OK on a feature's page: feature.edit with the page's parameters.
-    func commitFeatureEdit(_ id: String, _ op: Operation) async {
+    package func commitFeatureEdit(_ id: String, _ op: Operation) async {
         var params: JSONValue?
         switch op {
         case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .fillet, .chamfer, .shell, .draft, .linearPattern,
@@ -308,7 +309,7 @@ extension AppModel {
     }
 
     /// The parameters `feature.edit` gets from the page of feature `id`.
-    func featureEditParams(_ id: String, _ op: Operation) -> JSONValue? {
+    package func featureEditParams(_ id: String, _ op: Operation) -> JSONValue? {
         guard var params = invocations(for: op)?.first?.params else { return nil }
         if case .object(var o) = params, features.first(where: { $0.id == id })?.createdBodies.isEmpty == false {
             // A feature that made its own body keeps doing so.
@@ -319,7 +320,7 @@ extension AppModel {
     }
 
     /// What OK needs before it can run (the PropertyManager's red message).
-    func missingInputMessage(_ op: Operation) -> String {
+    package func missingInputMessage(_ op: Operation) -> String {
         let messages: [Operation: String] = [.fillet: "select the edges or faces to fillet", .chamfer: "select the edges or faces to chamfer",
          .shell: "select a face to remove, or a body", .draft: "select the neutral plane and the faces to draft",
          .revolve: "choose the axis of revolution", .cutRevolve: "choose the axis of revolution",
@@ -333,12 +334,12 @@ extension AppModel {
     }
 
     /// Number when it parses, otherwise the text (a quantity with units, e.g. "0.5 in").
-    func quantity(_ text: String) -> JSONValue {
+    package func quantity(_ text: String) -> JSONValue {
         let t = text.trimmingCharacters(in: .whitespaces)
         return Double(t).map { .number($0) } ?? .string(t)
     }
 
-    func angleQuantity(_ text: String) -> JSONValue {
+    package func angleQuantity(_ text: String) -> JSONValue {
         let t = text.trimmingCharacters(in: .whitespaces)
         return .string(Double(t) != nil ? t + " deg" : t)
     }
@@ -351,7 +352,7 @@ extension AppModel {
     }
 
     /// The commands an operation runs (also what its preview runs).
-    func invocations(for op: Operation) -> [Invocation]? {
+    package func invocations(for op: Operation) -> [Invocation]? {
         switch op {
         case .extrude, .cutExtrude:
             guard let sk = operationSketch else { return nil }
@@ -523,7 +524,7 @@ extension AppModel {
     /// Recompute the live preview of the open operation, or of the feature being edited:
     /// new bodies translucent (amber, red for cuts), changed bodies opaque and tinted in place of
     /// the originals, sketch operations as preview curves in the sketch.
-    func updatePreview() async {
+    package func updatePreview() async {
         guard let op = operation, !op.isReport, op != .addRelation, var items = invocations(for: op) else {
             clearOperationPreview()
             return
@@ -580,7 +581,7 @@ extension AppModel {
         }
     }
 
-    static func blend(_ a: RGBA, _ b: RGBA, _ t: Float) -> RGBA {
+    package static func blend(_ a: RGBA, _ b: RGBA, _ t: Float) -> RGBA {
         let s: Float = 1 - t
         let r: Float = a.r * s + b.r * t
         let g: Float = a.g * s + b.g * t
@@ -605,7 +606,7 @@ extension AppModel {
         overlayVersion += 1
     }
 
-    func clearOperationPreview() {
+    package func clearOperationPreview() {
         previewError = nil
         if !sketchState.opPreview.isEmpty {
             sketchState.opPreview = []
@@ -617,7 +618,7 @@ extension AppModel {
     }
 
     /// Changes whenever something the preview depends on changes.
-    var previewKey: String {
+    package var previewKey: String {
         guard let op = operation else { return "" }
         let f = form
         return [op.title, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
@@ -636,7 +637,7 @@ extension AppModel {
 
     // MARK: commit
 
-    func commitOperation() async {
+    package func commitOperation() async {
         guard let op = operation else { return }
         var ok: CommandOutcome?
         if let fid = editingFeature {
@@ -667,12 +668,12 @@ extension AppModel {
         }
     }
 
-    func computeMassProperties() async {
+    package func computeMassProperties() async {
         guard let b = selectedBodies.first ?? bodies.first?.id else { return }
         form.result = try? await engine.execute("query.mass_properties", ["body": .string(b)]).result
     }
 
-    func computeMeasure() async {
+    package func computeMeasure() async {
         let refs = selection.filter { !$0.hasPrefix("sketch-") }
         guard refs.count == 2 else {
             form.result = nil
@@ -681,59 +682,22 @@ extension AppModel {
         form.result = try? await engine.execute("query.measure", ["from": .string(refs[0]), "to": .string(refs[1])]).result
     }
 
-    func computeCheck() async {
+    package func computeCheck() async {
         var p: [String: JSONValue] = [:]
         if let b = selectedBodies.first { p["body"] = .string(b) }
         form.result = try? await engine.execute("query.validate", .object(p)).result
     }
 
     /// Lines of the sketch used by the operation (revolve axes), centerlines first.
-    func sketchLines(_ sketch: String?) async -> [String] {
+    package func sketchLines(_ sketch: String?) async -> [String] {
         guard let id = sketch, let doc = await engine.activeDocument, let sk = doc.sketches[id] else { return [] }
         let lines = sk.orderedEntities.filter { $0.kind == .line }
         return (lines.filter(\.construction) + lines.filter { !$0.construction }).map(\.id)
     }
 
     /// Move a sketch point to typed coordinates (the Parameters group of a point or line).
-    func movePoint(_ id: String, u: String, v: String) async {
+    package func movePoint(_ id: String, u: String, v: String) async {
         guard let x = Double(u), let y = Double(v) else { return }
         await run("sketch.drag", ["entity": .string(id), "to": [.number(x), .number(y)]])
-    }
-}
-
-struct PropertyManagerView: View {
-    @Environment(AppModel.self) private var model
-    @State private var showHistory = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let op = model.operation {
-                        OperationPage(op: op)
-                    } else if let tool = model.sketchState.tool {
-                        SketchToolPage(tool: tool)
-                    } else if model.activeSketch != nil {
-                        SketchPage()
-                    } else {
-                        SelectionPage()
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Rectangle().fill(Theme.line2).frame(height: 1)
-            PMGroup("History", isOpen: $showHistory) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(model.log.suffix(60).enumerated().reversed()), id: \.offset) { _, line in
-                            Text(line).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-                .frame(maxHeight: 160)
-            }
-        }
-        .background(Theme.panel)
     }
 }

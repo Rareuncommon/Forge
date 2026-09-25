@@ -9,16 +9,16 @@ import ForgeKernel
 import ForgeRender
 import ForgeSketch
 
-enum ReferenceGeometry {
-    static let firstObjectID: UInt32 = 1_000_000
+package enum ReferenceGeometry {
+    package static let firstObjectID: UInt32 = 1_000_000
 
-    static func planeColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.40, 0.52, 0.72) : RGBA(0.42, 0.55, 0.78) }
-    static func gridColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.17, 0.19, 0.22) : RGBA(0.80, 0.83, 0.88) }
-    static func gridAxisColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.25, 0.28, 0.33) : RGBA(0.60, 0.65, 0.75) }
+    package static func planeColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.40, 0.52, 0.72) : RGBA(0.42, 0.55, 0.78) }
+    package static func gridColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.17, 0.19, 0.22) : RGBA(0.80, 0.83, 0.88) }
+    package static func gridAxisColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.25, 0.28, 0.33) : RGBA(0.60, 0.65, 0.75) }
 
     /// Items for the current state. `size` is the model's extent (mm) used to scale planes,
     /// axes and the grid; `sketch` is the sketch being edited, if any.
-    static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, refPlanes: [RefPlane] = [], dark: Bool = false) -> [RenderItem] {
+    package static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, refPlanes: [RefPlane] = [], dark: Bool = false) -> [RenderItem] {
         var out: [RenderItem] = []
         var lines = LineBuilder()
         let s = size
@@ -57,7 +57,7 @@ enum ReferenceGeometry {
         for sk in allSketches {
             for e in sk.orderedEntities where e.kind == .point && e.id != Sketch.originID {
                 let (u, v) = sk.point(e.id)
-                let color = e.construction ? RGBA.sketchConstruction : Theme.sketchRGBA(dark: dark).point
+                let color = e.construction ? RGBA.sketchConstruction : Palette.sketch(dark: dark).point
                 lines.add([sk.plane.point(u - m, v - m), sk.plane.point(u + m, v + m)], color)
                 lines.add([sk.plane.point(u - m, v + m), sk.plane.point(u + m, v - m)], color)
             }
@@ -66,7 +66,7 @@ enum ReferenceGeometry {
         return out
     }
 
-    static func niceStep(_ x: Double) -> Double {
+    package static func niceStep(_ x: Double) -> Double {
         guard x > 0, x.isFinite else { return 10 }
         let p = pow(10, floor(log10(x)))
         let f = x / p
@@ -74,13 +74,13 @@ enum ReferenceGeometry {
     }
 
     /// Accumulates polylines into one line-only mesh with per-polyline colours.
-    struct LineBuilder {
-        var points: [Float] = []
-        var offsets: [UInt32] = [0]
-        var ids: [UInt32] = []
-        var colors: [UInt32: RGBA] = [:]
+    package struct LineBuilder {
+        package var points: [Float] = []
+        package var offsets: [UInt32] = [0]
+        package var ids: [UInt32] = []
+        package var colors: [UInt32: RGBA] = [:]
 
-        mutating func add(_ polyline: [Vec3], _ color: RGBA) {
+        package mutating func add(_ polyline: [Vec3], _ color: RGBA) {
             for p in polyline { points += [Float(p.x), Float(p.y), Float(p.z)] }
             offsets.append(UInt32(points.count / 3))
             let id = UInt32(ids.count)
@@ -88,7 +88,7 @@ enum ReferenceGeometry {
             colors[id] = color
         }
 
-        func item(objectID: UInt32) -> RenderItem {
+        package func item(objectID: UInt32) -> RenderItem {
             let mesh = Mesh(positions: [], normals: [], indices: [], triangleFaces: [], edgeOffsets: offsets, edgeIDs: ids, edgePoints: points)
             return RenderItem(objectID: objectID, mesh: mesh, color: .edge, edgeColors: colors)
         }

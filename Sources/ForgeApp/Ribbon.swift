@@ -4,6 +4,7 @@
 
 import ForgeCommands
 import ForgeCore
+import ForgeUI
 import SwiftUI
 
 struct RibbonView: View {

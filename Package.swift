@@ -74,6 +74,8 @@ var targets: [Target] = [
     .target(name: "ForgeCommands", dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeData", "ForgeRender"], swiftSettings: strictSwift),
     .target(name: "ForgeRender", dependencies: ["ForgeCore", "ForgeKernel"], swiftSettings: strictSwift),
     .target(name: "ForgeMCP", dependencies: ["ForgeCore", "ForgeCommands", "ForgeRender"], swiftSettings: strictSwift),
+    // The app model every front end shares (docs/adr/0012-windows-app.md): no UI framework.
+    .target(name: "ForgeUI", dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender"], swiftSettings: strictSwift),
     .executableTarget(
         name: "forge-cli",
         dependencies: ["ForgeCore", "ForgeKernel", "ForgeCommands", "ForgeMCP", "ForgeRender"],
@@ -86,6 +88,7 @@ var targets: [Target] = [
     .testTarget(name: "ForgeCommandsTests", dependencies: ["ForgeCommands"]),
     .testTarget(name: "ForgeRenderTests", dependencies: ["ForgeRender", "ForgeKernel"]),
     .testTarget(name: "ForgeMCPTests", dependencies: ["ForgeMCP", "ForgeCommands"]),
+    .testTarget(name: "ForgeUITests", dependencies: ["ForgeUI", "ForgeCommands", "ForgeCore"]),
     .testTarget(
         name: "GoldenModelTests",
         dependencies: ["ForgeCommands", "ForgeSketch"],
@@ -106,7 +109,7 @@ if env["FORGE_NO_APP"] == nil {
 targets.append(
     .executableTarget(
         name: "ForgeApp",
-        dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender"],
+        dependencies: ["ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender", "ForgeUI"],
         swiftSettings: strictSwift
     )
 )
