@@ -71,7 +71,7 @@ struct fw_app {
     HACCEL accel = nullptr;
     fw_handler handler = nullptr;
     void *ctx = nullptr;
-    HFONT font = nullptr, bold = nullptr, small = nullptr, big = nullptr;
+    HFONT font = nullptr, bold = nullptr, smallFont = nullptr, big = nullptr;
     HBRUSH panelBrush = nullptr, messageBrush = nullptr, activeBrush = nullptr, ribbonBrush = nullptr, fieldBrush = nullptr;
     float dpi = 1;
     bool quit = false;

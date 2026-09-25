@@ -245,7 +245,7 @@ static void buildRibbon(fw_app *a) {
             if (!it.variants.empty()) {
                 arrow = CreateWindowExW(0, L"BUTTON", L"▾", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | (it.enabled ? 0 : WS_DISABLED), x, top, arrowW,
                                         largeH, a->ribbon, (HMENU)(INT_PTR)(ID_RIBBON_ARROW + i), nullptr, nullptr);
-                SendMessageW(arrow, WM_SETFONT, (WPARAM)a->small, TRUE);
+                SendMessageW(arrow, WM_SETFONT, (WPARAM)a->smallFont, TRUE);
                 x += arrowW;
             }
             a->ribbonArrows.push_back(arrow);
@@ -263,7 +263,7 @@ static void buildRibbon(fw_app *a) {
             if (!it.variants.empty()) {
                 arrow = CreateWindowExW(0, L"BUTTON", L"▾", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | (it.enabled ? 0 : WS_DISABLED), smallX + w, y, arrowW,
                                         smallH, a->ribbon, (HMENU)(INT_PTR)(ID_RIBBON_ARROW + i), nullptr, nullptr);
-                SendMessageW(arrow, WM_SETFONT, (WPARAM)a->small, TRUE);
+                SendMessageW(arrow, WM_SETFONT, (WPARAM)a->smallFont, TRUE);
                 w += arrowW;
             }
             a->ribbonArrows.push_back(arrow);
@@ -312,7 +312,7 @@ static LRESULT CALLBACK ribbonProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (a) {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, kText2);
-            HGDIOBJ old = SelectObject(dc, a->small);
+            HGDIOBJ old = SelectObject(dc, a->smallFont);
             HPEN pen = CreatePen(PS_SOLID, 1, kLine);
             HGDIOBJ oldPen = SelectObject(dc, pen);
             for (size_t g = 0; g < a->groupRects.size() && g < a->groups.size(); ++g) {
@@ -540,7 +540,7 @@ static void buildPanel(fw_app *a) {
     if (a->pCancel) a->panelChrome.push_back(make(a, L"BUTTON", L"Cancel", BS_PUSHBUTTON, bx, y, a->px(60), a->px(26), ID_PANEL_CANCEL, a->font));
     y += a->px(24);
     if (!a->pSubtitle.empty()) {
-        a->panelChrome.push_back(make(a, L"STATIC", a->pSubtitle, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, pad, y, inner, a->px(18), 0, a->small));
+        a->panelChrome.push_back(make(a, L"STATIC", a->pSubtitle, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, pad, y, inner, a->px(18), 0, a->smallFont));
         y += a->px(20);
     }
     y += a->px(6);
@@ -580,7 +580,7 @@ static void buildPanel(fw_app *a) {
             c.main = make(a, L"EDIT", c.value, ES_AUTOHSCROLL | WS_TABSTOP, x + labelW, y, fieldW, rowH, controlID((int)i, 0), a->font, WS_EX_CLIENTEDGE);
             WNDPROC old = (WNDPROC)SetWindowLongPtrW(c.main, GWLP_WNDPROC, (LONG_PTR)fieldProc);
             if (!editProc) editProc = old;
-            if (!c.unit.empty()) c.extra.push_back(make(a, L"STATIC", c.unit, SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, x + labelW + fieldW + a->px(6), y, a->px(40), rowH, 0, a->small));
+            if (!c.unit.empty()) c.extra.push_back(make(a, L"STATIC", c.unit, SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, x + labelW + fieldW + a->px(6), y, a->px(40), rowH, 0, a->smallFont));
             y += rowH + gap;
             break;
         }
@@ -610,8 +610,8 @@ static void buildPanel(fw_app *a) {
             break;
         }
         case PK_NOTE: {
-            int h = textHeight(a, a->small, c.label, w);
-            c.main = make(a, L"STATIC", c.label, SS_LEFT | SS_NOPREFIX, x, y, w, h, controlID((int)i, 0), a->small);
+            int h = textHeight(a, a->smallFont, c.label, w);
+            c.main = make(a, L"STATIC", c.label, SS_LEFT | SS_NOPREFIX, x, y, w, h, controlID((int)i, 0), a->smallFont);
             y += h + gap;
             break;
         }
@@ -642,10 +642,10 @@ static void buildPanel(fw_app *a) {
                 HWND t = make(a, L"STATIC", c.items[k], SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, x, y, tw, a->px(18), controlID((int)i, 0), a->font);
                 SetPropW(t, L"ForgeProblem", (HANDLE)(INT_PTR)(bad ? 1 : 0));
                 c.extra.push_back(t);
-                if (c.deletable) c.extra.push_back(make(a, L"BUTTON", L"✕", BS_PUSHBUTTON, x + tw + a->px(4), y, a->px(22), a->px(20), controlID((int)i, (int)k + 1), a->small));
+                if (c.deletable) c.extra.push_back(make(a, L"BUTTON", L"✕", BS_PUSHBUTTON, x + tw + a->px(4), y, a->px(22), a->px(20), controlID((int)i, (int)k + 1), a->smallFont));
                 y += a->px(18);
                 if (k < c.details.size() && !c.details[k].empty()) {
-                    c.extra.push_back(make(a, L"STATIC", c.details[k], SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, x + a->px(10), y, tw - a->px(10), a->px(16), 0, a->small));
+                    c.extra.push_back(make(a, L"STATIC", c.details[k], SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, x + a->px(10), y, tw - a->px(10), a->px(16), 0, a->smallFont));
                     y += a->px(17);
                 }
                 y += a->px(4);
@@ -1142,7 +1142,7 @@ extern "C" fw_app *fw_app_create(const char *title, fw_handler handler, void *ct
     ReleaseDC(nullptr, screen);
     a->font = uiFont(a->dpi, 9, false);
     a->bold = uiFont(a->dpi, 9, true);
-    a->small = uiFont(a->dpi, 8, false);
+    a->smallFont = uiFont(a->dpi, 8, false);
     a->big = uiFont(a->dpi, 11, true);
     a->panelBrush = CreateSolidBrush(kPanel);
     a->messageBrush = CreateSolidBrush(kMessage);
@@ -1246,7 +1246,7 @@ extern "C" void fw_app_destroy(fw_app *a) {
     if (!a) return;
     if (a->renderer) fw_renderer_destroy(a->renderer);
     if (a->hwnd && IsWindow(a->hwnd)) DestroyWindow(a->hwnd);
-    for (HGDIOBJ o : {(HGDIOBJ)a->font, (HGDIOBJ)a->bold, (HGDIOBJ)a->small, (HGDIOBJ)a->big, (HGDIOBJ)a->panelBrush, (HGDIOBJ)a->messageBrush,
+    for (HGDIOBJ o : {(HGDIOBJ)a->font, (HGDIOBJ)a->bold, (HGDIOBJ)a->smallFont, (HGDIOBJ)a->big, (HGDIOBJ)a->panelBrush, (HGDIOBJ)a->messageBrush,
                       (HGDIOBJ)a->activeBrush, (HGDIOBJ)a->ribbonBrush, (HGDIOBJ)a->fieldBrush})
         if (o) DeleteObject(o);
     delete a;
