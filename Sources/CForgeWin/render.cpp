@@ -504,7 +504,24 @@ static IDWriteTextFormat *format(fw_renderer *r, float size, bool centred) {
     auto it = r->formats.find(key);
     if (it != r->formats.end()) return it->second;
     IDWriteTextFormat *f = nullptr;
-    if (!r->dwrite || FAILED(r->dwrite->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
+    // Segoe UI where installed (all Windows versions ship it), else a font that exists.
+    static const wchar_t *family = nullptr;
+    if (!family && r->dwrite) {
+        family = L"Segoe UI";
+        IDWriteFontCollection *fonts = nullptr;
+        if (SUCCEEDED(r->dwrite->GetSystemFontCollection(&fonts, FALSE)) && fonts) {
+            for (const wchar_t *name : {L"Segoe UI", L"Tahoma", L"Arial", L"DejaVu Sans"}) {
+                UINT32 index = 0;
+                BOOL exists = FALSE;
+                if (SUCCEEDED(fonts->FindFamilyName(name, &index, &exists)) && exists) {
+                    family = name;
+                    break;
+                }
+            }
+            fonts->Release();
+        }
+    }
+    if (!r->dwrite || FAILED(r->dwrite->CreateTextFormat(family, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
                                                          DWRITE_FONT_STRETCH_NORMAL, size, L"", &f)))
         return nullptr;
     f->SetTextAlignment(centred ? DWRITE_TEXT_ALIGNMENT_CENTER : DWRITE_TEXT_ALIGNMENT_LEADING);

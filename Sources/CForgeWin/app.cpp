@@ -355,7 +355,7 @@ static void buildTree(fw_app *a) {
         ins.hParent = depth == 0 ? TVI_ROOT : parents.back();
         ins.hInsertAfter = TVI_LAST;
         ins.item.mask = TVIF_TEXT | TVIF_PARAM | TVIF_STATE;
-        std::wstring title = n.state == FW_NODE_ROLLBACK_BAR ? L"━━━ Rollback ━━━" : n.title;
+        std::wstring title = n.state == FW_NODE_ROLLBACK_BAR ? L"Rollback" : n.title;
         ins.item.pszText = (LPWSTR)title.c_str();
         ins.item.lParam = (LPARAM)i;
         ins.item.stateMask = TVIS_BOLD;
@@ -441,11 +441,22 @@ static LRESULT treeNotify(fw_app *a, NMHDR *nm) {
                 case FW_NODE_ROLLED_BACK: cd->clrText = kText3; break;
                 case FW_NODE_WARNING: cd->clrText = kWarning; break;
                 case FW_NODE_ERROR: cd->clrText = kError; break;
-                case FW_NODE_ROLLBACK_BAR: cd->clrText = kAccent; break;
+                case FW_NODE_ROLLBACK_BAR: cd->clrText = kAccent; return CDRF_NOTIFYPOSTPAINT;
                 default: cd->clrText = n.selected ? RGB(0x1A, 0x4F, 0xB3) : RGB(0x1D, 0x1D, 0x1F);
                 }
             }
             return CDRF_DODEFAULT;
+        }
+        if (cd->nmcd.dwDrawStage == CDDS_ITEMPOSTPAINT) {
+            // The rollback bar: a thick accent line after its label, as in SolidWorks.
+            RECT text = {};
+            *(HTREEITEM *)&text = (HTREEITEM)cd->nmcd.dwItemSpec;
+            SendMessageW(a->tree, TVM_GETITEMRECT, TRUE, (LPARAM)&text);
+            RECT bar = {text.right + a->px(6), (cd->nmcd.rc.top + cd->nmcd.rc.bottom) / 2 - a->px(1), cd->nmcd.rc.right - a->px(8),
+                        (cd->nmcd.rc.top + cd->nmcd.rc.bottom) / 2 + a->px(2)};
+            HBRUSH b = CreateSolidBrush(kAccent);
+            FillRect(cd->nmcd.hdc, &bar, b);
+            DeleteObject(b);
         }
         return CDRF_DODEFAULT;
     }
@@ -519,14 +530,14 @@ static void buildPanel(fw_app *a) {
     int labelW = a->px(118), fieldW = inner - labelW - a->px(46);
 
     // Header: title, subtitle, OK / Cancel.
-    int buttonsW = (a->pOK ? a->px(34) : 0) + (a->pCancel ? a->px(34) : 0);
+    int buttonsW = (a->pOK ? a->px(46) : 0) + (a->pCancel ? a->px(64) : 0);
     a->panelChrome.push_back(make(a, L"STATIC", a->pTitle, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, pad, y, inner - buttonsW, a->px(22), 0, a->big));
     int bx = pad + inner - buttonsW;
     if (a->pOK) {
-        a->panelChrome.push_back(make(a, L"BUTTON", L"✔", BS_PUSHBUTTON, bx, y, a->px(30), a->px(26), ID_PANEL_OK, a->bold));
-        bx += a->px(34);
+        a->panelChrome.push_back(make(a, L"BUTTON", L"OK", BS_DEFPUSHBUTTON, bx, y, a->px(42), a->px(26), ID_PANEL_OK, a->bold));
+        bx += a->px(46);
     }
-    if (a->pCancel) a->panelChrome.push_back(make(a, L"BUTTON", L"✖", BS_PUSHBUTTON, bx, y, a->px(30), a->px(26), ID_PANEL_CANCEL, a->bold));
+    if (a->pCancel) a->panelChrome.push_back(make(a, L"BUTTON", L"Cancel", BS_PUSHBUTTON, bx, y, a->px(60), a->px(26), ID_PANEL_CANCEL, a->font));
     y += a->px(24);
     if (!a->pSubtitle.empty()) {
         a->panelChrome.push_back(make(a, L"STATIC", a->pSubtitle, SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, pad, y, inner, a->px(18), 0, a->small));
@@ -1186,16 +1197,16 @@ extern "C" fw_app *fw_app_create(const char *title, fw_handler handler, void *ct
     SetWindowLongPtrW(a->modify, GWLP_USERDATA, (LONG_PTR)a);
     a->modifyLabel = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_NOPREFIX, a->px(8), a->px(6), a->px(214), a->px(18), a->modify, nullptr, inst, nullptr);
     SendMessageW(a->modifyLabel, WM_SETFONT, (WPARAM)a->bold, TRUE);
-    a->modifyEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, a->px(8), a->px(28), a->px(130), a->px(26), a->modify,
+    a->modifyEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, a->px(8), a->px(28), a->px(112), a->px(26), a->modify,
                                     (HMENU)ID_MODIFY_EDIT, inst, nullptr);
     SendMessageW(a->modifyEdit, WM_SETFONT, (WPARAM)a->font, TRUE);
     modifyEditProc = (WNDPROC)SetWindowLongPtrW(a->modifyEdit, GWLP_WNDPROC, (LONG_PTR)modifyFieldProc);
-    HWND ok = CreateWindowExW(0, L"BUTTON", L"✔", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, a->px(144), a->px(28), a->px(36), a->px(26), a->modify,
+    HWND ok = CreateWindowExW(0, L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, a->px(126), a->px(28), a->px(40), a->px(26), a->modify,
                               (HMENU)ID_MODIFY_OK, inst, nullptr);
-    HWND cancel = CreateWindowExW(0, L"BUTTON", L"✖", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, a->px(184), a->px(28), a->px(36), a->px(26), a->modify,
+    HWND cancel = CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, a->px(170), a->px(28), a->px(52), a->px(26), a->modify,
                                   (HMENU)ID_MODIFY_CANCEL, inst, nullptr);
     SendMessageW(ok, WM_SETFONT, (WPARAM)a->bold, TRUE);
-    SendMessageW(cancel, WM_SETFONT, (WPARAM)a->bold, TRUE);
+    SendMessageW(cancel, WM_SETFONT, (WPARAM)a->font, TRUE);
 
     buildMenu(a);
     a->renderer = fw_renderer_create(a->view);
