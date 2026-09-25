@@ -142,7 +142,9 @@ jobs:
           { echo "bin: $BIN"; ls "$BIN" | grep -i -E "forgewin|forge-cli" ; } > app-run.log 2>&1
           EXE="$(find "$BIN" .build -maxdepth 4 -name ForgeWin.exe 2>/dev/null | head -1)"
           echo "exe: $EXE" >> app-run.log
-          timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1; echo "exit $?" >> app-run.log
+          set +e
+          timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1
+          echo "exit $?" >> app-run.log
           ls -la forgewin.png >> app-run.log 2>&1 || true
           {
             echo "--- PATH (occt / 3rdparty)"; echo "$PATH" | tr ':' '\n' | grep -i -E "occt|3rdparty" || true
@@ -150,6 +152,7 @@ jobs:
             K="$(find Vendor/occt -name TKernel.dll | head -1)"
             echo "--- TKernel.dll ($K)"; ldd "$K" 2>&1 | grep -i -E "not found|tbb|jemalloc" || true
             echo "--- tbb / jemalloc files"; find Vendor/occt -iname "tbb12*.dll" -o -iname "jemalloc*.dll" | head
+            echo "--- forge-cli.exe imports"; ldd "$(dirname "$EXE")/forge-cli.exe" 2>&1 | grep -v -i "windows/system32" | head -40
           } >> app-run.log 2>&1
       - uses: actions/upload-artifact@v5
         if: always()
