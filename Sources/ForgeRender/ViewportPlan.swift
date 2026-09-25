@@ -180,3 +180,12 @@ public struct ViewportFrame: Sendable {
         return out
     }
 }
+
+extension RenderImage {
+    /// The hit in a GPU pick readback: `objects` / `elements` of a w×h region, the cursor at
+    /// (x, y) inside it (same edge-preferring rule as `pick(x:y:radius:)`).
+    public static func pick(regionWidth w: Int, height h: Int, objects: [UInt32], elements: [UInt32], x: Int, y: Int, radius: Int) -> PickHit? {
+        guard w > 0, h > 0, objects.count == w * h, elements.count == w * h else { return nil }
+        return RenderImage(width: w, height: h, rgba: [], depth: [], objects: objects, elements: elements).pick(x: x, y: y, radius: radius)
+    }
+}

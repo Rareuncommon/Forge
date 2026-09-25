@@ -37,6 +37,8 @@ jobs:
             | .build/debug/forge-cli mcp | python3 -c 'import sys,json; r=[json.loads(l) for l in sys.stdin]; assert r[1]["result"]["isError"] is False, r; print("mcp ok")'
       - name: FEATURES.md is in sync with SPEC.md
         run: python3 scripts/features.py --check
+      - name: Type-check the Windows front end (headless shell API)
+        run: FORGE_WIN_CHECK=1 /opt/swift/usr/bin/swift build --product ForgeWin
       # Solver cross-check against FreeCAD's planegcs (docs/adr/0003). The oracle is an external,
       # test-only executable (planegcs is LGPL-2.1+ and never linked into Forge, docs/adr/0005).
       - name: Build the planegcs oracle
@@ -124,3 +126,8 @@ jobs:
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
           .build/debug/forge-cli.exe run Tests/GoldenModelTests/Models/*.json --quiet
+      - name: Build the Windows app (Win32 + Direct3D 11)
+        if: always()
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          swift build --product ForgeWin

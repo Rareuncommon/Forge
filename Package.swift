@@ -136,6 +136,40 @@ products.append(.executable(name: "ForgeApp", targets: ["ForgeApp"]))
 }
 #endif
 
+// The native Windows app (docs/adr/0012-windows-app.md): the Win32 / Direct3D 11 shell in
+// CForgeWin and the Swift front end in ForgeWin. Elsewhere FORGE_WIN_CHECK=1 builds ForgeWin
+// against a headless implementation of the shell API, so Linux CI type-checks it.
+#if os(Windows)
+let windowsShell = true
+#else
+let windowsShell = false
+#endif
+if windowsShell || env["FORGE_WIN_CHECK"] != nil {
+    targets.append(
+        .target(
+            name: "CForgeWin",
+            path: "Sources/CForgeWin",
+            exclude: windowsShell ? ["headless"] : ["app.cpp", "render.cpp"],
+            cSettings: [.define("UNICODE"), .define("_UNICODE")],
+            cxxSettings: [
+                .define("UNICODE"), .define("_UNICODE"), .define("NOMINMAX"),
+                // Same C++ library settings as CForgeKernel (both are linked into the app).
+                .define("_ITERATOR_DEBUG_LEVEL", to: "0"),
+            ],
+            linkerSettings: windowsShell
+                ? ["d3d11", "dxgi", "d2d1", "dwrite", "ole32", "comdlg32", "uuid", "gdi32", "user32", "shell32"].map { .linkedLibrary($0) }
+                : []
+        ))
+    targets.append(
+        .executableTarget(
+            name: "ForgeWin",
+            dependencies: ["CForgeWin", "ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender", "ForgeUI"],
+            swiftSettings: strictSwift,
+            linkerSettings: windowsShell ? [.unsafeFlags(["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"])] : []
+        ))
+    products.append(.executable(name: "ForgeWin", targets: ["ForgeWin"]))
+}
+
 let package = Package(
     name: "Forge",
     // The product targets macOS 27 (Info.plist LSMinimumSystemVersion); the package itself
