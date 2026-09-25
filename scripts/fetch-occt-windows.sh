@@ -47,9 +47,10 @@ if [ "$libdir" != "$prefix/lib" ] && [ "$libdir" != "$prefix/win64/vc14/lib" ]; 
     mkdir -p "$prefix/lib" && cp "$libdir"/*.lib "$prefix/lib/"
 fi
 prefix="$(cd "$prefix" && pwd)"
-# DLLs the kernel toolkits load (OCCT itself, TBB, jemalloc, FreeType, zlib); not the viewers'
+# DLLs the kernel toolkits load (OCCT itself, TBB, jemalloc). Not the bundled MSVC runtime
+# (msvc-vc14-64: older than the system's, it breaks newer programs) nor the viewers'
 # third-party libraries (Qt, VTK, Tcl/Tk…).
-dlldirs="$(find "$dest" -name '*.dll' -printf '%h\n' | sort -u | grep -Ev '/(qt|vtk|tcltk|glfw|angle|openvr|gl2ps|ffmpeg|freeimage)[^/]*/|/debug/' || true)"
+dlldirs="$(find "$dest" -name '*.dll' -printf '%h\n' | sort -u | grep -Ev '/(qt|vtk|tcltk|glfw|angle|openvr|gl2ps|ffmpeg|freeimage|msvc|lzma|zlib|freetype)[^/]*(/|$)|/debug/' || true)"
 
 {
     echo "export FORGE_OCCT_PREFIX='$(cygpath -m "$prefix")'"
