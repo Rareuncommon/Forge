@@ -1,8 +1,10 @@
-// Linux shell of Forge (docs/adr/0013-linux-app.md): the GTK 4 window with its menus, ribbon,
-// FeatureManager tree, PropertyManager, status bar, Modify box and dialogs, behind the same C
-// API as the Win32 shell (include/CForgeWin.h), so the Swift front end (Sources/ForgeWin) runs
-// unchanged. Layout and colours follow the Windows and macOS apps: ribbon on top, tree on the
-// left, viewport in the middle, PropertyManager on the right. The viewport is gtk_render.c.
+// Linux shell of Forge (docs/adr/0013-linux-app.md): the GTK 4 window laid out as the design
+// (docs/design, Main / Sketch / System artboards): a header bar with the document, undo / redo /
+// save, the CommandManager tabs and the app menu; the icon ribbon; the FeatureManager tree;
+// the PropertyManager with collapsible groups; over the viewport the heads-up view toolbar,
+// the confirmation corner and the sketch badge; a status bar of cells. It implements the same
+// C API as the Win32 shell (include/CForgeWin.h), so the Swift front end (Sources/ForgeWin)
+// runs unchanged. Icons: gtk_icons.c; viewport: gtk_render.c.
 
 #include "gtk_internal.h"
 
@@ -52,67 +54,160 @@ static GtkWidget *label(const char *text, const char *css) {
     return l;
 }
 
-// MARK: style (the design's light theme, as on Windows)
+static GtkWidget *hbox(int spacing) { return gtk_box_new(GTK_ORIENTATION_HORIZONTAL, spacing); }
+static GtkWidget *vbox(int spacing) { return gtk_box_new(GTK_ORIENTATION_VERTICAL, spacing); }
+
+/// A flat button showing an icon.
+static GtkWidget *iconButton(const char *icon, int size, const char *tooltip, const char *css) {
+    GtkWidget *b = gtk_button_new();
+    gtk_button_set_child(GTK_BUTTON(b), fw_icon_widget(icon, size));
+    gtk_widget_add_css_class(b, css ? css : "forge-flat");
+    if (tooltip) gtk_widget_set_tooltip_text(b, tooltip);
+    return b;
+}
+
+// MARK: theme (the design's tokens, docs/design/gen.py LIGHT / DARK)
+
+typedef struct {
+    const char *chrome, *panel, *surface, *hairline, *text, *text2, *accent, *message, *warning, *error;
+} Tokens;
+
+static const Tokens kLight = {"#E9E9EC", "#FBFBFC", "#FFFFFF", "#D5D5DA", "#1D1D1F", "#5E5E66", "#1F5FD6", "#FFF4CE", "#B45309", "#C62F20"};
+static const Tokens kDark = {"#1F2023", "#232427", "#2C2D31", "#3A3B40", "#EDEDEF", "#A6A6AE", "#4C8DFF", "#3B3522", "#F0A33A", "#FF6B5B"};
 
 static const char *kCSS =
-    "window.forge { background: #E9E9EC; color: #1D1D1F; }\n"
-    ".forge-tabs { background: #E9E9EC; padding: 2px 8px 0 8px; }\n"
-    ".forge-tab { border-radius: 6px 6px 0 0; padding: 3px 14px; background: transparent; border: none; box-shadow: none; color: #5E5E66; }\n"
-    ".forge-tab.active { background: #FBFBFC; color: #1D1D1F; font-weight: 600; }\n"
-    ".forge-ribbon { background: #FBFBFC; border-bottom: 1px solid #D5D5DA; padding: 4px 6px; }\n"
-    ".forge-group { border-right: 1px solid #D5D5DA; padding: 0 6px; }\n"
-    ".forge-group-title { color: #8A8A91; font-size: 9pt; }\n"
-    ".forge-rb { padding: 2px 6px; min-height: 0; border: 1px solid transparent; background: transparent; box-shadow: none; color: #1D1D1F; }\n"
-    ".forge-rb:hover { background: #EDEDF0; }\n"
-    ".forge-rb.active { background: #E1EAFB; border-color: #1F5FD6; color: #1A4FB3; }\n"
-    ".forge-rb.large { min-width: 70px; min-height: 58px; }\n"
-    ".forge-side { background: #FBFBFC; }\n"
-    ".forge-left { border-right: 1px solid #D5D5DA; }\n"
-    ".forge-right { border-left: 1px solid #D5D5DA; }\n"
-    ".forge-tree row { padding: 1px 4px; }\n"
-    ".forge-node.selected { background: #E1EAFB; color: #1A4FB3; border-radius: 4px; }\n"
-    ".forge-node.dim { color: #8A8A91; }\n"
-    ".forge-node.warning { color: #B45309; }\n"
-    ".forge-node.error { color: #C82E21; }\n"
-    ".forge-node.rollback { color: #1F5FD6; font-weight: 600; }\n"
-    ".forge-bar { background: #1F5FD6; min-height: 3px; }\n"
-    ".forge-title { font-size: 14pt; font-weight: 600; }\n"
-    ".forge-subtitle { color: #5E5E66; font-size: 9pt; }\n"
-    ".forge-message { background: #FFF4CE; border-radius: 6px; padding: 8px; }\n"
-    ".forge-section { font-weight: 600; margin-top: 6px; }\n"
-    ".forge-note { color: #5E5E66; font-size: 9pt; }\n"
-    ".forge-note.warning { color: #B45309; }\n"
-    ".forge-unit { color: #8A8A91; font-size: 9pt; }\n"
-    ".forge-list { border: 1px solid #D5D5DA; border-radius: 4px; background: white; padding: 4px 6px; }\n"
-    ".forge-list.active { border-color: #1F5FD6; background: #F3F7FE; }\n"
-    ".forge-placeholder { color: #8A8A91; }\n"
-    ".forge-problem { color: #C82E21; }\n"
-    ".forge-status { background: #E9E9EC; border-top: 1px solid #D5D5DA; padding: 2px 10px; color: #5E5E66; font-size: 9pt; }\n"
-    ".forge-modify { background: #FBFBFC; border: 1px solid #D5D5DA; border-radius: 6px; padding: 6px; }\n";
+    "window.forge, window.forge .forge-chrome { background: @f_chrome; color: @f_text; }\n"
+    "window.forge { font-size: 13px; }\n"
+    "headerbar.forge-header { background: @f_chrome; box-shadow: none; border-bottom: none; min-height: 46px; padding: 0 6px; }\n"
+    "headerbar.forge-header windowcontrols button { min-height: 22px; min-width: 22px; }\n"
+    ".forge-doc-title { font-weight: 700; font-size: 13px; }\n"
+    ".forge-doc-subtitle { color: @f_text2; font-size: 11px; }\n"
+    ".forge-tabs { background: alpha(@f_text, 0.07); border-radius: 9px; padding: 3px; }\n"
+    ".forge-tab { background: none; border: none; box-shadow: none; border-radius: 7px; padding: 3px 14px; min-height: 22px; color: @f_text2; }\n"
+    ".forge-tab:hover { color: @f_text; }\n"
+    ".forge-tab.active { background: @f_surface; color: @f_text; font-weight: 600; box-shadow: 0 1px 2px alpha(black, 0.14); }\n"
+    ".forge-flat { background: none; border: none; box-shadow: none; padding: 4px; min-height: 0; min-width: 0; border-radius: 6px; color: @f_text2; }\n"
+    ".forge-flat:hover { background: alpha(@f_text, 0.08); color: @f_text; }\n"
+    ".forge-flat:disabled { color: alpha(@f_text, 0.3); }\n"
+    ".forge-ribbon { background: @f_chrome; border-bottom: 1px solid @f_hairline; padding: 6px 8px 3px 8px; }\n"
+    ".forge-group { padding: 0 8px; border-right: 1px solid @f_hairline; }\n"
+    ".forge-group-title { color: @f_text2; font-size: 11px; margin-top: 2px; }\n"
+    ".forge-rb { background: none; border: none; box-shadow: none; border-radius: 7px; min-height: 0; min-width: 0; color: @f_text; }\n"
+    ".forge-rb:hover { background: alpha(@f_text, 0.08); }\n"
+    ".forge-rb.active { background: alpha(@f_accent, 0.14); color: @f_accent; }\n"
+    ".forge-rb:disabled { color: alpha(@f_text, 0.32); }\n"
+    ".forge-rb.large { padding: 5px 5px 4px 5px; min-width: 60px; }\n"
+    ".forge-rb.large label { font-size: 11px; }\n"
+    ".forge-rb.small { padding: 1px 6px 1px 4px; }\n"
+    ".forge-rb.small label { font-size: 12px; }\n"
+    "menubutton.forge-flyout > button { background: none; border: none; box-shadow: none; padding: 2px 1px; min-width: 0; min-height: 0; color: @f_text2; border-radius: 4px; }\n"
+    "menubutton.forge-flyout > button:hover { background: alpha(@f_text, 0.08); }\n"
+    ".forge-left { background: @f_panel; border-right: 1px solid @f_hairline; }\n"
+    ".forge-right { background: @f_panel; border-left: 1px solid @f_hairline; }\n"
+    ".forge-search { background: @f_surface; border: 1px solid @f_hairline; border-radius: 7px; box-shadow: none; min-height: 28px; }\n"
+    ".forge-tree, .forge-tree row { background: transparent; }\n"
+    ".forge-tree row { padding: 0 6px; min-height: 0; outline: none; }\n"
+    ".forge-tree row:hover { background: transparent; }\n"
+    ".forge-node { padding: 4px 6px; border-radius: 6px; }\n"
+    ".forge-node:hover { background: alpha(@f_text, 0.05); }\n"
+    ".forge-node.selected { background: alpha(@f_accent, 0.14); color: @f_accent; }\n"
+    ".forge-node.dim { color: alpha(@f_text, 0.42); }\n"
+    ".forge-node.warning { color: @f_warning; }\n"
+    ".forge-node.error { color: @f_error; }\n"
+    ".forge-node.root label { font-weight: 700; }\n"
+    ".forge-bar { background: @f_accent; min-height: 3px; border-radius: 2px; margin: 4px 6px; }\n"
+    ".forge-headsup { background: @f_surface; border: 1px solid @f_hairline; border-radius: 10px; padding: 3px 5px; box-shadow: 0 3px 10px alpha(black, 0.12); }\n"
+    ".forge-headsup menubutton > button { background: none; border: none; box-shadow: none; padding: 4px 3px; min-height: 0; min-width: 0; border-radius: 6px; color: @f_text2; }\n"
+    ".forge-headsup menubutton > button:hover { background: alpha(@f_text, 0.08); color: @f_text; }\n"
+    ".forge-sep { background: @f_hairline; min-width: 1px; margin: 5px 4px; }\n"
+    ".forge-ok { background: @f_accent; color: white; border: none; border-radius: 9px; min-width: 40px; min-height: 40px; padding: 0; box-shadow: 0 3px 8px alpha(black, 0.22); }\n"
+    ".forge-ok:hover { background: shade(@f_accent, 1.1); }\n"
+    ".forge-cancel { background: @f_surface; color: @f_text; border: 1px solid @f_hairline; border-radius: 9px; min-width: 40px; min-height: 40px; padding: 0; box-shadow: 0 3px 8px alpha(black, 0.12); }\n"
+    ".forge-badge { background: alpha(@f_surface, 0.94); border: 1px solid @f_hairline; border-radius: 8px; padding: 5px 10px; }\n"
+    ".forge-badge-title { font-weight: 700; }\n"
+    ".forge-badge-detail { color: @f_text2; }\n"
+    ".forge-modify { background: @f_surface; border: 1px solid @f_hairline; border-radius: 8px; padding: 6px; box-shadow: 0 3px 10px alpha(black, 0.14); }\n"
+    ".forge-pm-head { padding: 14px 14px 10px 14px; }\n"
+    ".forge-pm-tile { background: alpha(@f_accent, 0.14); border-radius: 8px; min-width: 36px; min-height: 36px; }\n"
+    ".forge-pm-title { font-size: 15px; font-weight: 700; }\n"
+    ".forge-pm-subtitle { color: @f_text2; font-size: 11px; }\n"
+    ".forge-pm-actions { padding: 0 14px 12px 14px; }\n"
+    ".forge-pm-ok { background: @f_accent; color: white; border: none; border-radius: 6px; min-width: 34px; min-height: 28px; padding: 0; box-shadow: none; }\n"
+    ".forge-pm-ok:hover { background: shade(@f_accent, 1.1); }\n"
+    ".forge-pm-cancel { background: @f_surface; color: @f_text; border: 1px solid @f_hairline; border-radius: 6px; min-width: 34px; min-height: 28px; padding: 0; box-shadow: none; }\n"
+    ".forge-message { background: @f_message; border-radius: 8px; padding: 8px 10px; margin: 0 14px 12px 14px; }\n"
+    ".forge-section { border-top: 1px solid @f_hairline; }\n"
+    ".forge-section-head { padding: 10px 14px 8px 10px; }\n"
+    ".forge-section-title { font-weight: 700; }\n"
+    ".forge-section-body { padding: 0 14px 12px 14px; }\n"
+    ".forge-label { color: @f_text2; }\n"
+    ".forge-field { background: @f_surface; border: 1px solid @f_hairline; border-radius: 6px; }\n"
+    ".forge-field:focus-within { border-color: @f_accent; }\n"
+    ".forge-field entry, .forge-field text { background: none; border: none; box-shadow: none; outline: none; font-family: monospace; min-height: 26px; }\n"
+    ".forge-unit { color: @f_text2; font-size: 11px; margin-right: 8px; }\n"
+    ".forge-list { background: @f_surface; border: 1px solid @f_hairline; border-radius: 7px; padding: 4px; }\n"
+    ".forge-list.active { border: 2px solid @f_accent; padding: 3px; }\n"
+    ".forge-chip { background: alpha(@f_accent, 0.12); color: @f_accent; border-radius: 5px; padding: 3px 8px; }\n"
+    ".forge-placeholder { color: @f_text2; padding: 4px 6px; }\n"
+    ".forge-note { color: @f_text2; font-size: 12px; }\n"
+    ".forge-note.warning { color: @f_warning; }\n"
+    ".forge-problem { color: @f_error; }\n"
+    ".forge-pill { background: @f_surface; border: 1px solid @f_hairline; border-radius: 6px; box-shadow: none; padding: 3px 10px; min-height: 0; }\n"
+    ".forge-right dropdown > button { background: @f_surface; border: 1px solid @f_hairline; border-radius: 6px; box-shadow: none; min-height: 26px; }\n"
+    ".forge-status { background: @f_chrome; border-top: 1px solid @f_hairline; min-height: 26px; color: @f_text2; font-size: 12px; }\n"
+    ".forge-status-left { padding: 0 12px; }\n"
+    ".forge-status-cell { border-left: 1px solid @f_hairline; padding: 0 12px; }\n"
+    ".forge-group.last { border-right: none; }\n"
+    ".forge-disclosure { background: none; border: none; box-shadow: none; padding: 2px; min-height: 0; min-width: 0; color: @f_text2; border-radius: 4px; }\n"
+    ".forge-disclosure:hover { background: alpha(@f_text, 0.08); }\n"
+    ".forge-row { background: alpha(@f_text, 0.04); border-radius: 6px; padding: 4px 8px; }\n"
+    ".forge-value { font-family: monospace; }\n"
+    ".forge-app-menu > button { background: none; border: none; box-shadow: none; padding: 4px; min-height: 0; min-width: 0; border-radius: 6px; color: @f_text2; }\n"
+    ".forge-app-menu > button:hover { background: alpha(@f_text, 0.08); color: @f_text; }\n"
+    ".forge-status-cell.mono { font-family: monospace; }\n";
 
-static void loadCSS(void) {
+static void loadTheme(fw_app *a) {
+    const Tokens *t = a->dark ? &kDark : &kLight;
+    char *css = g_strdup_printf(
+        "@define-color f_chrome %s;\n@define-color f_panel %s;\n@define-color f_surface %s;\n@define-color f_hairline %s;\n"
+        "@define-color f_text %s;\n@define-color f_text2 %s;\n@define-color f_accent %s;\n@define-color f_message %s;\n"
+        "@define-color f_warning %s;\n@define-color f_error %s;\n%s",
+        t->chrome, t->panel, t->surface, t->hairline, t->text, t->text2, t->accent, t->message, t->warning, t->error, kCSS);
     GtkCssProvider *p = gtk_css_provider_new();
 #if GTK_CHECK_VERSION(4, 12, 0)
-    gtk_css_provider_load_from_string(p, kCSS);
+    gtk_css_provider_load_from_string(p, css);
 #else
-    gtk_css_provider_load_from_data(p, kCSS, -1);
+    gtk_css_provider_load_from_data(p, css, -1);
 #endif
+    g_free(css);
     gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(p);
+    GdkRGBA accent;
+    gdk_rgba_parse(&accent, t->accent);
+    fw_icons_set_accent(accent);
+}
+
+/// Dark when asked (FORGE_THEME=dark) or when the desktop prefers it: GTK's prefer-dark setting
+/// or a dark theme name (KDE's Breeze Dark sets both).
+static int prefersDark(void) {
+    const char *forced = g_getenv("FORGE_THEME");
+    if (forced) return g_ascii_strcasecmp(forced, "dark") == 0;
+    GtkSettings *s = gtk_settings_get_default();
+    gboolean dark = FALSE;
+    char *theme = NULL;
+    g_object_get(s, "gtk-application-prefer-dark-theme", &dark, "gtk-theme-name", &theme, NULL);
+    if (theme) {
+        char *lower = g_ascii_strdown(theme, -1);
+        if (strstr(lower, "dark")) dark = TRUE;
+        g_free(lower);
+        g_free(theme);
+    }
+    return dark;
 }
 
 // MARK: menus
 
-static void onMenu(GSimpleAction *action, GVariant *param, gpointer data) {
-    (void)param;
-    fw_app *a = data;
-    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(action), "forge-id"));
-    if (id == FW_MENU_EXIT) {  // handled by the shell, as on Windows
-        fw_app_quit(a);
-        return;
-    }
-    fw_emit(a, fw_event_make(FW_EV_MENU, id, 0));
-}
+static void onMenu(GSimpleAction *action, GVariant *param, gpointer data);
 
 static void addAction(fw_app *a, int id, int checkable) {
     char name[16];
@@ -136,7 +231,72 @@ static void shortcut(GtkShortcutController *c, const char *accel, int id) {
     gtk_shortcut_controller_add_shortcut(c, gtk_shortcut_new(gtk_shortcut_trigger_parse_string(accel), gtk_named_action_new(action)));
 }
 
-static GtkWidget *buildMenus(fw_app *a) {
+static GMenuModel *orientationMenu(void) {
+    GMenu *m = g_menu_new(), *s1 = g_menu_new(), *s2 = g_menu_new();
+    const char *names[] = {"Front", "Back", "Left", "Right", "Top", "Bottom", "Isometric", "Dimetric", "Trimetric", "Normal To"};
+    for (int i = 0; i < 9; ++i) item(s1, names[i], FW_MENU_FRONT + i);
+    item(s2, names[9], FW_MENU_NORMAL_TO);
+    g_menu_append_section(m, NULL, G_MENU_MODEL(s1));
+    g_menu_append_section(m, NULL, G_MENU_MODEL(s2));
+    g_object_unref(s1);
+    g_object_unref(s2);
+    return G_MENU_MODEL(m);
+}
+
+static GMenuModel *displayMenu(void) {
+    GMenu *m = g_menu_new();
+    item(m, "Shaded With Edges", FW_MENU_SHADED_EDGES);
+    item(m, "Shaded", FW_MENU_SHADED);
+    item(m, "Wireframe", FW_MENU_WIREFRAME);
+    item(m, "Hidden Lines Removed", FW_MENU_HIDDEN_LINES);
+    return G_MENU_MODEL(m);
+}
+
+static GMenuModel *showMenu(void) {
+    GMenu *m = g_menu_new();
+    item(m, "Planes", FW_MENU_PLANES);
+    item(m, "Sketch Relations", FW_MENU_RELATIONS);
+    item(m, "Sketch Dimensions", FW_MENU_DIMENSIONS);
+    return G_MENU_MODEL(m);
+}
+
+static GMenuModel *viewSettingsMenu(void) {
+    GMenu *m = g_menu_new();
+    item(m, "Perspective", FW_MENU_PERSPECTIVE);
+    return G_MENU_MODEL(m);
+}
+
+/// The app menu (header bar): File, Edit, View and Help.
+static GMenuModel *appMenu(void) {
+    GMenu *m = g_menu_new(), *file = g_menu_new(), *exp = g_menu_new(), *edit = g_menu_new(), *view = g_menu_new(), *help = g_menu_new();
+    item(file, "New Part", FW_MENU_NEW);
+    item(file, "Open…", FW_MENU_OPEN);
+    item(file, "Save", FW_MENU_SAVE);
+    item(file, "Save As…", FW_MENU_SAVE_AS);
+    item(exp, "Export STEP…", FW_MENU_EXPORT_STEP);
+    item(exp, "Export STL…", FW_MENU_EXPORT_STL);
+    item(edit, "Undo", FW_MENU_UNDO);
+    item(edit, "Redo", FW_MENU_REDO);
+    GMenuModel *o = orientationMenu(), *d = displayMenu(), *sh = showMenu();
+    g_menu_append_submenu(view, "Orientation", o);
+    g_menu_append_submenu(view, "Display Style", d);
+    g_menu_append_submenu(view, "Show", sh);
+    item(view, "Zoom to Fit", FW_MENU_FIT);
+    item(view, "Previous View", FW_MENU_PREVIOUS);
+    item(view, "Perspective", FW_MENU_PERSPECTIVE);
+    item(help, "About Forge", FW_MENU_ABOUT);
+    item(help, "Quit", FW_MENU_EXIT);
+    g_menu_append_section(m, NULL, G_MENU_MODEL(file));
+    g_menu_append_section(m, NULL, G_MENU_MODEL(exp));
+    g_menu_append_section(m, NULL, G_MENU_MODEL(edit));
+    g_menu_append_section(m, NULL, G_MENU_MODEL(view));
+    g_menu_append_section(m, NULL, G_MENU_MODEL(help));
+    GObject *objs[] = {G_OBJECT(file), G_OBJECT(exp), G_OBJECT(edit), G_OBJECT(view), G_OBJECT(help), G_OBJECT(o), G_OBJECT(d), G_OBJECT(sh)};
+    for (size_t i = 0; i < sizeof objs / sizeof objs[0]; ++i) g_object_unref(objs[i]);
+    return G_MENU_MODEL(m);
+}
+
+static void buildActions(fw_app *a) {
     a->actions = g_simple_action_group_new();
     for (int id = FW_MENU_NEW; id <= FW_MENU_EXIT; ++id) addAction(a, id, 0);
     addAction(a, FW_MENU_UNDO, 0);
@@ -146,46 +306,6 @@ static GtkWidget *buildMenus(fw_app *a) {
     for (int id = FW_MENU_SHADED_EDGES; id <= FW_MENU_HIDDEN_LINES; ++id) addAction(a, id, 1);
     addAction(a, FW_MENU_ABOUT, 0);
     gtk_widget_insert_action_group(a->window, "win", G_ACTION_GROUP(a->actions));
-
-    GMenu *bar = g_menu_new(), *file = g_menu_new(), *edit = g_menu_new(), *view = g_menu_new(), *help = g_menu_new();
-    GMenu *f1 = g_menu_new(), *f2 = g_menu_new(), *f3 = g_menu_new();
-    item(f1, "_New Part", FW_MENU_NEW);
-    item(f1, "_Open…", FW_MENU_OPEN);
-    item(f1, "_Save", FW_MENU_SAVE);
-    item(f1, "Save _As…", FW_MENU_SAVE_AS);
-    item(f2, "Export _STEP…", FW_MENU_EXPORT_STEP);
-    item(f2, "Export ST_L…", FW_MENU_EXPORT_STL);
-    item(f3, "_Quit", FW_MENU_EXIT);
-    g_menu_append_section(file, NULL, G_MENU_MODEL(f1));
-    g_menu_append_section(file, NULL, G_MENU_MODEL(f2));
-    g_menu_append_section(file, NULL, G_MENU_MODEL(f3));
-    item(edit, "_Undo", FW_MENU_UNDO);
-    item(edit, "_Redo", FW_MENU_REDO);
-
-    GMenu *orient = g_menu_new(), *display = g_menu_new(), *v1 = g_menu_new(), *v2 = g_menu_new(), *v3 = g_menu_new();
-    const char *names[] = {"_Front", "_Back", "_Left", "_Right", "_Top", "B_ottom", "_Isometric", "_Dimetric", "T_rimetric", "_Normal To"};
-    for (int i = 0; i < 10; ++i) item(orient, names[i], FW_MENU_FRONT + i);
-    item(display, "Shaded With _Edges", FW_MENU_SHADED_EDGES);
-    item(display, "_Shaded", FW_MENU_SHADED);
-    item(display, "_Wireframe", FW_MENU_WIREFRAME);
-    item(display, "_Hidden Lines Removed", FW_MENU_HIDDEN_LINES);
-    g_menu_append_submenu(v1, "_Orientation", G_MENU_MODEL(orient));
-    item(v1, "Zoom to _Fit", FW_MENU_FIT);
-    item(v1, "_Previous View", FW_MENU_PREVIOUS);
-    g_menu_append_submenu(v2, "_Display Style", G_MENU_MODEL(display));
-    item(v2, "P_erspective", FW_MENU_PERSPECTIVE);
-    item(v3, "Pla_nes", FW_MENU_PLANES);
-    item(v3, "Sketch _Relations", FW_MENU_RELATIONS);
-    item(v3, "Sketch Di_mensions", FW_MENU_DIMENSIONS);
-    g_menu_append_section(view, NULL, G_MENU_MODEL(v1));
-    g_menu_append_section(view, NULL, G_MENU_MODEL(v2));
-    g_menu_append_section(view, NULL, G_MENU_MODEL(v3));
-    item(help, "_About Forge", FW_MENU_ABOUT);
-    g_menu_append_submenu(bar, "_File", G_MENU_MODEL(file));
-    g_menu_append_submenu(bar, "_Edit", G_MENU_MODEL(edit));
-    g_menu_append_submenu(bar, "_View", G_MENU_MODEL(view));
-    g_menu_append_submenu(bar, "_Help", G_MENU_MODEL(help));
-    GtkWidget *w = gtk_popover_menu_bar_new_from_model(G_MENU_MODEL(bar));
 
     GtkShortcutController *sc = GTK_SHORTCUT_CONTROLLER(gtk_shortcut_controller_new());
     gtk_shortcut_controller_set_scope(sc, GTK_SHORTCUT_SCOPE_GLOBAL);
@@ -203,149 +323,46 @@ static GtkWidget *buildMenus(fw_app *a) {
         shortcut(sc, accel, i < 7 ? FW_MENU_FRONT + i : FW_MENU_NORMAL_TO);
     }
     gtk_widget_add_controller(a->window, GTK_EVENT_CONTROLLER(sc));
-
-    GObject *objs[] = {G_OBJECT(bar), G_OBJECT(file), G_OBJECT(edit), G_OBJECT(view), G_OBJECT(help), G_OBJECT(f1), G_OBJECT(f2), G_OBJECT(f3),
-                       G_OBJECT(orient), G_OBJECT(display), G_OBJECT(v1), G_OBJECT(v2), G_OBJECT(v3)};
-    for (size_t i = 0; i < sizeof objs / sizeof objs[0]; ++i) g_object_unref(objs[i]);
-    return w;
 }
 
-// MARK: ribbon
-
-typedef struct {
-    char *title, *help, *variants;
-    int large, active, enabled, group;
-} RibbonItem;
-
-static void onRibbon(GtkButton *b, gpointer data) {
+static void onActionButton(GtkButton *b, gpointer data) {
     fw_app *a = data;
-    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-id"));
-    int sub = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-sub")) - 1;
-    GtkWidget *pop = gtk_widget_get_ancestor(GTK_WIDGET(b), GTK_TYPE_POPOVER);
-    if (pop) gtk_popover_popdown(GTK_POPOVER(pop));
-    fw_emit(a, fw_event_make(FW_EV_RIBBON, id, sub));
+    char name[16];
+    snprintf(name, sizeof name, "m%d", GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-id")));
+    g_action_group_activate_action(G_ACTION_GROUP(a->actions), name, NULL);
 }
 
-/// The ribbon button for `it`, with a ▾ flyout for its variants.
-static GtkWidget *ribbonButton(fw_app *a, const RibbonItem *it, int index) {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    char *text = g_strdup(it->title);
-    if (it->large) {
-        // Two lines: break at the space nearest the middle.
-        size_t n = strlen(text), best = 0;
-        for (size_t i = 0; i < n; ++i)
-            if (text[i] == ' ' && (best == 0 || labs((long)i - (long)n / 2) < labs((long)best - (long)n / 2))) best = i;
-        if (best > 0) text[best] = '\n';
-    }
-    GtkWidget *b = gtk_button_new();
-    GtkWidget *l = gtk_label_new(text);
-    gtk_label_set_justify(GTK_LABEL(l), it->large ? GTK_JUSTIFY_CENTER : GTK_JUSTIFY_LEFT);
-    gtk_label_set_xalign(GTK_LABEL(l), it->large ? 0.5f : 0.0f);
-    gtk_button_set_child(GTK_BUTTON(b), l);
-    g_free(text);
-    gtk_widget_add_css_class(b, "forge-rb");
-    if (it->large) gtk_widget_add_css_class(b, "large");
-    if (it->active) gtk_widget_add_css_class(b, "active");
-    gtk_widget_set_sensitive(b, it->enabled);
-    if (it->help && *it->help) gtk_widget_set_tooltip_text(b, it->help);
-    g_object_set_data(G_OBJECT(b), "forge-id", GINT_TO_POINTER(index));
-    g_object_set_data(G_OBJECT(b), "forge-sub", GINT_TO_POINTER(0));
-    g_signal_connect(b, "clicked", G_CALLBACK(onRibbon), a);
-    gtk_box_append(GTK_BOX(row), b);
-    char **variants = splitLines(it->variants);
-    if (variants[0]) {
-        GtkWidget *menu = gtk_menu_button_new();
-        gtk_widget_add_css_class(menu, "forge-rb");
-        gtk_widget_set_sensitive(menu, it->enabled);
-        GtkWidget *pop = gtk_popover_new(), *list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-        for (int k = 0; variants[k]; ++k) {
-            GtkWidget *v = gtk_button_new_with_label(variants[k]);
-            gtk_button_set_has_frame(GTK_BUTTON(v), FALSE);
-            g_object_set_data(G_OBJECT(v), "forge-id", GINT_TO_POINTER(index));
-            g_object_set_data(G_OBJECT(v), "forge-sub", GINT_TO_POINTER(k + 1));
-            g_signal_connect(v, "clicked", G_CALLBACK(onRibbon), a);
-            gtk_box_append(GTK_BOX(list), v);
-        }
-        gtk_popover_set_child(GTK_POPOVER(pop), list);
-        gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), pop);
-        gtk_box_append(GTK_BOX(row), menu);
-    }
-    g_strfreev(variants);
-    return row;
+static GtkWidget *actionButton(fw_app *a, const char *icon, const char *tooltip, int id) {
+    GtkWidget *b = iconButton(icon, 18, tooltip, "forge-flat");
+    g_object_set_data(G_OBJECT(b), "forge-id", GINT_TO_POINTER(id));
+    g_signal_connect(b, "clicked", G_CALLBACK(onActionButton), a);
+    return b;
 }
 
-static void freeRibbonItems(fw_app *a) {
-    for (guint i = 0; i < a->pendingItems->len; ++i) {
-        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
-        g_free(it->title);
-        g_free(it->help);
-        g_free(it->variants);
-    }
-    g_array_set_size(a->pendingItems, 0);
-    g_ptr_array_set_size(a->pendingGroups, 0);
+static GtkWidget *menuButton(const char *icon, int size, const char *tooltip, GMenuModel *model, gboolean arrow) {
+    GtkWidget *m = gtk_menu_button_new();
+    gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(m), model);
+    GtkWidget *content = hbox(1);
+    gtk_box_append(GTK_BOX(content), fw_icon_widget(icon, size));
+    if (arrow) gtk_box_append(GTK_BOX(content), fw_icon_widget("chevronDown", 9));
+    gtk_menu_button_set_child(GTK_MENU_BUTTON(m), content);
+    if (tooltip) gtk_widget_set_tooltip_text(m, tooltip);
+    g_object_unref(model);
+    return m;
 }
 
-void fw_ribbon_begin(fw_app *a) { freeRibbonItems(a); }
-
-void fw_ribbon_group(fw_app *a, const char *title) { g_ptr_array_add(a->pendingGroups, g_strdup(title)); }
-
-void fw_ribbon_button(fw_app *a, const char *title, const char *help, int large, int active, int enabled, const char *variants) {
-    RibbonItem it = {g_strdup(title), g_strdup(help), g_strdup(variants), large, active, enabled, (int)a->pendingGroups->len - 1};
-    g_array_append_val(a->pendingItems, it);
-}
-
-void fw_ribbon_end(fw_app *a) {
-    // Rebuild only when something shown changed (the front end pushes on every model change).
-    GString *key = g_string_new(NULL);
-    for (guint g = 0; g < a->pendingGroups->len; ++g) g_string_append_printf(key, "[%s]", (char *)g_ptr_array_index(a->pendingGroups, g));
-    for (guint i = 0; i < a->pendingItems->len; ++i) {
-        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
-        g_string_append_printf(key, "%d|%s|%s|%d%d%d|%s;", it->group, it->title, it->help, it->large, it->active, it->enabled, it->variants);
-    }
-    if (a->ribbonKey && strcmp(a->ribbonKey, key->str) == 0) {
-        g_string_free(key, TRUE);
+static void onMenu(GSimpleAction *action, GVariant *param, gpointer data) {
+    (void)param;
+    fw_app *a = data;
+    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(action), "forge-id"));
+    if (id == FW_MENU_EXIT) {  // handled by the shell, as on Windows
+        fw_app_quit(a);
         return;
     }
-    g_free(a->ribbonKey);
-    a->ribbonKey = g_string_free(key, FALSE);
-    clearBox(a->ribbon);
-    GtkWidget *groupBox = NULL, *row = NULL, *column = NULL;
-    int group = -2, inColumn = 0;
-    for (guint i = 0; i < a->pendingItems->len; ++i) {
-        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
-        if (it->group != group) {
-            group = it->group;
-            GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-            gtk_widget_add_css_class(outer, "forge-group");
-            row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-            gtk_widget_set_valign(row, GTK_ALIGN_START);
-            gtk_box_append(GTK_BOX(outer), row);
-            const char *title = group >= 0 && (guint)group < a->pendingGroups->len ? g_ptr_array_index(a->pendingGroups, group) : "";
-            GtkWidget *t = label(title, "forge-group-title");
-            gtk_label_set_xalign(GTK_LABEL(t), 0.5f);
-            gtk_box_append(GTK_BOX(outer), t);
-            gtk_box_append(GTK_BOX(a->ribbon), outer);
-            groupBox = outer;
-            column = NULL;
-            inColumn = 0;
-        }
-        (void)groupBox;
-        GtkWidget *b = ribbonButton(a, it, (int)i);
-        if (it->large) {
-            column = NULL;
-            gtk_box_append(GTK_BOX(row), b);
-        } else {
-            // Small buttons stack three to a column.
-            if (!column || inColumn == 3) {
-                column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
-                gtk_box_append(GTK_BOX(row), column);
-                inColumn = 0;
-            }
-            gtk_box_append(GTK_BOX(column), b);
-            ++inColumn;
-        }
-    }
+    fw_emit(a, fw_event_make(FW_EV_MENU, id, 0));
 }
+
+// MARK: header bar (document, undo / redo / save, CommandManager tabs, app menu)
 
 static void onTab(GtkButton *b, gpointer data) {
     fw_app *a = data;
@@ -359,12 +376,229 @@ void fw_set_tab(fw_app *a, int index) {
     }
 }
 
-// MARK: tree
+static GtkWidget *buildHeader(fw_app *a) {
+    a->header = gtk_header_bar_new();
+    gtk_widget_add_css_class(a->header, "forge-header");
+
+    GtkWidget *doc = hbox(9);
+    gtk_widget_set_margin_start(doc, 6);
+    gtk_box_append(GTK_BOX(doc), fw_icon_widget("part", 20));
+    GtkWidget *names = vbox(0);
+    gtk_widget_set_valign(names, GTK_ALIGN_CENTER);
+    a->docTitle = label("Forge", "forge-doc-title");
+    a->docSubtitle = label("Part", "forge-doc-subtitle");
+    gtk_label_set_ellipsize(GTK_LABEL(a->docTitle), PANGO_ELLIPSIZE_END);
+    gtk_label_set_max_width_chars(GTK_LABEL(a->docTitle), 28);
+    gtk_box_append(GTK_BOX(names), a->docTitle);
+    gtk_box_append(GTK_BOX(names), a->docSubtitle);
+    gtk_box_append(GTK_BOX(doc), names);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(a->header), doc);
+
+    GtkWidget *edit = hbox(2);
+    gtk_widget_set_margin_start(edit, 36);
+    gtk_box_append(GTK_BOX(edit), actionButton(a, "undo", "Undo (Ctrl+Z)", FW_MENU_UNDO));
+    gtk_box_append(GTK_BOX(edit), actionButton(a, "redo", "Redo (Ctrl+Y)", FW_MENU_REDO));
+    gtk_box_append(GTK_BOX(edit), actionButton(a, "save", "Save (Ctrl+S)", FW_MENU_SAVE));
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(a->header), edit);
+
+    GtkWidget *tabs = hbox(2);
+    gtk_widget_add_css_class(tabs, "forge-tabs");
+    gtk_widget_set_valign(tabs, GTK_ALIGN_CENTER);
+    const char *names_[] = {"Features", "Sketch", "Evaluate"};
+    for (int i = 0; i < 3; ++i) {
+        a->tabs[i] = gtk_button_new_with_label(names_[i]);
+        gtk_widget_add_css_class(a->tabs[i], "forge-tab");
+        g_object_set_data(G_OBJECT(a->tabs[i]), "forge-id", GINT_TO_POINTER(i));
+        g_signal_connect(a->tabs[i], "clicked", G_CALLBACK(onTab), a);
+        gtk_box_append(GTK_BOX(tabs), a->tabs[i]);
+    }
+    fw_set_tab(a, 0);
+    gtk_header_bar_set_title_widget(GTK_HEADER_BAR(a->header), tabs);
+
+    GtkWidget *menu = menuButton("forge-menu", 18, "Menu", appMenu(), FALSE);
+    gtk_widget_add_css_class(menu, "forge-app-menu");
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(a->header), menu);
+    return a->header;
+}
+
+// MARK: ribbon
 
 typedef struct {
-    int state, selected;
-    char *menu;
+    char *icon, *title, *help, *variants;
+    int large, active, enabled, group;
+} RibbonItem;
+
+static void onRibbon(GtkButton *b, gpointer data) {
+    fw_app *a = data;
+    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-id"));
+    int sub = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-sub")) - 1;
+    GtkWidget *pop = gtk_widget_get_ancestor(GTK_WIDGET(b), GTK_TYPE_POPOVER);
+    if (pop) gtk_popover_popdown(GTK_POPOVER(pop));
+    fw_emit(a, fw_event_make(FW_EV_RIBBON, id, sub));
+}
+
+/// A large button's label on two lines, broken at the space nearest the middle.
+static char *twoLines(const char *title) {
+    char *text = g_strdup(title ? title : "");
+    size_t n = strlen(text), best = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (text[i] == ' ' && (best == 0 || labs((long)i - (long)n / 2) < labs((long)best - (long)n / 2))) best = i;
+    if (best > 0) text[best] = '\n';
+    return text;
+}
+
+/// The ribbon button for `it` (a 26 px icon over a two-line label, or a 16 px icon beside the
+/// label), with a flyout chevron for its variants.
+static GtkWidget *ribbonButton(fw_app *a, const RibbonItem *it, int index) {
+    GtkWidget *row = hbox(0);
+    GtkWidget *b = gtk_button_new();
+    GtkWidget *content;
+    if (it->large) {
+        content = vbox(3);
+        gtk_box_append(GTK_BOX(content), fw_icon_widget(it->icon, 26));
+        char *text = twoLines(it->title);
+        GtkWidget *l = gtk_label_new(text);
+        g_free(text);
+        gtk_label_set_justify(GTK_LABEL(l), GTK_JUSTIFY_CENTER);
+        gtk_label_set_lines(GTK_LABEL(l), 2);
+        gtk_widget_set_valign(l, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(content), l);
+    } else {
+        content = hbox(6);
+        gtk_box_append(GTK_BOX(content), fw_icon_widget(it->icon, 16));
+        gtk_box_append(GTK_BOX(content), label(it->title, NULL));
+    }
+    gtk_button_set_child(GTK_BUTTON(b), content);
+    gtk_widget_add_css_class(b, "forge-rb");
+    gtk_widget_add_css_class(b, it->large ? "large" : "small");
+    if (it->active) gtk_widget_add_css_class(b, "active");
+    gtk_widget_set_sensitive(b, it->enabled);
+    if (it->help && *it->help) gtk_widget_set_tooltip_text(b, it->help);
+    g_object_set_data(G_OBJECT(b), "forge-id", GINT_TO_POINTER(index));
+    g_object_set_data(G_OBJECT(b), "forge-sub", GINT_TO_POINTER(0));
+    g_signal_connect(b, "clicked", G_CALLBACK(onRibbon), a);
+    gtk_box_append(GTK_BOX(row), b);
+    char **variants = splitLines(it->variants);
+    if (variants[0]) {
+        GtkWidget *menu = gtk_menu_button_new();
+        gtk_menu_button_set_child(GTK_MENU_BUTTON(menu), fw_icon_widget("chevronDown", 9));
+        gtk_widget_add_css_class(menu, "forge-flyout");
+        gtk_widget_set_valign(menu, it->large ? GTK_ALIGN_START : GTK_ALIGN_CENTER);
+        if (it->large) gtk_widget_set_margin_top(menu, 12);
+        gtk_widget_set_sensitive(menu, it->enabled);
+        gtk_widget_set_tooltip_text(menu, "More");
+        GtkWidget *pop = gtk_popover_new(), *list = vbox(1);
+        for (int k = 0; variants[k]; ++k) {
+            GtkWidget *v = gtk_button_new_with_label(variants[k]);
+            gtk_widget_add_css_class(v, "forge-flat");
+            gtk_widget_set_halign(gtk_button_get_child(GTK_BUTTON(v)), GTK_ALIGN_START);
+            g_object_set_data(G_OBJECT(v), "forge-id", GINT_TO_POINTER(index));
+            g_object_set_data(G_OBJECT(v), "forge-sub", GINT_TO_POINTER(k + 1));
+            g_signal_connect(v, "clicked", G_CALLBACK(onRibbon), a);
+            gtk_box_append(GTK_BOX(list), v);
+        }
+        gtk_popover_set_child(GTK_POPOVER(pop), list);
+        gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
+        gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu), pop);
+        gtk_box_append(GTK_BOX(row), menu);
+    }
+    g_strfreev(variants);
+    return row;
+}
+
+static void freeRibbonItems(fw_app *a) {
+    for (guint i = 0; i < a->pendingItems->len; ++i) {
+        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
+        g_free(it->icon);
+        g_free(it->title);
+        g_free(it->help);
+        g_free(it->variants);
+    }
+    g_array_set_size(a->pendingItems, 0);
+    g_ptr_array_set_size(a->pendingGroups, 0);
+}
+
+void fw_ribbon_begin(fw_app *a) { freeRibbonItems(a); }
+
+void fw_ribbon_group(fw_app *a, const char *title) { g_ptr_array_add(a->pendingGroups, g_strdup(title)); }
+
+void fw_ribbon_button(fw_app *a, const char *icon, const char *title, const char *help, int large, int active, int enabled, const char *variants) {
+    RibbonItem it = {g_strdup(icon), g_strdup(title), g_strdup(help), g_strdup(variants), large, active, enabled, (int)a->pendingGroups->len - 1};
+    g_array_append_val(a->pendingItems, it);
+}
+
+void fw_ribbon_end(fw_app *a) {
+    // Rebuild only when something shown changed (the front end pushes on every model change).
+    GString *key = g_string_new(NULL);
+    for (guint g = 0; g < a->pendingGroups->len; ++g) g_string_append_printf(key, "[%s]", (char *)g_ptr_array_index(a->pendingGroups, g));
+    for (guint i = 0; i < a->pendingItems->len; ++i) {
+        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
+        g_string_append_printf(key, "%d|%s|%s|%s|%d%d%d|%s;", it->group, it->icon, it->title, it->help, it->large, it->active, it->enabled, it->variants);
+    }
+    if (a->ribbonKey && strcmp(a->ribbonKey, key->str) == 0) {
+        g_string_free(key, TRUE);
+        return;
+    }
+    g_free(a->ribbonKey);
+    a->ribbonKey = g_string_free(key, FALSE);
+    clearBox(a->ribbon);
+    GtkWidget *row = NULL, *column = NULL, *lastGroup = NULL;
+    int group = -2, inColumn = 0;
+    for (guint i = 0; i < a->pendingItems->len; ++i) {
+        RibbonItem *it = &g_array_index(a->pendingItems, RibbonItem, i);
+        if (it->group != group) {
+            group = it->group;
+            GtkWidget *outer = vbox(0);
+            gtk_widget_add_css_class(outer, "forge-group");
+            row = hbox(2);
+            gtk_widget_set_vexpand(row, TRUE);
+            gtk_widget_set_valign(row, GTK_ALIGN_START);
+            gtk_box_append(GTK_BOX(outer), row);
+            const char *title = group >= 0 && (guint)group < a->pendingGroups->len ? g_ptr_array_index(a->pendingGroups, group) : "";
+            GtkWidget *t = label(title, "forge-group-title");
+            gtk_label_set_xalign(GTK_LABEL(t), 0.5f);
+            gtk_box_append(GTK_BOX(outer), t);
+            gtk_box_append(GTK_BOX(a->ribbon), outer);
+            lastGroup = outer;
+            column = NULL;
+            inColumn = 0;
+        }
+        GtkWidget *b = ribbonButton(a, it, (int)i);
+        if (it->large) {
+            column = NULL;
+            gtk_box_append(GTK_BOX(row), b);
+        } else {
+            // Small buttons stack three to a column.
+            if (!column || inColumn == 3) {
+                column = vbox(0);
+                gtk_widget_set_margin_start(column, 2);
+                gtk_box_append(GTK_BOX(row), column);
+                inColumn = 0;
+            }
+            gtk_box_append(GTK_BOX(column), b);
+            ++inColumn;
+        }
+    }
+    if (lastGroup) gtk_widget_add_css_class(lastGroup, "last");
+}
+
+// MARK: tree (FeatureManager)
+
+typedef struct {
+    int depth, state, selected;
+    char *icon, *title, *tooltip, *menu;
 } TreeNode;
+
+static void freeNodes(GArray *nodes) {
+    for (guint i = 0; i < nodes->len; ++i) {
+        TreeNode *n = &g_array_index(nodes, TreeNode, i);
+        g_free(n->icon);
+        g_free(n->title);
+        g_free(n->tooltip);
+        g_free(n->menu);
+    }
+    g_array_set_size(nodes, 0);
+}
 
 static void onTreeMenuItem(GtkButton *b, gpointer data) {
     fw_app *a = data;
@@ -387,8 +621,6 @@ static void onPopoverClosed(GtkPopover *p, gpointer data) {
 }
 
 static void onTreeClick(GtkGestureClick *g, int n, double x, double y, gpointer data) {
-    (void)x;
-    (void)y;
     fw_app *a = data;
     GtkWidget *w = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(g));
     int node = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w), "forge-node"));
@@ -398,11 +630,11 @@ static void onTreeClick(GtkGestureClick *g, int n, double x, double y, gpointer 
         TreeNode *tn = &g_array_index(a->nodes, TreeNode, node);
         char **items = splitLines(tn->menu);
         if (items[0]) {
-            GtkWidget *pop = gtk_popover_new(), *list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+            GtkWidget *pop = gtk_popover_new(), *list = vbox(1);
             for (int k = 0; items[k]; ++k) {
                 if (!strcmp(items[k], "Delete") || !strcmp(items[k], "What's Wrong?")) gtk_box_append(GTK_BOX(list), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
                 GtkWidget *b = gtk_button_new_with_label(items[k]);
-                gtk_button_set_has_frame(GTK_BUTTON(b), FALSE);
+                gtk_widget_add_css_class(b, "forge-flat");
                 gtk_widget_set_halign(gtk_button_get_child(GTK_BUTTON(b)), GTK_ALIGN_START);
                 g_object_set_data(G_OBJECT(b), "forge-node", GINT_TO_POINTER(node));
                 g_object_set_data(G_OBJECT(b), "forge-item", GINT_TO_POINTER(k));
@@ -430,54 +662,110 @@ static void onTreeClick(GtkGestureClick *g, int n, double x, double y, gpointer 
     }
 }
 
-static void freeNodes(GArray *nodes) {
-    for (guint i = 0; i < nodes->len; ++i) g_free(g_array_index(nodes, TreeNode, i).menu);
-    g_array_set_size(nodes, 0);
+static char *collapseKey(const TreeNode *n) { return g_strdup_printf("%d:%s", n->depth, n->title ? n->title : ""); }
+
+static void buildTree(fw_app *a);
+
+static void onDisclosure(GtkButton *b, gpointer data) {
+    fw_app *a = data;
+    int node = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "forge-node"));
+    if (node < 0 || (guint)node >= a->nodes->len) return;
+    char *key = collapseKey(&g_array_index(a->nodes, TreeNode, node));
+    if (g_hash_table_contains(a->collapsed, key)) {
+        g_hash_table_remove(a->collapsed, key);
+        g_free(key);
+    } else {
+        g_hash_table_add(a->collapsed, key);
+    }
+    buildTree(a);
 }
 
-void fw_tree_begin(fw_app *a) {
-    g_string_truncate(a->treeBuild, 0);
-    freeNodes(a->nodes);
-    clearBox(a->tree);  // rebuilt below only when the key changed; see fw_tree_end
+static void buildTree(fw_app *a) {
+    clearBox(a->tree);
+    int hideBelow = -1;  // descendants of a collapsed node are skipped
+    for (guint i = 0; i < a->nodes->len; ++i) {
+        TreeNode *n = &g_array_index(a->nodes, TreeNode, i);
+        if (hideBelow >= 0) {
+            if (n->depth > hideBelow) continue;
+            hideBelow = -1;
+        }
+        int depth = n->depth < 0 ? 0 : n->depth;
+        gboolean hasChildren = i + 1 < a->nodes->len && g_array_index(a->nodes, TreeNode, i + 1).depth > n->depth &&
+                               n->state != FW_NODE_ROLLBACK_BAR;
+        char *key = collapseKey(n);
+        gboolean collapsed = hasChildren && g_hash_table_contains(a->collapsed, key);
+        g_free(key);
+        if (collapsed) hideBelow = n->depth;
+
+        GtkWidget *row = hbox(6);
+        gtk_widget_add_css_class(row, "forge-node");
+        gtk_widget_set_margin_start(row, 18 * depth);
+        if (n->state == FW_NODE_ROLLBACK_BAR) {
+            gtk_widget_add_css_class(row, "rollback");
+            GtkWidget *bar = hbox(0);
+            gtk_widget_add_css_class(bar, "forge-bar");
+            gtk_widget_set_hexpand(bar, TRUE);
+            gtk_widget_set_valign(bar, GTK_ALIGN_CENTER);
+            gtk_box_append(GTK_BOX(row), bar);
+        } else {
+            if (hasChildren) {
+                GtkWidget *d = iconButton(collapsed ? "chevronRight" : "chevronDown", 10, collapsed ? "Expand" : "Collapse", "forge-disclosure");
+                g_object_set_data(G_OBJECT(d), "forge-node", GINT_TO_POINTER((int)i));
+                g_signal_connect(d, "clicked", G_CALLBACK(onDisclosure), a);
+                gtk_box_append(GTK_BOX(row), d);
+            } else {
+                GtkWidget *space = hbox(0);
+                gtk_widget_set_size_request(space, 14, -1);
+                gtk_box_append(GTK_BOX(row), space);
+            }
+            if (n->icon && *n->icon) gtk_box_append(GTK_BOX(row), fw_icon_widget(n->icon, 16));
+            GtkWidget *l = label(n->title, NULL);
+            gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+            gtk_widget_set_hexpand(l, TRUE);
+            gtk_box_append(GTK_BOX(row), l);
+            if (n->state == FW_NODE_WARNING || n->state == FW_NODE_ERROR) gtk_box_append(GTK_BOX(row), fw_icon_widget("warning", 14));
+        }
+        switch (n->state) {
+        case FW_NODE_SUPPRESSED:
+        case FW_NODE_ROLLED_BACK: gtk_widget_add_css_class(row, "dim"); break;
+        case FW_NODE_WARNING: gtk_widget_add_css_class(row, "warning"); break;
+        case FW_NODE_ERROR: gtk_widget_add_css_class(row, "error"); break;
+        default: break;
+        }
+        if (i == 0 && n->depth <= 0) gtk_widget_add_css_class(row, "root");
+        if (n->selected) gtk_widget_add_css_class(row, "selected");
+        if (n->tooltip && *n->tooltip) gtk_widget_set_tooltip_text(row, n->tooltip);
+        else if (n->state == FW_NODE_ROLLBACK_BAR) gtk_widget_set_tooltip_text(row, "Rollback bar");
+        g_object_set_data(G_OBJECT(row), "forge-node", GINT_TO_POINTER((int)i));
+        GtkGesture *click = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 0);
+        g_signal_connect(click, "pressed", G_CALLBACK(onTreeClick), a);
+        gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(click));
+        gtk_list_box_append(GTK_LIST_BOX(a->tree), row);
+    }
 }
 
-void fw_tree_node(fw_app *a, int depth, const char *title, const char *tooltip, int state, int selected, const char *menu) {
-    TreeNode n = {state, selected, g_strdup(menu)};
+void fw_tree_begin(fw_app *a) { freeNodes(a->nodes); }
+
+void fw_tree_node(fw_app *a, int depth, const char *icon, const char *title, const char *tooltip, int state, int selected, const char *menu) {
+    TreeNode n = {depth, state, selected, g_strdup(icon), g_strdup(title), g_strdup(tooltip), g_strdup(menu)};
     g_array_append_val(a->nodes, n);
-    int index = (int)a->nodes->len - 1;
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_widget_add_css_class(row, "forge-node");
-    gtk_widget_set_margin_start(row, 4 + 16 * (depth < 0 ? 0 : depth));
-    GtkWidget *l = label(state == FW_NODE_ROLLBACK_BAR ? "Rollback" : title, NULL);
-    gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
-    gtk_box_append(GTK_BOX(row), l);
-    switch (state) {
-    case FW_NODE_SUPPRESSED:
-    case FW_NODE_ROLLED_BACK: gtk_widget_add_css_class(row, "dim"); break;
-    case FW_NODE_WARNING: gtk_widget_add_css_class(row, "warning"); break;
-    case FW_NODE_ERROR: gtk_widget_add_css_class(row, "error"); break;
-    case FW_NODE_ROLLBACK_BAR: {
-        gtk_widget_add_css_class(row, "rollback");
-        GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        gtk_widget_add_css_class(bar, "forge-bar");
-        gtk_widget_set_hexpand(bar, TRUE);
-        gtk_widget_set_valign(bar, GTK_ALIGN_CENTER);
-        gtk_box_append(GTK_BOX(row), bar);
-        break;
-    }
-    default: break;
-    }
-    if (selected) gtk_widget_add_css_class(row, "selected");
-    if (tooltip && *tooltip) gtk_widget_set_tooltip_text(row, tooltip);
-    g_object_set_data(G_OBJECT(row), "forge-node", GINT_TO_POINTER(index));
-    GtkGesture *click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 0);
-    g_signal_connect(click, "pressed", G_CALLBACK(onTreeClick), a);
-    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(click));
-    gtk_list_box_append(GTK_LIST_BOX(a->tree), row);
 }
 
-void fw_tree_end(fw_app *a) { (void)a; }
+void fw_tree_end(fw_app *a) {
+    GString *key = g_string_new(NULL);
+    for (guint i = 0; i < a->nodes->len; ++i) {
+        TreeNode *n = &g_array_index(a->nodes, TreeNode, i);
+        g_string_append_printf(key, "%d|%s|%s|%s|%d%d|%s;", n->depth, n->icon, n->title, n->tooltip, n->state, n->selected, n->menu);
+    }
+    if (a->treeKey && strcmp(a->treeKey, key->str) == 0) {
+        g_string_free(key, TRUE);
+        return;
+    }
+    g_free(a->treeKey);
+    a->treeKey = g_string_free(key, FALSE);
+    buildTree(a);
+}
 
 static void onFilter(GtkSearchEntry *e, gpointer data) {
     fw_app *a = data;
@@ -554,57 +842,120 @@ static void onListClick(GtkGestureClick *g, int n, double x, double y, gpointer 
     fw_emit((fw_app *)data, fw_event_make(FW_EV_PANEL_LIST, controlOf(G_OBJECT(w)), 0));
 }
 
-void fw_panel_begin(fw_app *a, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {
+/// A section's chevron: collapse or expand its body (remembered by title while the app runs).
+static void onSectionDisclosure(GtkButton *b, gpointer data) {
+    fw_app *a = data;
+    GtkWidget *body = g_object_get_data(G_OBJECT(b), "forge-body");
+    const char *title = g_object_get_data(G_OBJECT(b), "forge-title");
+    gboolean open = !gtk_widget_get_visible(body);
+    if (g_object_get_data(G_OBJECT(b), "forge-off")) return;  // a check group that is off stays closed
+    gtk_widget_set_visible(body, open);
+    if (title) {
+        if (open) g_hash_table_remove(a->closedSections, title);
+        else g_hash_table_add(a->closedSections, g_strdup(title));
+    }
+    gtk_button_set_child(b, fw_icon_widget(open ? "chevronDown" : "chevronRight", 10));
+}
+
+void fw_panel_begin(fw_app *a, const char *icon, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {
     a->building = 1;
     clearBox(a->panelBox);
     g_array_set_size(a->controls, 0);
+    for (guint i = 0; i < a->sections->len; ++i) g_free(g_array_index(a->sections, PanelSection, i).title);
     g_array_set_size(a->sections, 0);
-    GtkWidget *head = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    GtkWidget *t = label(title, "forge-title");
-    gtk_widget_set_hexpand(t, TRUE);
+
+    GtkWidget *head = hbox(10);
+    gtk_widget_add_css_class(head, "forge-pm-head");
+    GtkWidget *tile = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(tile, "forge-pm-tile");
+    gtk_widget_set_valign(tile, GTK_ALIGN_START);
+    gtk_widget_set_halign(tile, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(tile, FALSE);
+    gtk_widget_set_size_request(tile, 36, 36);
+    GtkWidget *glyph = fw_icon_widget(icon && *icon ? icon : "command", 22);
+    gtk_widget_set_hexpand(glyph, TRUE);  // centred in the tile (which does not expand)
+    gtk_box_append(GTK_BOX(tile), glyph);
+    gtk_box_append(GTK_BOX(head), tile);
+    GtkWidget *names = vbox(1);
+    gtk_widget_set_valign(names, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(names, TRUE);
+    GtkWidget *t = label(title, "forge-pm-title");
     gtk_label_set_ellipsize(GTK_LABEL(t), PANGO_ELLIPSIZE_END);
-    gtk_box_append(GTK_BOX(head), t);
-    if (has_ok) {
-        GtkWidget *ok = gtk_button_new_with_label("OK");
-        gtk_widget_add_css_class(ok, "suggested-action");
-        g_signal_connect(ok, "clicked", G_CALLBACK(onPanelOK), a);
-        gtk_box_append(GTK_BOX(head), ok);
+    gtk_box_append(GTK_BOX(names), t);
+    if (subtitle && *subtitle) {
+        GtkWidget *s = label(subtitle, "forge-pm-subtitle");
+        gtk_label_set_wrap(GTK_LABEL(s), TRUE);
+        gtk_box_append(GTK_BOX(names), s);
     }
-    if (has_cancel) {
-        GtkWidget *c = gtk_button_new_with_label("Cancel");
-        g_signal_connect(c, "clicked", G_CALLBACK(onPanelCancel), a);
-        gtk_box_append(GTK_BOX(head), c);
-    }
+    gtk_box_append(GTK_BOX(head), names);
     gtk_box_append(GTK_BOX(a->panelBox), head);
-    if (subtitle && *subtitle) gtk_box_append(GTK_BOX(a->panelBox), label(subtitle, "forge-subtitle"));
+
+    if (has_ok || has_cancel) {
+        GtkWidget *actions = hbox(6);
+        gtk_widget_add_css_class(actions, "forge-pm-actions");
+        if (has_ok) {
+            GtkWidget *ok = gtk_button_new();
+            GtkWidget *check = fw_icon_widget("check", 16);
+            fw_icon_widget_set_white(check);
+            gtk_button_set_child(GTK_BUTTON(ok), check);
+            gtk_widget_add_css_class(ok, "forge-pm-ok");
+            gtk_widget_set_tooltip_text(ok, "OK");
+            g_signal_connect(ok, "clicked", G_CALLBACK(onPanelOK), a);
+            gtk_box_append(GTK_BOX(actions), ok);
+        }
+        if (has_cancel) {
+            GtkWidget *c = iconButton("xmark", 14, "Cancel", "forge-pm-cancel");
+            g_signal_connect(c, "clicked", G_CALLBACK(onPanelCancel), a);
+            gtk_box_append(GTK_BOX(actions), c);
+        }
+        gtk_box_append(GTK_BOX(a->panelBox), actions);
+    }
     if (message && *message) {
         GtkWidget *m = label(message, "forge-message");
         gtk_label_set_wrap(GTK_LABEL(m), TRUE);
-        gtk_widget_set_margin_top(m, 6);
         gtk_box_append(GTK_BOX(a->panelBox), m);
     }
-    a->sectionBox = a->panelBox;
-    a->sectionOn = 1;
+    // Controls before the first section go in an untitled one.
+    a->sectionBox = vbox(8);
+    gtk_widget_add_css_class(a->sectionBox, "forge-section-body");
+    gtk_box_append(GTK_BOX(a->panelBox), a->sectionBox);
 }
 
 void fw_panel_section(fw_app *a, const char *title, int toggle) {
-    PanelSection s = {toggle};
+    PanelSection s = {toggle, g_strdup(title)};
     g_array_append_val(a->sections, s);
     int index = (int)a->sections->len - 1;
-    if (toggle >= 0) {
-        GtkWidget *c = gtk_check_button_new_with_label(title);
-        gtk_widget_add_css_class(c, "forge-section");
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(c), toggle == 1);
-        g_object_set_data(G_OBJECT(c), "forge-section", GINT_TO_POINTER(index));
-        g_signal_connect(c, "toggled", G_CALLBACK(onSection), a);
-        gtk_box_append(GTK_BOX(a->panelBox), c);
-    } else if (title && *title) {
-        gtk_box_append(GTK_BOX(a->panelBox), label(title, "forge-section"));
+    GtkWidget *section = vbox(0);
+    gtk_widget_add_css_class(section, "forge-section");
+    GtkWidget *body = vbox(8);
+    gtk_widget_add_css_class(body, "forge-section-body");
+    gboolean hasHead = toggle >= 0 || (title && *title);
+    gboolean closed = title && g_hash_table_contains(a->closedSections, title);
+    if (hasHead) {
+        GtkWidget *head = hbox(6);
+        gtk_widget_add_css_class(head, "forge-section-head");
+        GtkWidget *chev = iconButton(closed || toggle == 0 ? "chevronRight" : "chevronDown", 10, NULL, "forge-disclosure");
+        g_object_set_data(G_OBJECT(chev), "forge-body", body);
+        g_object_set_data_full(G_OBJECT(chev), "forge-title", g_strdup(title ? title : ""), g_free);
+        if (toggle == 0) g_object_set_data(G_OBJECT(chev), "forge-off", GINT_TO_POINTER(1));
+        g_signal_connect(chev, "clicked", G_CALLBACK(onSectionDisclosure), a);
+        gtk_box_append(GTK_BOX(head), chev);
+        if (toggle >= 0) {
+            GtkWidget *c = gtk_check_button_new_with_label(title);
+            gtk_widget_add_css_class(c, "forge-section-title");
+            gtk_check_button_set_active(GTK_CHECK_BUTTON(c), toggle == 1);
+            g_object_set_data(G_OBJECT(c), "forge-section", GINT_TO_POINTER(index));
+            g_signal_connect(c, "toggled", G_CALLBACK(onSection), a);
+            gtk_box_append(GTK_BOX(head), c);
+        } else {
+            gtk_box_append(GTK_BOX(head), label(title, "forge-section-title"));
+        }
+        gtk_box_append(GTK_BOX(section), head);
     }
-    a->sectionBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start(a->sectionBox, 6);
-    gtk_widget_set_visible(a->sectionBox, toggle != 0);
-    gtk_box_append(GTK_BOX(a->panelBox), a->sectionBox);
+    gtk_widget_set_visible(body, toggle != 0 && !closed);
+    gtk_box_append(GTK_BOX(section), body);
+    gtk_box_append(GTK_BOX(a->panelBox), section);
+    a->sectionBox = body;
 }
 
 static int addControl(fw_app *a, PanelKind kind, GtkWidget *main) {
@@ -616,33 +967,42 @@ static int addControl(fw_app *a, PanelKind kind, GtkWidget *main) {
 }
 
 /// A label on the left and `w` on the right (fields, choices, values).
-static void labelled(fw_app *a, const char *text, GtkWidget *w, const char *unit) {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    GtkWidget *l = label(text, NULL);
-    gtk_widget_set_size_request(l, 118, -1);
+static void labelled(fw_app *a, const char *text, GtkWidget *w) {
+    if (!text || !*text) {
+        gtk_widget_set_hexpand(w, TRUE);
+        gtk_box_append(GTK_BOX(a->sectionBox), w);
+        return;
+    }
+    GtkWidget *row = hbox(8);
+    GtkWidget *l = label(text, "forge-label");
+    gtk_widget_set_size_request(l, 96, -1);
     gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
     gtk_box_append(GTK_BOX(row), l);
     gtk_widget_set_hexpand(w, TRUE);
     gtk_box_append(GTK_BOX(row), w);
-    if (unit && *unit) {
-        GtkWidget *u = label(unit, "forge-unit");
-        gtk_widget_set_size_request(u, 30, -1);
-        gtk_box_append(GTK_BOX(row), u);
-    }
     gtk_box_append(GTK_BOX(a->sectionBox), row);
 }
 
 void fw_panel_field(fw_app *a, const char *label_, const char *unit, const char *value) {
+    GtkWidget *field = hbox(0);
+    gtk_widget_add_css_class(field, "forge-field");
     GtkWidget *e = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(e), value ? value : "");
     gtk_editable_set_width_chars(GTK_EDITABLE(e), 6);
+    gtk_widget_set_hexpand(e, TRUE);
+    gtk_box_append(GTK_BOX(field), e);
+    if (unit && *unit) {
+        GtkWidget *u = label(unit, "forge-unit");
+        gtk_widget_set_valign(u, GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(field), u);
+    }
     addControl(a, PK_FIELD, e);
     g_signal_connect(e, "changed", G_CALLBACK(onFieldChanged), a);
     g_signal_connect(e, "activate", G_CALLBACK(onFieldActivate), a);
     GtkEventController *focus = gtk_event_controller_focus_new();
     g_signal_connect(focus, "leave", G_CALLBACK(onFieldLeave), a);
     gtk_widget_add_controller(e, focus);
-    labelled(a, label_, e, unit);
+    labelled(a, label_, field);
 }
 
 void fw_panel_check(fw_app *a, const char *label_, int value) {
@@ -660,16 +1020,37 @@ void fw_panel_choice(fw_app *a, const char *label_, const char *options, int sel
     gtk_drop_down_set_selected(GTK_DROP_DOWN(d), selected < 0 ? GTK_INVALID_LIST_POSITION : (guint)selected);
     addControl(a, PK_CHOICE, d);
     g_signal_connect(d, "notify::selected", G_CALLBACK(onChoice), a);
-    labelled(a, label_, d, NULL);
+    labelled(a, label_, d);
+}
+
+/// The icon of a selection-box entry, from what it names.
+static const char *chipIcon(const char *text) {
+    char *lower = g_ascii_strdown(text, -1);
+    const char *icon = strstr(lower, "sketch")  ? "sketch"
+                     : strstr(lower, "edge")    ? "line"
+                     : strstr(lower, "axis")    ? "axis"
+                     : strstr(lower, "vertex") || strstr(lower, "point") ? "point"
+                     : strstr(lower, "body")    ? "part"
+                                                : "plane";
+    g_free(lower);
+    return icon;
 }
 
 void fw_panel_list(fw_app *a, const char *items, const char *placeholder, int active) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    GtkWidget *box = vbox(3);
     gtk_widget_add_css_class(box, "forge-list");
     if (active) gtk_widget_add_css_class(box, "active");
     char **lines = splitLines(items);
     if (!lines[0]) gtk_box_append(GTK_BOX(box), label(placeholder, "forge-placeholder"));
-    for (int i = 0; lines[i]; ++i) gtk_box_append(GTK_BOX(box), label(lines[i], NULL));
+    for (int i = 0; lines[i]; ++i) {
+        GtkWidget *chip = hbox(6);
+        gtk_widget_add_css_class(chip, "forge-chip");
+        gtk_box_append(GTK_BOX(chip), fw_icon_widget(chipIcon(lines[i]), 14));
+        GtkWidget *l = label(lines[i], NULL);
+        gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+        gtk_box_append(GTK_BOX(chip), l);
+        gtk_box_append(GTK_BOX(box), chip);
+    }
     g_strfreev(lines);
     addControl(a, PK_LIST, box);
     GtkGesture *click = gtk_gesture_click_new();
@@ -687,21 +1068,25 @@ void fw_panel_note(fw_app *a, const char *text, int warning) {
 }
 
 void fw_panel_value(fw_app *a, const char *label_, const char *value) {
-    GtkWidget *v = label(value, NULL);
+    GtkWidget *v = label(value, "forge-value");
     gtk_label_set_selectable(GTK_LABEL(v), TRUE);
     gtk_label_set_ellipsize(GTK_LABEL(v), PANGO_ELLIPSIZE_END);
     addControl(a, PK_VALUE, v);
-    labelled(a, label_, v, NULL);
+    labelled(a, label_, v);
 }
 
 void fw_panel_buttons(fw_app *a, const char *titles) {
     GtkWidget *flow = gtk_flow_box_new();
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(flow), GTK_SELECTION_NONE);
     gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(flow), 4);
+    gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(flow), 6);
+    gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(flow), 6);
+    gtk_widget_add_css_class(flow, "forge-buttons");
     int index = addControl(a, PK_BUTTONS, flow);
     char **t = splitLines(titles);
     for (int k = 0; t[k]; ++k) {
         GtkWidget *b = gtk_button_new_with_label(t[k]);
+        gtk_widget_add_css_class(b, "forge-pill");
         g_object_set_data(G_OBJECT(b), "forge-control", GINT_TO_POINTER(index));
         g_object_set_data(G_OBJECT(b), "forge-sub", GINT_TO_POINTER(k));
         g_signal_connect(b, "clicked", G_CALLBACK(onPanelButton), a);
@@ -712,22 +1097,23 @@ void fw_panel_buttons(fw_app *a, const char *titles) {
 }
 
 void fw_panel_rows(fw_app *a, const char *texts, const char *details, const char *problems, int deletable) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *box = vbox(4);
     int index = addControl(a, PK_ROWS, box);
     char **t = splitLines(texts), **d = splitLines(details), **p = splitLines(problems);
     guint nd = g_strv_length(d), np = g_strv_length(p);
     for (guint k = 0; t[k]; ++k) {
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-        GtkWidget *col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        GtkWidget *row = hbox(6);
+        gtk_widget_add_css_class(row, "forge-row");
+        GtkWidget *col = vbox(0);
         gtk_widget_set_hexpand(col, TRUE);
+        gtk_widget_set_valign(col, GTK_ALIGN_CENTER);
         GtkWidget *l = label(t[k], k < np && !strcmp(p[k], "1") ? "forge-problem" : NULL);
         gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
         gtk_box_append(GTK_BOX(col), l);
         if (k < nd && *d[k]) gtk_box_append(GTK_BOX(col), label(d[k], "forge-note"));
         gtk_box_append(GTK_BOX(row), col);
         if (deletable) {
-            GtkWidget *x = gtk_button_new_from_icon_name("window-close-symbolic");
-            gtk_button_set_has_frame(GTK_BUTTON(x), FALSE);
+            GtkWidget *x = iconButton("xmark", 12, "Delete", "forge-flat");
             g_object_set_data(G_OBJECT(x), "forge-control", GINT_TO_POINTER(index));
             g_object_set_data(G_OBJECT(x), "forge-sub", GINT_TO_POINTER((int)k));
             g_signal_connect(x, "clicked", G_CALLBACK(onRowDelete), a);
@@ -741,7 +1127,16 @@ void fw_panel_rows(fw_app *a, const char *texts, const char *details, const char
     gtk_box_append(GTK_BOX(a->sectionBox), box);
 }
 
-void fw_panel_end(fw_app *a) { a->building = 0; }
+void fw_panel_end(fw_app *a) {
+    // Hide the untitled first section when nothing went into it.
+    GtkWidget *first = gtk_widget_get_first_child(a->panelBox);
+    for (GtkWidget *w = first; w; w = gtk_widget_get_next_sibling(w))
+        if (gtk_widget_has_css_class(w, "forge-section-body")) {
+            gtk_widget_set_visible(w, gtk_widget_get_first_child(w) != NULL);
+            break;
+        }
+    a->building = 0;
+}
 
 static PanelControl *control(fw_app *a, int i) { return i >= 0 && (guint)i < a->controls->len ? &g_array_index(a->controls, PanelControl, i) : NULL; }
 
@@ -776,7 +1171,90 @@ void fw_panel_set_choice(fw_app *a, int i, int index) {
     a->building = 0;
 }
 
-// MARK: Modify box
+// MARK: viewport overlays (heads-up toolbar, confirmation corner, sketch badge, Modify box)
+
+static GtkWidget *buildHeadsUp(fw_app *a) {
+    GtkWidget *bar = hbox(1);
+    gtk_widget_add_css_class(bar, "forge-headsup");
+    gtk_widget_set_halign(bar, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(bar, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(bar, 12);
+    gtk_box_append(GTK_BOX(bar), actionButton(a, "zoomFit", "Zoom to Fit (F)", FW_MENU_FIT));
+    gtk_box_append(GTK_BOX(bar), actionButton(a, "prevView", "Previous View", FW_MENU_PREVIOUS));
+    GtkWidget *sep = hbox(0);
+    gtk_widget_add_css_class(sep, "forge-sep");
+    gtk_box_append(GTK_BOX(bar), sep);
+    gtk_box_append(GTK_BOX(bar), menuButton("viewOrient", 18, "View Orientation", orientationMenu(), TRUE));
+    gtk_box_append(GTK_BOX(bar), menuButton("displayStyle", 18, "Display Style", displayMenu(), TRUE));
+    gtk_box_append(GTK_BOX(bar), menuButton("hideShow", 18, "Hide / Show Items", showMenu(), TRUE));
+    gtk_box_append(GTK_BOX(bar), menuButton("viewSettings", 18, "View Settings", viewSettingsMenu(), TRUE));
+    return bar;
+}
+
+static void onCornerOK(GtkButton *b, gpointer data) {
+    (void)b;
+    fw_app *a = data;
+    fw_emit(a, fw_event_make(a->cornerMode == 1 ? FW_EV_PANEL_OK : FW_EV_CORNER_OK, 0, 0));
+}
+
+static void onCornerCancel(GtkButton *b, gpointer data) {
+    (void)b;
+    fw_app *a = data;
+    fw_emit(a, fw_event_make(a->cornerMode == 1 ? FW_EV_PANEL_CANCEL : FW_EV_CORNER_CANCEL, 0, 0));
+}
+
+static GtkWidget *buildCorner(fw_app *a) {
+    a->corner = hbox(8);
+    gtk_widget_set_halign(a->corner, GTK_ALIGN_END);
+    gtk_widget_set_valign(a->corner, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(a->corner, 12);
+    gtk_widget_set_margin_end(a->corner, 16);
+    a->cornerOK = gtk_button_new();
+    GtkWidget *check = fw_icon_widget("check", 22);
+    fw_icon_widget_set_white(check);
+    gtk_button_set_child(GTK_BUTTON(a->cornerOK), check);
+    gtk_widget_add_css_class(a->cornerOK, "forge-ok");
+    g_signal_connect(a->cornerOK, "clicked", G_CALLBACK(onCornerOK), a);
+    a->cornerCancel = iconButton("xmark", 20, "Cancel", "forge-cancel");
+    g_signal_connect(a->cornerCancel, "clicked", G_CALLBACK(onCornerCancel), a);
+    gtk_box_append(GTK_BOX(a->corner), a->cornerOK);
+    gtk_box_append(GTK_BOX(a->corner), a->cornerCancel);
+    gtk_widget_set_visible(a->corner, FALSE);
+    return a->corner;
+}
+
+void fw_set_corner(fw_app *a, int mode) {
+    a->cornerMode = mode;
+    gtk_widget_set_visible(a->corner, mode != 0);
+    gtk_widget_set_tooltip_text(a->cornerOK, mode == 2 ? "Exit Sketch" : "OK");
+    gtk_widget_set_tooltip_text(a->cornerCancel, mode == 2 ? "Discard changes and exit the sketch" : "Cancel");
+}
+
+static GtkWidget *buildBadge(fw_app *a) {
+    a->badge = hbox(8);
+    gtk_widget_add_css_class(a->badge, "forge-badge");
+    gtk_widget_set_halign(a->badge, GTK_ALIGN_START);
+    gtk_widget_set_valign(a->badge, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(a->badge, 14);
+    gtk_widget_set_margin_start(a->badge, 14);
+    a->badgeIcon = hbox(0);
+    a->badgeTitle = label("", "forge-badge-title");
+    a->badgeDetail = label("", "forge-badge-detail");
+    gtk_box_append(GTK_BOX(a->badge), a->badgeIcon);
+    gtk_box_append(GTK_BOX(a->badge), a->badgeTitle);
+    gtk_box_append(GTK_BOX(a->badge), a->badgeDetail);
+    gtk_widget_set_visible(a->badge, FALSE);
+    gtk_widget_set_can_target(a->badge, FALSE);
+    return a->badge;
+}
+
+void fw_set_badge(fw_app *a, const char *icon, const char *title, const char *detail) {
+    clearBox(a->badgeIcon);
+    if (icon && *icon) gtk_box_append(GTK_BOX(a->badgeIcon), fw_icon_widget(icon, 16));
+    gtk_label_set_text(GTK_LABEL(a->badgeTitle), title ? title : "");
+    gtk_label_set_text(GTK_LABEL(a->badgeDetail), detail ? detail : "");
+    gtk_widget_set_visible(a->badge, title && *title);
+}
 
 static void onModifyCommit(GtkWidget *w, gpointer data) {
     (void)w;
@@ -819,28 +1297,72 @@ void fw_edit_hide(fw_app *a) {
 }
 
 static GtkWidget *buildModify(fw_app *a) {
-    a->modify = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    a->modify = hbox(6);
     gtk_widget_add_css_class(a->modify, "forge-modify");
     gtk_widget_set_halign(a->modify, GTK_ALIGN_START);
     gtk_widget_set_valign(a->modify, GTK_ALIGN_START);
-    a->modifyLabel = label("", NULL);
+    a->modifyLabel = label("", "forge-label");
+    GtkWidget *field = hbox(0);
+    gtk_widget_add_css_class(field, "forge-field");
     a->modifyEntry = gtk_entry_new();
     gtk_editable_set_width_chars(GTK_EDITABLE(a->modifyEntry), 10);
+    gtk_box_append(GTK_BOX(field), a->modifyEntry);
     g_signal_connect(a->modifyEntry, "activate", G_CALLBACK(onModifyCommit), a);
     GtkEventController *keys = gtk_event_controller_key_new();
     g_signal_connect(keys, "key-pressed", G_CALLBACK(onModifyKey), a);
     gtk_widget_add_controller(a->modifyEntry, keys);
-    GtkWidget *ok = gtk_button_new_from_icon_name("object-select-symbolic"), *cancel = gtk_button_new_from_icon_name("window-close-symbolic");
+    GtkWidget *ok = gtk_button_new();
+    GtkWidget *check = fw_icon_widget("check", 14);
+    fw_icon_widget_set_white(check);
+    gtk_button_set_child(GTK_BUTTON(ok), check);
+    gtk_widget_add_css_class(ok, "forge-pm-ok");
     gtk_widget_set_tooltip_text(ok, "OK");
-    gtk_widget_set_tooltip_text(cancel, "Cancel");
+    GtkWidget *cancel = iconButton("xmark", 12, "Cancel", "forge-pm-cancel");
     g_signal_connect(ok, "clicked", G_CALLBACK(onModifyCommit), a);
     g_signal_connect(cancel, "clicked", G_CALLBACK(onModifyCancel), a);
     gtk_box_append(GTK_BOX(a->modify), a->modifyLabel);
-    gtk_box_append(GTK_BOX(a->modify), a->modifyEntry);
+    gtk_box_append(GTK_BOX(a->modify), field);
     gtk_box_append(GTK_BOX(a->modify), ok);
     gtk_box_append(GTK_BOX(a->modify), cancel);
     gtk_widget_set_visible(a->modify, FALSE);
     return a->modify;
+}
+
+// MARK: status bar
+
+void fw_set_status(fw_app *a, const char *left, const char *middle, const char *right) {
+    const char *texts[3] = {left, middle, right};
+    for (int i = 0; i < 3; ++i) {
+        gtk_label_set_text(GTK_LABEL(a->status[i]), texts[i] ? texts[i] : "");
+        if (i > 0) gtk_widget_set_visible(a->statusCells[i], texts[i] && *texts[i]);
+    }
+}
+
+static GtkWidget *buildStatus(fw_app *a) {
+    GtkWidget *status = hbox(0);
+    gtk_widget_add_css_class(status, "forge-status");
+    GtkWidget *left = hbox(8);
+    gtk_widget_add_css_class(left, "forge-status-left");
+    gtk_widget_set_hexpand(left, TRUE);
+    gtk_box_append(GTK_BOX(left), fw_icon_widget("command", 14));
+    a->status[0] = label("", NULL);
+    gtk_label_set_ellipsize(GTK_LABEL(a->status[0]), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(a->status[0], TRUE);
+    gtk_box_append(GTK_BOX(left), a->status[0]);
+    gtk_box_append(GTK_BOX(status), left);
+    a->statusCells[0] = left;
+    for (int i = 1; i < 3; ++i) {
+        GtkWidget *cell = hbox(0);
+        gtk_widget_add_css_class(cell, "forge-status-cell");
+        if (i == 1) gtk_widget_add_css_class(cell, "mono");
+        a->status[i] = label("", NULL);
+        gtk_widget_set_valign(a->status[i], GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(cell), a->status[i]);
+        gtk_widget_set_visible(cell, FALSE);
+        gtk_box_append(GTK_BOX(status), cell);
+        a->statusCells[i] = cell;
+    }
+    return status;
 }
 
 // MARK: dialogs (the GTK dialogs are asynchronous: wait for them in a nested loop)
@@ -981,26 +1503,28 @@ static gboolean onTick(gpointer data) {
     return G_SOURCE_CONTINUE;
 }
 
-GtkWidget *fw_render_create_view(fw_app *a);
-
 fw_app *fw_app_create(const char *title, fw_handler handler, void *ctx) {
     if (!gtk_init_check()) return NULL;
     g_set_prgname("forge");
     g_set_application_name("Forge");
-    // The panels use the design's light colours (as on Windows and macOS): pin GTK's own light
-    // theme so a dark desktop theme does not put dark controls on them. GTK_THEME overrides.
-    if (!g_getenv("GTK_THEME")) g_object_set(gtk_settings_get_default(), "gtk-theme-name", "Adwaita", "gtk-application-prefer-dark-theme", FALSE, NULL);
-    loadCSS();
     fw_app *a = g_new0(fw_app, 1);
     a->handler = handler;
     a->ctx = ctx;
     a->scale = 1;
+    a->dark = prefersDark();
+    // Forge draws its own chrome from the design's tokens; GTK's Adwaita (in the matching
+    // variant) supplies the popovers, check boxes and drop-downs, whatever the desktop theme.
+    // GTK_THEME overrides.
+    if (!g_getenv("GTK_THEME")) g_object_set(gtk_settings_get_default(), "gtk-theme-name", "Adwaita", "gtk-application-prefer-dark-theme", a->dark, NULL);
+    loadTheme(a);
+    fw_icon_define(a, "forge-menu", "s M 4 7 L 20 7 M 4 12 L 20 12 M 4 17 L 20 17");
     a->pendingGroups = g_ptr_array_new_with_free_func(g_free);
     a->pendingItems = g_array_new(FALSE, TRUE, sizeof(RibbonItem));
     a->nodes = g_array_new(FALSE, TRUE, sizeof(TreeNode));
-    a->treeBuild = g_string_new(NULL);
+    a->collapsed = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     a->controls = g_array_new(FALSE, TRUE, sizeof(PanelControl));
     a->sections = g_array_new(FALSE, TRUE, sizeof(PanelSection));
+    a->closedSections = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     a->renderer = fw_renderer_create();
 
     a->window = gtk_window_new();
@@ -1010,53 +1534,41 @@ fw_app *fw_app_create(const char *title, fw_handler handler, void *ctx) {
     gtk_window_set_default_size(GTK_WINDOW(a->window), 1440, 900);
     g_signal_connect(a->window, "close-request", G_CALLBACK(onClose), a);
     g_signal_connect(a->window, "destroy", G_CALLBACK(onDestroy), a);
+    buildActions(a);
+    gtk_window_set_titlebar(GTK_WINDOW(a->window), buildHeader(a));
 
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    a->menubar = buildMenus(a);
-    gtk_box_append(GTK_BOX(root), a->menubar);
+    GtkWidget *root = vbox(0);
+    gtk_widget_add_css_class(root, "forge-chrome");
 
-    GtkWidget *tabs = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-    gtk_widget_add_css_class(tabs, "forge-tabs");
-    const char *names[] = {"Features", "Sketch", "Evaluate"};
-    for (int i = 0; i < 3; ++i) {
-        a->tabs[i] = gtk_button_new_with_label(names[i]);
-        gtk_widget_add_css_class(a->tabs[i], "forge-tab");
-        g_object_set_data(G_OBJECT(a->tabs[i]), "forge-id", GINT_TO_POINTER(i));
-        g_signal_connect(a->tabs[i], "clicked", G_CALLBACK(onTab), a);
-        gtk_box_append(GTK_BOX(tabs), a->tabs[i]);
-    }
-    fw_set_tab(a, 0);
-    gtk_box_append(GTK_BOX(root), tabs);
-
-    a->ribbon = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    a->ribbon = hbox(0);
     GtkWidget *ribbonScroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ribbonScroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ribbonScroll), a->ribbon);
     gtk_widget_add_css_class(ribbonScroll, "forge-ribbon");
-    gtk_widget_set_size_request(ribbonScroll, -1, 96);
+    gtk_widget_set_size_request(ribbonScroll, -1, 92);
     gtk_widget_set_vexpand(ribbonScroll, FALSE);
     gtk_box_append(GTK_BOX(root), ribbonScroll);
 
-    GtkWidget *middle = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *middle = hbox(0);
     gtk_widget_set_vexpand(middle, TRUE);
 
-    GtkWidget *left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_add_css_class(left, "forge-side");
+    GtkWidget *left = vbox(6);
     gtk_widget_add_css_class(left, "forge-left");
-    gtk_widget_set_size_request(left, 250, -1);
+    gtk_widget_set_size_request(left, 272, -1);
     gtk_widget_set_hexpand(left, FALSE);
     a->filter = gtk_search_entry_new();
     gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(a->filter), "Filter features");
-    gtk_widget_set_margin_start(a->filter, 6);
-    gtk_widget_set_margin_end(a->filter, 6);
-    gtk_widget_set_margin_top(a->filter, 6);
+    gtk_widget_add_css_class(a->filter, "forge-search");
+    gtk_widget_set_margin_start(a->filter, 10);
+    gtk_widget_set_margin_end(a->filter, 10);
+    gtk_widget_set_margin_top(a->filter, 10);
     g_signal_connect(a->filter, "search-changed", G_CALLBACK(onFilter), a);
     gtk_box_append(GTK_BOX(left), a->filter);
     a->tree = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(a->tree), GTK_SELECTION_NONE);
     gtk_widget_add_css_class(a->tree, "forge-tree");
-    gtk_widget_add_css_class(a->tree, "forge-side");
     GtkWidget *treeScroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(treeScroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(treeScroll), a->tree);
     gtk_widget_set_vexpand(treeScroll, TRUE);
     gtk_box_append(GTK_BOX(left), treeScroll);
@@ -1066,33 +1578,23 @@ fw_app *fw_app_create(const char *title, fw_handler handler, void *ctx) {
     gtk_widget_set_hexpand(a->overlay, TRUE);
     a->view = fw_render_create_view(a);
     gtk_overlay_set_child(GTK_OVERLAY(a->overlay), a->view);
+    gtk_overlay_add_overlay(GTK_OVERLAY(a->overlay), buildHeadsUp(a));
+    gtk_overlay_add_overlay(GTK_OVERLAY(a->overlay), buildBadge(a));
+    gtk_overlay_add_overlay(GTK_OVERLAY(a->overlay), buildCorner(a));
     gtk_overlay_add_overlay(GTK_OVERLAY(a->overlay), buildModify(a));
     gtk_box_append(GTK_BOX(middle), a->overlay);
 
-    a->panelBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start(a->panelBox, 14);
-    gtk_widget_set_margin_end(a->panelBox, 14);
-    gtk_widget_set_margin_top(a->panelBox, 12);
-    gtk_widget_set_margin_bottom(a->panelBox, 12);
+    a->panelBox = vbox(0);
     a->panel = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(a->panel), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(a->panel), a->panelBox);
-    gtk_widget_add_css_class(a->panel, "forge-side");
     gtk_widget_add_css_class(a->panel, "forge-right");
-    gtk_widget_set_size_request(a->panel, 320, -1);
-    gtk_widget_set_hexpand(a->panel, FALSE);  // its entries expand within it, not into the viewport
+    gtk_widget_set_size_request(a->panel, 312, -1);
+    gtk_widget_set_hexpand(a->panel, FALSE);  // its fields expand within it, not into the viewport
     gtk_box_append(GTK_BOX(middle), a->panel);
     gtk_box_append(GTK_BOX(root), middle);
 
-    GtkWidget *status = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_add_css_class(status, "forge-status");
-    for (int i = 0; i < 3; ++i) {
-        a->status[i] = label("", NULL);
-        gtk_label_set_ellipsize(GTK_LABEL(a->status[i]), PANGO_ELLIPSIZE_END);
-        if (i == 0) gtk_widget_set_hexpand(a->status[i], TRUE);
-        gtk_box_append(GTK_BOX(status), a->status[i]);
-    }
-    gtk_box_append(GTK_BOX(root), status);
+    gtk_box_append(GTK_BOX(root), buildStatus(a));
 
     gtk_window_set_child(GTK_WINDOW(a->window), root);
     g_timeout_add(33, onTick, a);
@@ -1129,18 +1631,31 @@ void fw_app_destroy(fw_app *a) {
     g_array_unref(a->pendingItems);
     freeNodes(a->nodes);
     g_array_unref(a->nodes);
-    g_string_free(a->treeBuild, TRUE);
+    g_hash_table_unref(a->collapsed);
     g_array_unref(a->controls);
+    for (guint i = 0; i < a->sections->len; ++i) g_free(g_array_index(a->sections, PanelSection, i).title);
     g_array_unref(a->sections);
+    g_hash_table_unref(a->closedSections);
     g_clear_object(&a->actions);
     g_free(a->ribbonKey);
     g_free(a->treeKey);
     g_free(a);
 }
 
+int fw_capabilities(fw_app *a) { return FW_CAN_CORNER | FW_CAN_BADGE | (a && a->dark ? FW_CAN_DARK : 0); }
+
 float fw_dpi_scale(fw_app *a) { return a->scale > 0 ? a->scale : 1; }
 
-void fw_set_title(fw_app *a, const char *title) { gtk_window_set_title(GTK_WINDOW(a->window), title ? title : "Forge"); }
+void fw_set_title(fw_app *a, const char *title) {
+    const char *t = title && *title ? title : "Forge";
+    gtk_window_set_title(GTK_WINDOW(a->window), t);
+    // "Bracket - Forge" → the document name in the header.
+    char *doc = g_strdup(t);
+    char *suffix = g_strrstr(doc, " - Forge");
+    if (suffix && suffix != doc) *suffix = 0;
+    gtk_label_set_text(GTK_LABEL(a->docTitle), doc);
+    g_free(doc);
+}
 
 void fw_set_menu_check(fw_app *a, int id, int checked) {
     char name[16];
@@ -1154,12 +1669,6 @@ void fw_set_menu_enabled(fw_app *a, int id, int enabled) {
     snprintf(name, sizeof name, "m%d", id);
     GAction *act = g_action_map_lookup_action(G_ACTION_MAP(a->actions), name);
     if (act) g_simple_action_set_enabled(G_SIMPLE_ACTION(act), enabled != 0);
-}
-
-void fw_set_status(fw_app *a, const char *left, const char *middle, const char *right) {
-    gtk_label_set_text(GTK_LABEL(a->status[0]), left ? left : "");
-    gtk_label_set_text(GTK_LABEL(a->status[1]), middle ? middle : "");
-    gtk_label_set_text(GTK_LABEL(a->status[2]), right ? right : "");
 }
 
 void fw_app_quit(fw_app *a) {

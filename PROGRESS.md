@@ -23,9 +23,40 @@ tried lacks toolchain files (no `swift-frontend`), so nothing could build with i
 - CI: the Linux job builds `forge` and runs its self-test under Xvfb; a new `cachyos` job runs
   the installer in the CachyOS container.
 
+### Linux UI redesigned to the design artboards (docs/design Main / Sketch)
+
+The first Linux window used GTK's stock look (menu bar, text ribbon); the user reported the UI
+as wrong. The GTK shell is now laid out and styled as the design:
+- a header bar with the document name, undo / redo / save, the centred segmented tabs and the app
+  menu;
+- the icon ribbon: 26 px icons over two-line labels, small buttons stacked three high, flyout
+  chevrons, group titles;
+- the FeatureManager with icons, disclosure chevrons, a bold root and the accent rollback bar;
+- the PropertyManager with an icon tile, ✓ / ✕ buttons, collapsible sections, fields with the
+  unit inside them, and accent-outlined selection boxes with chips;
+- over the viewport: the heads-up view toolbar, the blue ✓ / ✕ confirmation corner, and the
+  "Sketch1 on Front" badge;
+- a status bar of cells.
+
+Light and dark follow the desktop (GTK prefer-dark or a "dark" theme name, e.g. Breeze Dark);
+`FORGE_THEME=light|dark` overrides.
+- **Icons:** `ForgeUI/IconGeometry.swift` flattens the macOS icon paths (SVG subset, arcs and
+  quadratics → cubics) into move / line / cubic / close layers. The front end sends them once
+  with `fw_icon_define`, and `gtk/gtk_icons.c` strokes them with Cairo in the widget's CSS colour.
+- **Shell API additions** (all three shells):
+  - an icon name on ribbon buttons, tree nodes and pages;
+  - `fw_capabilities` (FW_CAN_CORNER / BADGE / DARK);
+  - `fw_set_corner` and `fw_set_badge`;
+  - FW_EV_CORNER_OK / CANCEL.
+
+  Windows keeps drawing its corner in the viewport; its icons are still to come.
+- **Viewport grid:** the grid colours are now the linear values of the design's greys. Every
+  viewport renders to an sRGB target, so the old dark grid came out almost white.
+
 ### Not done / known gaps (Linux)
 
-- Ribbon and tree icons, command palette, context toolbar and shortcut bar (as on Windows).
+- Command palette, "Ask Forge", context toolbar and shortcut bar; the tree's pane switcher
+  (appearances, equations); Zoom to Area and Section View in the heads-up toolbar.
 - A PKGBUILD / Flatpak (the installer downloads the 1.1 GB Swift toolchain once).
 
 ## Session 5 — 2026-09-28 — Persistent naming; Sweep, Loft, Rib

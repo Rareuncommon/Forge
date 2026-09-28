@@ -50,6 +50,9 @@ final class WinShell {
         self.app = app
         viewport = WinViewport(shell: self, app: app)
         model.platform = WinPlatform(app: app)
+        // The icon set, drawn by shells that can (the same paths as the macOS app).
+        for icon in ForgeIcon.allCases { fw_icon_define(app, icon.rawValue, icon.geometry) }
+        model.isDark = Int(fw_capabilities(app)) & Int(FW_CAN_DARK) != 0
         fw_app_show(app)
         Task {
             await model.bootstrap()
@@ -161,6 +164,7 @@ final class WinShell {
             dirtyMenus = false
             pushMenus()
         }
+        pushCorner()
         let key = model.operation == nil ? "" : model.previewKey
         if key != previewKey {
             previewKey = key
@@ -186,7 +190,7 @@ final class WinShell {
             fw_ribbon_group(app, g.title)
             for b in g.buttons {
                 ribbonButtons.append(b)
-                fw_ribbon_button(app, b.title, b.help, b.large ? 1 : 0, b.active ? 1 : 0, b.enabled ? 1 : 0, b.variants.map(\.title).joined(separator: "\n"))
+                fw_ribbon_button(app, b.icon.rawValue, b.title, b.help, b.large ? 1 : 0, b.active ? 1 : 0, b.enabled ? 1 : 0, b.variants.map(\.title).joined(separator: "\n"))
             }
         }
         fw_ribbon_end(app)
@@ -198,7 +202,7 @@ final class WinShell {
         treeNodes = []
         fw_tree_begin(app)
         treeNodes.append(TreeNode(id: "part", icon: .part, title: name))
-        fw_tree_node(app, 0, name, "", Int32(FW_NODE_NORMAL), 0, "")
+        fw_tree_node(app, 0, ForgeIcon.part.rawValue, name, "", Int32(FW_NODE_NORMAL), 0, "")
         func add(_ n: TreeNode, depth: Int) {
             treeNodes.append(n)
             let state: Int32 =
@@ -210,7 +214,7 @@ final class WinShell {
                 case .warning: Int32(FW_NODE_WARNING)
                 case .error: Int32(FW_NODE_ERROR)
                 }
-            fw_tree_node(app, Int32(depth), n.title, n.tooltip, state, n.selected ? 1 : 0, n.menu.map(\.title).joined(separator: "\n"))
+            fw_tree_node(app, Int32(depth), n.icon.rawValue, n.title, n.tooltip, state, n.selected ? 1 : 0, n.menu.map(\.title).joined(separator: "\n"))
             for c in n.children { add(c, depth: depth + 1) }
         }
         for n in nodes { add(n, depth: 1) }
@@ -233,7 +237,7 @@ final class WinShell {
             panelSignature = signature
             panelSections = page.sections
             panelControls = page.sections.flatMap(\.controls)
-            fw_panel_begin(app, page.title, page.subtitle, page.message ?? "", page.ok != nil ? 1 : 0, page.cancel != nil ? 1 : 0)
+            fw_panel_begin(app, page.icon.rawValue, page.title, page.subtitle, page.message ?? "", page.ok != nil ? 1 : 0, page.cancel != nil ? 1 : 0)
             for s in page.sections {
                 fw_panel_section(app, s.title, s.toggle.map { $0.get() ? 1 : 0 } ?? -1)
                 for c in s.controls { addControl(c) }
@@ -317,6 +321,24 @@ final class WinShell {
 
     func markMenus() { dirtyMenus = true }
 
+    /// Whether the shell draws the confirmation corner itself (else the viewport draws it).
+    var drawsCorner: Bool { app.map { Int(fw_capabilities($0)) & Int(FW_CAN_CORNER) != 0 } ?? false }
+    private var corner: (Int32, String) = (-1, "")
+
+    /// The confirmation corner (OK / Cancel of the open page, or Exit / Cancel Sketch) and the
+    /// sketch badge, for shells that draw them.
+    private func pushCorner() {
+        guard let app else { return }
+        let page = model.operation != nil ? model.panelPage : nil
+        let mode: Int32 = page?.ok != nil ? 1 : model.activeSketch != nil ? 2 : 0
+        let sketch = model.sketches.first { $0.id == model.activeSketch }
+        let badge = sketch.map { "\($0.name)|on \($0.plane)" } ?? ""
+        guard (mode, badge) != corner else { return }
+        corner = (mode, badge)
+        fw_set_corner(app, mode)
+        fw_set_badge(app, sketch == nil ? "" : ForgeIcon.sketch.rawValue, sketch?.name ?? "", sketch.map { "on \($0.plane)" } ?? "")
+    }
+
     // MARK: events
 
     private func handle(_ e: fw_event, text: String) {
@@ -345,6 +367,10 @@ final class WinShell {
             model.panelPage.ok?()
         case FW_EV_PANEL_CANCEL:
             model.panelPage.cancel?()
+        case FW_EV_CORNER_OK:
+            Task { await model.exitSketch() }
+        case FW_EV_CORNER_CANCEL:
+            Task { await model.cancelSketch() }
         case FW_EV_TICK:
             _ = RunLoop.main.limitDate(forMode: .default)
         case FW_EV_CLOSE:

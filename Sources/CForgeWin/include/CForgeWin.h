@@ -47,8 +47,13 @@ enum {
     FW_EV_EDIT_CANCEL = 29,
     FW_EV_FILTER = 30,          // tree filter text changed: text
     FW_EV_CLOSE = 31,           // the window is closing
-    FW_EV_TICK = 32             // timer (about 30 Hz while the app runs)
+    FW_EV_TICK = 32,            // timer (about 30 Hz while the app runs)
+    FW_EV_CORNER_OK = 33,       // confirmation corner in sketch mode: Exit Sketch
+    FW_EV_CORNER_CANCEL = 34    // confirmation corner in sketch mode: Cancel Sketch
 };
+
+/// What a shell draws itself (fw_capabilities).
+enum { FW_CAN_CORNER = 1, FW_CAN_BADGE = 2, FW_CAN_DARK = 4 /* the shell uses a dark appearance */ };
 
 enum { FW_MOD_SHIFT = 1, FW_MOD_CTRL = 2, FW_MOD_ALT = 4 };
 
@@ -95,26 +100,41 @@ void fw_set_menu_enabled(fw_app *, int id, int enabled);
 void fw_set_status(fw_app *, const char *left, const char *middle, const char *right);
 /// Select the ribbon tab (0 Features, 1 Sketch, 2 Evaluate) without an event.
 void fw_set_tab(fw_app *, int index);
+/// FW_CAN_* bits: what this shell draws natively (the front end draws the rest itself).
+int fw_capabilities(fw_app *);
+/// The confirmation corner over the viewport (FW_CAN_CORNER): 0 none; 1 OK / Cancel of the
+/// PropertyManager (FW_EV_PANEL_OK / CANCEL); 2 Exit / Cancel Sketch (FW_EV_CORNER_OK / CANCEL).
+void fw_set_corner(fw_app *, int mode);
+/// A badge at the viewport's top-left (FW_CAN_BADGE), e.g. "Sketch1" "on Front Plane"; "" hides it.
+void fw_set_badge(fw_app *, const char *icon, const char *title, const char *detail);
+
+// MARK: icons
+
+/// Define an icon once by name; ribbon buttons, tree nodes and pages refer to it. `geometry`:
+/// layers separated by '|', each "<paint> <elements>" on a 24 x 24 grid, paint s (stroke in the
+/// text colour), a (accent stroke), d (dashed), ad (accent dashed), f (fill), af (accent fill,
+/// low opacity); elements absolute "M x y", "L x y", "C x1 y1 x2 y2 x y", "Z".
+void fw_icon_define(fw_app *, const char *name, const char *geometry);
 
 // MARK: ribbon (rebuilt as a whole)
 
 void fw_ribbon_begin(fw_app *);
 void fw_ribbon_group(fw_app *, const char *title);
 /// `variants`: flyout items separated by '\n' ("" for none).
-void fw_ribbon_button(fw_app *, const char *title, const char *help, int large, int active, int enabled, const char *variants);
+void fw_ribbon_button(fw_app *, const char *icon, const char *title, const char *help, int large, int active, int enabled, const char *variants);
 void fw_ribbon_end(fw_app *);
 
 // MARK: FeatureManager tree (rebuilt as a whole)
 
 void fw_tree_begin(fw_app *);
 /// `menu`: context menu items separated by '\n'.
-void fw_tree_node(fw_app *, int depth, const char *title, const char *tooltip, int state, int selected, const char *menu);
+void fw_tree_node(fw_app *, int depth, const char *icon, const char *title, const char *tooltip, int state, int selected, const char *menu);
 void fw_tree_end(fw_app *);
 
 // MARK: PropertyManager
 
 /// Controls are numbered in the order they are added (sections are numbered separately).
-void fw_panel_begin(fw_app *, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel);
+void fw_panel_begin(fw_app *, const char *icon, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel);
 /// `toggle`: -1 plain section, 0 / 1 check group (its controls only follow when on).
 void fw_panel_section(fw_app *, const char *title, int toggle);
 void fw_panel_field(fw_app *, const char *label, const char *unit, const char *value);

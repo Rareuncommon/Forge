@@ -1272,6 +1272,13 @@ extern "C" void fw_set_status(fw_app *a, const char *left, const char *middle, c
 
 extern "C" void fw_set_tab(fw_app *a, int index) { SendMessageW(a->tab, TCM_SETCURSEL, index, 0); }
 
+// Icons, the confirmation corner and the viewport badge are not drawn by the Win32 shell yet
+// (the front end draws the corner itself; ribbon and tree show text).
+extern "C" int fw_capabilities(fw_app *) { return 0; }
+extern "C" void fw_set_corner(fw_app *, int) {}
+extern "C" void fw_set_badge(fw_app *, const char *, const char *, const char *) {}
+extern "C" void fw_icon_define(fw_app *, const char *, const char *) {}
+
 // MARK: ribbon API
 
 extern "C" void fw_ribbon_begin(fw_app *a) {
@@ -1281,7 +1288,7 @@ extern "C" void fw_ribbon_begin(fw_app *a) {
 
 extern "C" void fw_ribbon_group(fw_app *a, const char *title) { a->pendingGroups.push_back(fw_widen(title)); }
 
-extern "C" void fw_ribbon_button(fw_app *a, const char *title, const char *help, int large, int active, int enabled, const char *variants) {
+extern "C" void fw_ribbon_button(fw_app *a, const char *icon, const char *title, const char *help, int large, int active, int enabled, const char *variants) {
     RibbonItem it;
     it.title = fw_widen(title);
     it.help = fw_widen(help);
@@ -1325,7 +1332,7 @@ extern "C" void fw_ribbon_end(fw_app *a) {
 
 extern "C" void fw_tree_begin(fw_app *a) { a->pendingNodes.clear(); }
 
-extern "C" void fw_tree_node(fw_app *a, int depth, const char *title, const char *tooltip, int state, int selected, const char *menu) {
+extern "C" void fw_tree_node(fw_app *a, int depth, const char *icon, const char *title, const char *tooltip, int state, int selected, const char *menu) {
     TreeItem n;
     n.depth = depth;
     n.title = fw_widen(title);
@@ -1385,7 +1392,7 @@ static bool pendingOK, pendingCancel;
 static std::vector<PanelSection> pendingSections;
 static std::vector<PanelControl> pendingControls;
 
-extern "C" void fw_panel_begin(fw_app *a, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {
+extern "C" void fw_panel_begin(fw_app *a, const char *icon, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {
     (void)a;
     pendingTitle = fw_widen(title);
     pendingSubtitle = fw_widen(subtitle);

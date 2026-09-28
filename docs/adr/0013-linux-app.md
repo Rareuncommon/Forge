@@ -25,10 +25,22 @@ PropertyManager, dialogs, and a viewport that executes `ForgeRender.ViewportPlan
 1. **A GTK 4 + OpenGL implementation of the same C API** (`Sources/CForgeWin/gtk`, C). The Swift
    front end builds unchanged as the `forge` executable (target `ForgeLinux`, sources
    `Sources/ForgeWin`).
-   - **Window:** a GtkPopoverMenuBar with GActions and shortcuts; ribbon tabs and grouped
-     buttons with flyout popovers; the tree as a GtkListBox (states, rollback bar, context
-     popovers); the PropertyManager built from the control descriptions; status bar; the
-     Modify box as an overlay.
+   - **Window,** laid out and styled as the design (docs/design Main / Sketch artboards,
+     tokens from `docs/design/gen.py`, light or dark after the desktop, `FORGE_THEME`
+     overrides):
+     - a GtkHeaderBar with the document, undo / redo / save, the segmented CommandManager
+       tabs and the app menu (GActions and shortcuts);
+     - the icon ribbon with flyout popovers;
+     - the tree as a GtkListBox with icons, disclosure, states, the rollback bar and context
+       popovers;
+     - the PropertyManager built from the control descriptions, with collapsible sections;
+     - over the viewport: the heads-up view toolbar, the confirmation corner, the sketch
+       badge and the Modify box;
+     - a status bar of cells.
+   - **Icons:** the macOS icon set's paths, flattened to move / line / cubic / close by
+     `ForgeUI/IconGeometry.swift`, sent once with `fw_icon_define` and drawn with Cairo in the
+     widget's CSS colour (`gtk/gtk_icons.c`). `fw_capabilities` tells the front end what the
+     shell draws itself (corner, badge) and whether it is dark.
    - **Dialogs:** GtkAlertDialog and GtkFileDialog, waited on in a nested main loop, because
      the API is synchronous.
    - **Viewport:** a GtkGLArea with an OpenGL 3.3 core profile.
@@ -47,8 +59,9 @@ PropertyManager, dialogs, and a viewport that executes `ForgeRender.ViewportPlan
    - The swift.org toolchain goes into `~/.local/share/forge`, checked against swift.org's
      signing keys. On Arch it gets a private `libncurses.so.6` link inside the toolchain's own
      library directory; nothing system-wide is changed.
-   - Release binaries are built with `--static-swift-stdlib`, so they don't need the toolchain
-     at run time.
+   - Release binaries are installed with the Swift runtime libraries they use, in
+     `<prefix>/lib/forge`, found through an `$ORIGIN` rpath. `--static-swift-stdlib` does not
+     link Foundation with this toolchain.
    - `forge` and `forge-cli` are installed with a desktop entry and an icon into `~/.local`
      (or `/usr/local` with `--system`).
 
@@ -74,12 +87,14 @@ macOS page does.
 
 - One Swift front end serves Windows and Linux; a change to the shell API is made in
   `app.cpp`/`render.cpp` (Win32), `gtk/` (Linux) and `headless/` (the type-check stub).
-- Like Windows, the Linux ribbon uses text buttons (the SVG icon set is not drawn yet), and
-  there is no command palette, context toolbar or shortcut bar yet.
+- There is no command palette, context toolbar or shortcut bar yet (as on Windows). The
+  Windows shell accepts the icon names but still shows text buttons.
 - The install downloads about 1.1 GB once (the Swift toolchain). A PKGBUILD / Flatpak is a
   possible follow-up.
 
-The installed app on CachyOS (container, Xvfb, Mesa), running its screenshot self-test: a
-Fillet with two picked edges and its live preview.
+Sketching a profile (light), and the screenshot self-test in the dark appearance: a Fillet
+with two picked edges and its live preview (Xvfb, Mesa).
 
-![Forge on CachyOS](../images/forge-linux-cachyos.png)
+![Forge on Linux, sketch mode](../images/forge-linux-sketch.png)
+
+![Forge on Linux, dark](../images/forge-linux-dark.png)

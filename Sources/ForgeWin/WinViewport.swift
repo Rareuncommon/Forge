@@ -289,7 +289,7 @@ final class WinViewport {
     /// SolidWorks' confirmation corner while a sketch is open: Exit Sketch / Cancel Sketch.
     private func drawCorner() {
         cornerRects = []
-        guard model.activeSketch != nil else { return }
+        guard model.activeSketch != nil, !shell.drawsCorner else { return }
         let s = scale
         let y = 24 * s, right = Float(width) - 16 * s
         let items: [(String, UInt32, () -> Void)] = [

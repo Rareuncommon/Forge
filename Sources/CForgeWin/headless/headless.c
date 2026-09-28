@@ -20,14 +20,18 @@ void fw_set_menu_check(fw_app *p0, int id, int checked) {  }
 void fw_set_menu_enabled(fw_app *p0, int id, int enabled) {  }
 void fw_set_status(fw_app *p0, const char *left, const char *middle, const char *right) {  }
 void fw_set_tab(fw_app *p0, int index) {  }
+int fw_capabilities(fw_app *p0) { return 0; }
+void fw_set_corner(fw_app *p0, int mode) {  }
+void fw_set_badge(fw_app *p0, const char *icon, const char *title, const char *detail) {  }
+void fw_icon_define(fw_app *p0, const char *name, const char *geometry) {  }
 void fw_ribbon_begin(fw_app *p0) {  }
 void fw_ribbon_group(fw_app *p0, const char *title) {  }
-void fw_ribbon_button(fw_app *p0, const char *title, const char *help, int large, int active, int enabled, const char *variants) {  }
+void fw_ribbon_button(fw_app *p0, const char *icon, const char *title, const char *help, int large, int active, int enabled, const char *variants) {  }
 void fw_ribbon_end(fw_app *p0) {  }
 void fw_tree_begin(fw_app *p0) {  }
-void fw_tree_node(fw_app *p0, int depth, const char *title, const char *tooltip, int state, int selected, const char *menu) {  }
+void fw_tree_node(fw_app *p0, int depth, const char *icon, const char *title, const char *tooltip, int state, int selected, const char *menu) {  }
 void fw_tree_end(fw_app *p0) {  }
-void fw_panel_begin(fw_app *p0, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {  }
+void fw_panel_begin(fw_app *p0, const char *icon, const char *title, const char *subtitle, const char *message, int has_ok, int has_cancel) {  }
 void fw_panel_section(fw_app *p0, const char *title, int toggle) {  }
 void fw_panel_field(fw_app *p0, const char *label, const char *unit, const char *value) {  }
 void fw_panel_check(fw_app *p0, const char *label, int value) {  }

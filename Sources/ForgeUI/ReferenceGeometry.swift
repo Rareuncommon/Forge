@@ -13,8 +13,10 @@ package enum ReferenceGeometry {
     package static let firstObjectID: UInt32 = 1_000_000
 
     package static func planeColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.40, 0.52, 0.72) : RGBA(0.42, 0.55, 0.78) }
-    package static func gridColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.17, 0.19, 0.22) : RGBA(0.80, 0.83, 0.88) }
-    package static func gridAxisColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.25, 0.28, 0.33) : RGBA(0.60, 0.65, 0.75) }
+    // Linear values (the viewports render to sRGB targets) of the design's greys: light grid
+    // #CCD1DE / axes #A3ADC4, dark grid #33363D / axes #4A4F59.
+    package static func gridColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.033, 0.037, 0.047) : RGBA(0.60, 0.64, 0.73) }
+    package static func gridAxisColor(_ dark: Bool) -> RGBA { dark ? RGBA(0.068, 0.078, 0.10) : RGBA(0.37, 0.42, 0.55) }
 
     /// Items for the current state. `size` is the model's extent (mm) used to scale planes,
     /// axes and the grid; `sketch` is the sketch being edited, if any.

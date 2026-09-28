@@ -212,3 +212,37 @@ struct SweepLoftRibPageTests {
         m.cancelOperation()
     }
 }
+
+@Suite("Icon geometry")
+struct IconGeometryTests {
+    @Test func everyIconParsesToDrawableLayers() {
+        for icon in ForgeIcon.allCases {
+            let layers = icon.drawing
+            #expect(!layers.isEmpty, "\(icon)")
+            for l in layers {
+                #expect(!l.elements.isEmpty, "\(icon)")
+                // Every path starts with a move and stays on the 24 × 24 grid (with a margin).
+                guard case .move = l.elements.first else { Issue.record("\(icon) layer does not start with a move"); continue }
+                for e in l.elements {
+                    let pts: [Double]
+                    switch e {
+                    case .move(let x, let y), .line(let x, let y): pts = [x, y]
+                    case .cubic(let a, let b, let c, let d, let x, let y): pts = [a, b, c, d, x, y]
+                    case .close: pts = []
+                    }
+                    #expect(pts.allSatisfy { $0 > -3 && $0 < 27 }, "\(icon): \(pts)")
+                }
+            }
+        }
+    }
+
+    @Test func relativeCommandsAndArcs() {
+        // "M3 13 h7 v7 h-7 Z": a 7 × 7 square.
+        #expect(IconGeometry.parse("M3 13 h7 v7 h-7 Z") == [.move(3, 13), .line(10, 13), .line(10, 20), .line(3, 20), .close])
+        // A full circle of radius 3 as two half arcs ends where it started, in quarter-circle cubics.
+        let circle = IconGeometry.parse("M9 12 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0 Z")
+        #expect(circle.filter { if case .cubic = $0 { return true } else { return false } }.count == 4)
+        if case .cubic(_, _, _, _, let x, let y) = circle[circle.count - 2] { #expect(abs(x - 9) < 1e-9 && abs(y - 12) < 1e-9) }
+        #expect(ForgeIcon.fillet.geometry.hasPrefix("s M 5 20 L 20 20 L 20 5|"))
+    }
+}
