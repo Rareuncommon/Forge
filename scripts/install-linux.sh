@@ -103,8 +103,14 @@ elif [[ ! -x "$SWIFT" ]]; then
   say "Verifying its signature with swift.org's keys"
   export GNUPGHOME="$tmp/gnupg"
   mkdir -m 700 "$GNUPGHOME"
-  curl -fsSL https://www.swift.org/keys/all-keys.asc | gpg --quiet --import 2>/dev/null
-  gpg --quiet --verify "$tmp/swift.tar.gz.sig" "$tmp/swift.tar.gz" 2>/dev/null || die "the toolchain's signature does not verify"
+  curl -fsSL -o "$tmp/swift-keys.asc" https://www.swift.org/keys/all-keys.asc
+  # gpg exits 2 when some keys of the bundle cannot be imported (expired, no user id); the
+  # signature check below is what decides.
+  gpg --quiet --import "$tmp/swift-keys.asc" 2>/dev/null || true
+  if ! out="$(gpg --verify "$tmp/swift.tar.gz.sig" "$tmp/swift.tar.gz" 2>&1)"; then
+    echo "$out" >&2
+    die "the toolchain's signature does not verify"
+  fi
   unset GNUPGHOME
   mkdir -p "$SWIFT_DIR"
   tar xzf "$tmp/swift.tar.gz" -C "$SWIFT_DIR" --strip-components=1
