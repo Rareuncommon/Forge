@@ -80,6 +80,8 @@ public struct BodyResult: Codable, Sendable {
 
 public struct FaceDescriptor: Codable, Sendable, Hashable {
     public var id: String
+    /// Persistent reference (docs/adr/0002): stays valid when the model regenerates.
+    public var persistentID: String?
     public var surfaceType: Shape.SurfaceType
     public var areaMM2: Double
     public var centroid: [Double]
@@ -88,13 +90,16 @@ public struct FaceDescriptor: Codable, Sendable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, centroid, normal
+        case persistentID = "persistent_id"
         case surfaceType = "surface_type"
         case areaMM2 = "area_mm2"
         case edgeCount = "edge_count"
     }
 
-    init(body: String, _ f: Shape.FaceInfo) {
+    init(_ b: Body, _ f: Shape.FaceInfo) {
+        let body = b.id
         id = EntityRef(body: body, kind: .face, index: f.index).description
+        persistentID = b.naming.flatMap { f.index < $0.faces.count ? EntityRef(body: body, kind: .face, name: $0.faces[f.index]).description : nil }
         surfaceType = f.surfaceType
         areaMM2 = f.area
         centroid = f.centroid.array
@@ -105,6 +110,8 @@ public struct FaceDescriptor: Codable, Sendable, Hashable {
 
 public struct EdgeDescriptor: Codable, Sendable, Hashable {
     public var id: String
+    /// Persistent reference (docs/adr/0002): stays valid when the model regenerates.
+    public var persistentID: String?
     public var curveType: Shape.CurveType
     public var lengthMM: Double
     public var start: [Double]
@@ -115,12 +122,15 @@ public struct EdgeDescriptor: Codable, Sendable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, start, end, midpoint, degenerate, faces
+        case persistentID = "persistent_id"
         case curveType = "curve_type"
         case lengthMM = "length_mm"
     }
 
-    init(body: String, _ e: Shape.EdgeInfo) {
+    init(_ b: Body, _ e: Shape.EdgeInfo) {
+        let body = b.id
         id = EntityRef(body: body, kind: .edge, index: e.index).description
+        persistentID = b.naming.flatMap { e.index < $0.edges.count ? EntityRef(body: body, kind: .edge, name: $0.edges[e.index]).description : nil }
         curveType = e.curveType
         lengthMM = e.length
         start = e.start.array

@@ -56,7 +56,7 @@ public enum BodyCreateBox: Command {
         let size = Vec3(p.width.millimeters, p.height.millimeters, p.depth.millimeters)
         let o = p.origin?.mm ?? .zero
         let shape = try Kernel.box(origin: p.centered == true ? o - size * 0.5 : o, size: size)
-        let body = doc.addBody(name: p.name, shape: shape, producedBy: name)
+        let body = doc.addBody(name: p.name, shape: shape, producedBy: name, faces: try Naming.primitive(shape, feature: doc.currentFeature, box: true))
         ctx.document = doc
         return Output(body: try BodySummary(body))
     }
@@ -96,7 +96,7 @@ public enum BodyCreateCylinder: Command {
         var doc = try ctx.requireDocument()
         let shape = try Kernel.cylinder(
             origin: p.origin?.mm ?? .zero, axis: p.axis ?? .unitZ, radius: p.radius.millimeters, height: p.height.millimeters)
-        let body = doc.addBody(name: p.name, shape: shape, producedBy: name)
+        let body = doc.addBody(name: p.name, shape: shape, producedBy: name, faces: try Naming.primitive(shape, feature: doc.currentFeature, axis: p.axis ?? .unitZ))
         ctx.document = doc
         return Output(body: try BodySummary(body))
     }
@@ -127,7 +127,7 @@ public enum BodyCreateSphere: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let shape = try Kernel.sphere(center: p.center?.mm ?? .zero, radius: p.radius.millimeters)
-        let body = doc.addBody(name: p.name, shape: shape, producedBy: name)
+        let body = doc.addBody(name: p.name, shape: shape, producedBy: name, faces: try Naming.primitive(shape, feature: doc.currentFeature))
         ctx.document = doc
         return Output(body: try BodySummary(body))
     }
@@ -180,7 +180,7 @@ public enum BodyCreateCone: Command {
         let shape = try Kernel.cone(
             origin: p.origin?.mm ?? .zero, axis: p.axis ?? .unitZ, radius1: p.baseRadius.millimeters, radius2: p.topRadius.millimeters,
             height: p.height.millimeters)
-        let body = doc.addBody(name: p.name, shape: shape, producedBy: name)
+        let body = doc.addBody(name: p.name, shape: shape, producedBy: name, faces: try Naming.primitive(shape, feature: doc.currentFeature, axis: p.axis ?? .unitZ))
         ctx.document = doc
         return Output(body: try BodySummary(body))
     }
@@ -229,7 +229,7 @@ public enum BodyCreateTorus: Command {
         var doc = try ctx.requireDocument()
         let shape = try Kernel.torus(
             origin: p.origin?.mm ?? .zero, axis: p.axis ?? .unitZ, majorRadius: p.majorRadius.millimeters, minorRadius: p.minorRadius.millimeters)
-        let body = doc.addBody(name: p.name, shape: shape, producedBy: name)
+        let body = doc.addBody(name: p.name, shape: shape, producedBy: name, faces: try Naming.primitive(shape, feature: doc.currentFeature))
         ctx.document = doc
         return Output(body: try BodySummary(body))
     }
@@ -283,7 +283,7 @@ public enum BodyBoolean: Command {
             }
             throw e
         }
-        try doc.replaceShape(of: target.id, with: result, producedBy: name)
+        try doc.replaceShape(of: target.id, with: try Naming.named(result, [NamedShape(target), NamedShape(tool)], feature: doc.currentFeature), producedBy: name)
         var consumed: [String] = []
         if p.keepTool != true {
             try doc.removeBody(tool.id)
@@ -339,16 +339,20 @@ public enum BodyTransform: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let b = try doc.body(p.body)
-        var shape = b.shape
+        var shape = NamedShape(b)
+        let feature = doc.currentFeature
         if let r = p.rotate {
-            shape = try Kernel.transform(shape, .rotation(axis: r.axis, angle: r.angle.radians, origin: r.origin?.mm ?? .zero))
+            shape = try Naming.named(
+                try Kernel.transform(shape.shape, .rotation(axis: r.axis, angle: r.angle.radians, origin: r.origin?.mm ?? .zero)), [shape], feature: feature)
         }
         if let t = p.translate {
-            shape = try Kernel.transform(shape, .translation(t.mm))
+            shape = try Naming.named(try Kernel.transform(shape.shape, .translation(t.mm)), [shape], feature: feature)
         }
         let out: Body
         if p.copy == true {
-            out = doc.addBody(name: "\(b.name)-copy", shape: shape, producedBy: name)
+            // The copy's faces are new: named after the copied ones, as instance 1.
+            shape.faces = shape.faces.map { $0.map { "\($0)@1" } }
+            out = doc.addBody(name: "\(b.name)-copy", shape, producedBy: name)
         } else {
             try doc.replaceShape(of: b.id, with: shape, producedBy: name)
             out = try doc.body(b.id)
@@ -356,41 +360,6 @@ public enum BodyTransform: Command {
         ctx.document = doc
         return Output(body: try BodySummary(out))
     }
-}
-
-/// Resolve edge references ("body-1/edge-3" or bare index "3") against a body.
-func resolveEdges(_ refs: [String], body: Body) throws -> [Int] {
-    let t = try body.shape.topology()
-    var out: [Int] = []
-    func add(_ i: Int) { if !out.contains(i) { out.append(i) } }
-    for r in refs {
-        if let i = Int(r) {
-            guard i >= 0, i < t.edges else { throw noEdge(body, i, t.edges) }
-            add(i)
-            continue
-        }
-        let ref = try EntityRef.parse(r)
-        guard ref.body == body.id, let i = ref.index, ref.kind == .edge || ref.kind == .face else {
-            throw ForgeError(.invalidParams, "'\(r)' is not an edge or face of \(body.id)", entities: [r])
-        }
-        if ref.kind == .edge {
-            guard i < t.edges else { throw noEdge(body, i, t.edges) }
-            add(i)
-        } else {
-            // A face stands for all its edges (SolidWorks: fillet/chamfer a face's boundary).
-            guard i < t.faces else {
-                throw ForgeError(.unknownEntity, "\(body.id) has no face \(i) (it has \(t.faces) faces)", entities: [r])
-            }
-            for e in 0..<t.edges where try body.shape.edge(e).faces.contains(i) { add(e) }
-        }
-    }
-    return out
-}
-
-private func noEdge(_ body: Body, _ idx: Int, _ count: Int) -> ForgeError {
-    ForgeError(
-        .unknownEntity, "\(body.id) has no edge \(idx) (it has \(count) edges)", entities: ["\(body.id)/edge-\(idx)"],
-        suggestions: [SuggestedFix(description: "List the body's edges", command: "query.edges", params: ["body": .string(body.id)])])
 }
 
 /// Edge/face references grouped by body. Bare indices belong to `body`.
@@ -411,7 +380,7 @@ func edgesByBody(_ refs: [String], body: String?, _ doc: Document) throws -> [(B
     }
     return try order.map { id in
         let b = try doc.body(id)
-        return (b, try resolveEdges(groups[id]!, body: b))
+        return (b, try doc.edgeIndices(groups[id]!, of: b))
     }
 }
 
@@ -434,7 +403,7 @@ public enum BodyFilletEdges: Command {
 
     public static let name = "body.fillet_edges"
     public static let summary = "Round edges (or all edges of faces) with a constant-radius fillet"
-    public static let discussion = "Tangent-continuous edges are included automatically. Recorded as a Fillet feature; references are transient indices until persistent naming (ADR 0002) lands."
+    public static let discussion = "Tangent-continuous edges are included automatically. Recorded as a Fillet feature that stores its edges by persistent name (ADR 0002), so they survive upstream edits."
     public static let category = CommandCategory.body
     public static let undo = UndoBehavior.undoable
     public static let errors: [ErrorCode] = [.unknownEntity, .kernelFailure]
@@ -452,7 +421,7 @@ public enum BodyFilletEdges: Command {
                 e.suggestions.append(SuggestedFix(description: "Try a smaller radius", command: name, params: ["edges": .array(p.edges.map { .string($0) }), "radius": .number(p.radius.millimeters / 2)]))
                 throw e
             }
-            try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+            try doc.replaceShape(of: b.id, with: try Naming.named(shape, [NamedShape(b)], feature: doc.currentFeature), producedBy: name)
             changed.append(b.id)
         }
         ctx.document = doc

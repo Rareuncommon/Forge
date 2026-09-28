@@ -80,6 +80,7 @@ extension CommandRegistry {
         // feature tree
         r.register(FeatureList.self)
         r.register(FeatureEdit.self)
+        r.register(FeatureRepairReference.self)
         r.register(FeatureRename.self)
         r.register(FeatureSuppress.self)
         r.register(FeatureDelete.self)
@@ -88,6 +89,7 @@ extension CommandRegistry {
         // queries
         r.register(QueryBodies.self)
         r.register(QueryFaces.self)
+        r.register(QueryFindFaces.self)
         r.register(QueryEdges.self)
         r.register(QueryEntity.self)
         r.register(QueryMassProperties.self)

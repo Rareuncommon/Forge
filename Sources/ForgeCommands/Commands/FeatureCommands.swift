@@ -16,10 +16,12 @@ public struct FeatureView: Codable, Sendable {
     public var state: String
     public var error: String?
     public var errorCode: String?
+    /// Executable fixes for the error (reference_lost: feature.repair_reference candidates).
+    public var suggestions: [SuggestedFix]?
     public var createdBodies: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, command, params, suppressed, state, error
+        case id, name, command, params, suppressed, state, error, suggestions
         case errorCode = "error_code"
         case createdBodies = "created_bodies"
     }
@@ -33,6 +35,7 @@ public struct FeatureView: Codable, Sendable {
         state = f.status.state.rawValue
         error = f.status.error?.message
         errorCode = f.status.error?.code.rawValue
+        suggestions = f.status.error.flatMap { $0.suggestions.isEmpty ? nil : $0.suggestions }
         createdBodies = f.createdBodies
     }
 }
@@ -106,7 +109,68 @@ public enum FeatureEdit: Command {
         let problems = SchemaValidator.validate(.object(merged), against: d.paramsSchema)
         if !problems.isEmpty { throw ForgeError(.invalidParams, problems.joined(separator: "; "), entities: [f.id]) }
         try d.check(.object(merged), doc.units)
-        doc.features[i].params = .object(merged)
+        // Transient references name entities of the model as it was before the feature.
+        let (named, refs) = doc.state(before: i, registry: ctx.registry).persistentParams(.object(merged))
+        doc.features[i].params = named
+        doc.features[i].references = (doc.features[i].references ?? [:]).merging(refs) { $1 }
+        doc.regenerate(from: i, registry: ctx.registry)
+        ctx.document = doc
+        return FeatureTreeOutput(doc)
+    }
+}
+
+public enum FeatureRepairReference: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented {
+        public var feature: String
+        public var old: String
+        public var new: String
+        public static let fieldDocs: [String: FieldDoc] = [
+            "feature": "Feature id or name whose reference was lost",
+            "old": "The reference as the feature stores it (\"body-1/edge@…\", from the reference_lost error)",
+            "new": "The entity to use instead: a reference in the model as it is just before the feature (\"body-1/edge-7\" or a named one)",
+        ]
+    }
+    public typealias Output = FeatureTreeOutput
+
+    public static let name = "feature.repair_reference"
+    public static let summary = "Point a feature's lost face/edge reference at another entity and regenerate"
+    public static let discussion = """
+        reference_lost errors carry this command, with ranked candidates, as suggested fixes. The new reference is stored by \
+        persistent name (docs/adr/0002); references are never rebound automatically.
+        """
+    public static let category = CommandCategory.feature
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams]
+    public static let examples: [JSONValue] = [["feature": "Fillet1", "old": "body-1/edge@feature-1:+x|feature-1:+y", "new": "body-1/edge-4"]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var doc = try ctx.requireDocument()
+        let i = try doc.featureIndex(p.feature)
+        let before = doc.state(before: i, registry: ctx.registry)
+        guard before.referenceExists(p.new) else {
+            throw ForgeError(
+                .unknownEntity, "\(p.new) does not exist in the model before \(doc.features[i].name)", entities: [p.new],
+                suggestions: [SuggestedFix(description: "Roll back to the feature to see that model", command: "feature.rollback", params: ["before": .string(doc.features[i].id)])])
+        }
+        let (named, d) = before.persistentRef(p.new, defaultBody: nil, bareKind: nil)
+        var found = false
+        func walk(_ v: JSONValue) -> JSONValue {
+            switch v {
+            case .string(let s) where s == p.old:
+                found = true
+                return .string(named)
+            case .array(let a): return .array(a.map(walk))
+            case .object(let o): return .object(o.mapValues(walk))
+            default: return v
+            }
+        }
+        let params = walk(doc.features[i].params)
+        guard found else {
+            throw ForgeError(.invalidParams, "\(doc.features[i].name) has no reference '\(p.old)'", entities: [doc.features[i].id],
+                             suggestions: [SuggestedFix(description: "List the feature tree", command: "feature.list")])
+        }
+        doc.features[i].params = params
+        if let d { doc.features[i].references = (doc.features[i].references ?? [:]).merging([named: d]) { $1 } }
         doc.regenerate(from: i, registry: ctx.registry)
         ctx.document = doc
         return FeatureTreeOutput(doc)

@@ -123,3 +123,47 @@ struct AppModelTests {
         #expect(m.panelPage.cancel == nil)
     }
 }
+
+@MainActor
+@Suite("Feature editing")
+struct FeatureEditTests {
+    @Test func editingAFilletRollsBackAndKeepsItsEdges() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("body.create_box", ["width": 20, "height": 20, "depth": 20])
+        await m.run("body.fillet_edges", ["edges": ["body-1/edge-0"], "radius": 2])
+        let fillet = try #require(m.features.last)
+        m.editFeature(fillet)
+        await m.editTask?.value
+        // The model is rolled back to the box, with the fillet's edge picked on it.
+        #expect(m.rollback == 1)
+        #expect(m.filletItems == ["body-1/edge-0"])
+        #expect(m.preview.items.count == 1)
+        m.form.radius = "3"
+        await m.commitOperation()
+        #expect(m.operation == nil && m.rollback == nil)
+        func volume() async throws -> Double {
+            try await m.engine.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!
+        }
+        // A fillet of radius r on a 20 mm edge removes (1 - π/4)·r²·20.
+        #expect(abs(try await volume() - (8000 - (1 - .pi / 4) * 9 * 20)) < 1e-6)
+        // The edit is one undo step, back to radius 2.
+        await m.run("edit.undo")
+        #expect(abs(try await volume() - (8000 - (1 - .pi / 4) * 4 * 20)) < 1e-6)
+    }
+
+    @Test func cancellingAnEditRestoresTheModel() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("body.create_box", ["width": 20, "height": 20, "depth": 20])
+        await m.run("body.fillet_edges", ["edges": ["body-1/edge-0"], "radius": 2])
+        m.editFeature(try #require(m.features.last))
+        await m.editTask?.value
+        #expect(m.rollback == 1)
+        m.cancelOperation()
+        await m.run("feature.list")
+        for _ in 0..<50 where m.rollback != nil { try await Task.sleep(nanoseconds: 10_000_000); await m.refresh() }
+        #expect(m.rollback == nil)
+        #expect(m.features.count == 2)
+    }
+}

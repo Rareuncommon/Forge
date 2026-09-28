@@ -32,6 +32,8 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_History.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRep_Tool.hxx>
 #include <BinTools.hxx>
 #include <Bnd_Box.hxx>
@@ -81,6 +83,8 @@
 #include <gp_Trsf.hxx>
 
 #include <algorithm>
+#include <functional>
+#include <set>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -92,6 +96,10 @@
 
 struct FKShape {
     TopoDS_Shape shape;
+};
+
+struct FKHistory {
+    std::vector<FKHistoryRecord> records;
 };
 
 struct FKMesh {
@@ -136,13 +144,144 @@ bool validAxis(const double v[3]) {
 
 bool positive(double v) { return std::isfinite(v) && v > 0.0; }
 
-TopoDS_Shape unify(const TopoDS_Shape &shape) {
+TopoDS_Shape unify(const TopoDS_Shape &shape, Handle(BRepTools_History) *history = nullptr) {
     // Merge coplanar/co-cylindrical faces and collinear edges produced by booleans, so that
     // topology matches user expectation (a fused pair of flush boxes is one box).
     ShapeUpgrade_UnifySameDomain unifier(shape, Standard_True, Standard_True, Standard_True);
     unifier.Build();
+    if (history) *history = unifier.History();
     return unifier.Shape();
 }
+
+// ---- history (docs/adr/0002) ----------------------------------------------------
+// Each operation traces the sub-shapes of its inputs through the algorithms it ran
+// (Modified / Generated / IsDeleted) to the faces of its result.
+
+thread_local FKHistory *currentHistory = nullptr;
+
+/* One stage of an operation: the images of a shape in the stage's output (empty = deleted). */
+using Step = std::function<void(const TopoDS_Shape &, TopTools_ListOfShape &)>;
+
+void appendAll(TopTools_ListOfShape &out, const TopTools_ListOfShape &in) {
+    for (TopTools_ListIteratorOfListOfShape it(in); it.More(); it.Next()) out.Append(it.Value());
+}
+
+template <class Maker> Step modifiedBy(Maker &mk) {
+    return [&mk](const TopoDS_Shape &s, TopTools_ListOfShape &out) {
+        const TopTools_ListOfShape &mod = mk.Modified(s);
+        if (!mod.IsEmpty()) {
+            appendAll(out, mod);
+            return;
+        }
+        if (mk.IsDeleted(s)) return;
+        out.Append(s);
+    };
+}
+
+/* BRepBuilderAPI_ModifyShape makers (draft): every sub-shape has one image. */
+template <class Maker> Step modifiedShapeBy(Maker &mk) {
+    return [&mk](const TopoDS_Shape &s, TopTools_ListOfShape &out) {
+        const TopTools_ListOfShape &mod = mk.Modified(s);
+        if (!mod.IsEmpty()) {
+            appendAll(out, mod);
+            return;
+        }
+        TopoDS_Shape m = mk.ModifiedShape(s);
+        if (!m.IsNull()) out.Append(m);
+    };
+}
+
+Step modifiedByHistory(const Handle(BRepTools_History) &h) {
+    return [h](const TopoDS_Shape &s, TopTools_ListOfShape &out) {
+        if (h.IsNull() || !BRepTools_History::IsSupportedType(s)) {
+            out.Append(s);
+            return;
+        }
+        const TopTools_ListOfShape &mod = h->Modified(s);
+        if (!mod.IsEmpty()) {
+            appendAll(out, mod);
+            return;
+        }
+        if (h->IsRemoved(s)) return;
+        out.Append(s);
+    };
+}
+
+template <class Maker> TopTools_ListOfShape generatedFaces(Maker &mk, const TopoDS_Shape &s) {
+    TopTools_ListOfShape out;
+    const TopTools_ListOfShape &gen = mk.Generated(s);
+    for (TopTools_ListIteratorOfListOfShape it(gen); it.More(); it.Next()) {
+        if (it.Value().ShapeType() == TopAbs_FACE) out.Append(it.Value());
+    }
+    return out;
+}
+
+/* Collects records for the result of an operation when a recorder is installed. */
+struct Recorder {
+    FKHistory *h = currentHistory;
+    TopTools_IndexedMapOfShape faces;
+    std::vector<Step> later;  // stages after the one the images come from
+
+    Recorder(const TopoDS_Shape &result, std::vector<Step> laterSteps = {}) : later(std::move(laterSteps)) {
+        if (h) TopExp::MapShapes(result, TopAbs_FACE, faces);
+    }
+    bool active() const { return h != nullptr; }
+
+    void add(int32_t operand, int32_t input, int32_t index, TopTools_ListOfShape images, int32_t relation) {
+        if (!h) return;
+        for (const Step &st : later) {
+            TopTools_ListOfShape next;
+            for (TopTools_ListIteratorOfListOfShape it(images); it.More(); it.Next()) st(it.Value(), next);
+            images = next;
+        }
+        std::set<int> seen;
+        for (TopTools_ListIteratorOfListOfShape it(images); it.More(); it.Next()) {
+            if (it.Value().ShapeType() != TopAbs_FACE) continue;
+            const int k = faces.FindIndex(it.Value());
+            if (k > 0 && seen.insert(k).second) h->records.push_back(FKHistoryRecord{operand, input, index, k - 1, relation});
+        }
+    }
+
+    /* Every face of `input` through `first` (modified or unchanged) as FK_HIST_SAME. */
+    void sameFaces(int32_t operand, const TopoDS_Shape &input, const Step &first) {
+        if (!h) return;
+        TopTools_IndexedMapOfShape in;
+        TopExp::MapShapes(input, TopAbs_FACE, in);
+        for (int i = 1; i <= in.Extent(); ++i) {
+            TopTools_ListOfShape images;
+            first(in(i), images);
+            add(operand, FK_HIST_FACE, i - 1, images, FK_HIST_SAME);
+        }
+    }
+
+    /* Faces generated from the edges (and vertices) of `input`, as FK_HIST_GENERATED. */
+    template <class Maker> void generated(int32_t operand, const TopoDS_Shape &input, Maker &mk, bool vertices) {
+        if (!h) return;
+        TopTools_IndexedMapOfShape in;
+        TopExp::MapShapes(input, TopAbs_EDGE, in);
+        for (int i = 1; i <= in.Extent(); ++i) add(operand, FK_HIST_EDGE, i - 1, generatedFaces(mk, in(i)), FK_HIST_GENERATED);
+        if (!vertices) return;
+        TopTools_IndexedMapOfShape vs;
+        TopExp::MapShapes(input, TopAbs_VERTEX, vs);
+        for (int i = 1; i <= vs.Extent(); ++i) add(operand, FK_HIST_VERTEX, i - 1, generatedFaces(mk, vs(i)), FK_HIST_GENERATED);
+    }
+
+    /* Sweeps: side faces from the profile's edges, caps from its faces. */
+    template <class Sweep> void sweep(const TopoDS_Shape &profile, Sweep &mk) {
+        if (!h) return;
+        generated(0, profile, mk, false);
+        TopTools_IndexedMapOfShape in;
+        TopExp::MapShapes(profile, TopAbs_FACE, in);
+        for (int i = 1; i <= in.Extent(); ++i) {
+            TopTools_ListOfShape first, last;
+            TopoDS_Shape a = mk.FirstShape(in(i)), b = mk.LastShape(in(i));
+            if (!a.IsNull()) first.Append(a);
+            if (!b.IsNull()) last.Append(b);
+            add(0, FK_HIST_FIRST, i - 1, first, FK_HIST_SAME);
+            add(0, FK_HIST_LAST, i - 1, last, FK_HIST_SAME);
+        }
+    }
+};
 
 double autoDeflection(const TopoDS_Shape &shape) {
     Bnd_Box box;
@@ -254,6 +393,21 @@ void fk_shape_release(FKShape *shape) { delete shape; }
 void fk_mesh_release(FKMesh *mesh) { delete mesh; }
 void fk_free_buffer(uint8_t *data) { std::free(data); }
 
+FKHistory *fk_history_begin(void) {
+    currentHistory = new FKHistory();
+    return currentHistory;
+}
+void fk_history_end(void) { currentHistory = nullptr; }
+void fk_history_release(FKHistory *history) {
+    if (currentHistory == history) currentHistory = nullptr;
+    delete history;
+}
+size_t fk_history_count(const FKHistory *history) { return history ? history->records.size() : 0; }
+FKHistoryRecord fk_history_record(const FKHistory *history, size_t i) {
+    if (!history || i >= history->records.size()) return FKHistoryRecord{-1, -1, -1, -1, -1};
+    return history->records[i];
+}
+
 // ---- primitives -------------------------------------------------------------
 
 FKShape *fk_make_box(const double origin[3], double dx, double dy, double dz, FKError *err) {
@@ -348,7 +502,8 @@ FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError 
         setError(err, FK_ERR_BOOLEAN_FAILED, m.c_str());
         return nullptr;
     }
-    TopoDS_Shape result = unify(alg->Shape());
+    Handle(BRepTools_History) unified;
+    TopoDS_Shape result = unify(alg->Shape(), &unified);
     TopTools_IndexedMapOfShape solids;
     TopExp::MapShapes(result, TopAbs_SOLID, solids);
     TopTools_IndexedMapOfShape faces;
@@ -359,6 +514,9 @@ FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError 
     }
     // A single solid is returned bare rather than wrapped in a compound.
     if (solids.Extent() == 1) result = solids(1);
+    Recorder rec(result, {modifiedByHistory(unified)});
+    rec.sameFaces(0, a->shape, modifiedBy(*alg));
+    rec.sameFaces(1, b->shape, modifiedBy(*alg));
     return wrap(result);
     FK_END(nullptr)
 }
@@ -376,6 +534,8 @@ FKShape *fk_transform(const FKShape *shape, const double m[12], FKError *err) {
     gp_Trsf t;
     t.SetValues(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
     BRepBuilderAPI_Transform tr(shape->shape, t, Standard_True);
+    Recorder rec(tr.Shape());
+    rec.sameFaces(0, shape->shape, modifiedBy(tr));
     return wrap(tr.Shape());
     FK_END(nullptr)
 }
@@ -404,6 +564,9 @@ FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_
         setError(err, FK_ERR_CONSTRUCTION_FAILED, "fillet failed (radius too large for adjacent faces?)");
         return nullptr;
     }
+    Recorder rec(mk.Shape());
+    rec.sameFaces(0, shape->shape, modifiedBy(mk));
+    rec.generated(0, shape->shape, mk, true);
     return wrap(mk.Shape());
     FK_END(nullptr)
 }
@@ -429,29 +592,30 @@ bool collect(const TopoDS_Shape &shape, TopAbs_ShapeEnum kind, const int32_t *id
     return true;
 }
 
-/* Draft `faces` of `shape`; returns a null shape on failure. */
-TopoDS_Shape draft(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle, const gp_Pln &neutral) {
-    BRepOffsetAPI_DraftAngle mk(shape);
+/* Draft `faces` of `shape`; returns null on failure. */
+std::unique_ptr<BRepOffsetAPI_DraftAngle> draft(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle,
+                                                const gp_Pln &neutral) {
+    auto mk = std::make_unique<BRepOffsetAPI_DraftAngle>(shape);
     for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
-        mk.Add(TopoDS::Face(it.Value()), dir, angle, neutral);
-        if (!mk.AddDone()) return TopoDS_Shape();
+        mk->Add(TopoDS::Face(it.Value()), dir, angle, neutral);
+        if (!mk->AddDone()) return nullptr;
     }
-    mk.Build();
-    if (!mk.IsDone()) return TopoDS_Shape();
-    return mk.Shape();
+    mk->Build();
+    if (!mk->IsDone() || mk->Shape().IsNull()) return nullptr;
+    return mk;
 }
 
 /* Draft with the sign that makes the solid lose volume (inward) or gain it (outward). */
-TopoDS_Shape draftInOrOut(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle, const gp_Pln &neutral,
-                          bool outward) {
+std::unique_ptr<BRepOffsetAPI_DraftAngle> draftInOrOut(const TopoDS_Shape &shape, const TopTools_ListOfShape &faces, const gp_Dir &dir, double angle,
+                                                       const gp_Pln &neutral, bool outward) {
     const double base = volumeOf(shape);
     for (double sign : {1.0, -1.0}) {
-        TopoDS_Shape r = draft(shape, faces, dir, sign * angle, neutral);
-        if (r.IsNull()) continue;
-        const double v = volumeOf(r);
-        if ((outward && v > base) || (!outward && v < base)) return r;
+        auto mk = draft(shape, faces, dir, sign * angle, neutral);
+        if (!mk) continue;
+        const double v = volumeOf(mk->Shape());
+        if ((outward && v > base) || (!outward && v < base)) return mk;
     }
-    return TopoDS_Shape();
+    return nullptr;
 }
 } // namespace
 
@@ -489,6 +653,9 @@ FKShape *fk_chamfer_edges(const FKShape *shape, const int32_t *edgeIndices, size
         setError(err, FK_ERR_CONSTRUCTION_FAILED, "chamfer failed (distance too large for the adjacent faces?)");
         return nullptr;
     }
+    Recorder rec(mk.Shape());
+    rec.sameFaces(0, shape->shape, modifiedBy(mk));
+    rec.generated(0, shape->shape, mk, true);
     return wrap(mk.Shape());
     FK_END(nullptr)
 }
@@ -517,6 +684,20 @@ FKShape *fk_shell(const FKShape *shape, const int32_t *faceIndices, size_t count
             setError(err, FK_ERR_CONSTRUCTION_FAILED, "shell failed");
             return nullptr;
         }
+        // The original faces stay; each one's offset is the wall generated from it.
+        Recorder rec(cut.Shape(), {modifiedBy(cut)});
+        if (rec.active()) {
+            TopTools_IndexedMapOfShape in;
+            TopExp::MapShapes(shape->shape, TopAbs_FACE, in);
+            for (int i = 1; i <= in.Extent(); ++i) {
+                TopTools_ListOfShape same, wall;
+                same.Append(in(i));
+                appendAll(wall, off.Modified(in(i)));
+                appendAll(wall, off.Generated(in(i)));
+                rec.add(0, FK_HIST_FACE, i - 1, same, FK_HIST_SAME);
+                rec.add(0, FK_HIST_FACE, i - 1, wall, FK_HIST_GENERATED);
+            }
+        }
         return wrap(cut.Shape());
     }
     BRepOffsetAPI_MakeThickSolid mk;
@@ -525,6 +706,27 @@ FKShape *fk_shell(const FKShape *shape, const int32_t *faceIndices, size_t count
     if (!mk.IsDone() || mk.Shape().IsNull()) {
         setError(err, FK_ERR_CONSTRUCTION_FAILED, "shell failed (thickness larger than a radius of curvature or a wall?)");
         return nullptr;
+    }
+    // Kept faces are the outer (inner, outward) walls; each one's offset is generated from
+    // it; the rims at the openings are generated from the edges of the removed faces.
+    Recorder rec(mk.Shape());
+    if (rec.active()) {
+        TopTools_IndexedMapOfShape in;
+        TopExp::MapShapes(shape->shape, TopAbs_FACE, in);
+        for (int i = 1; i <= in.Extent(); ++i) {
+            TopTools_ListOfShape same, wall;
+            same.Append(in(i));
+            // Modified and Generated return the same internal list: copy each before the next call.
+            TopTools_ListOfShape images;
+            appendAll(images, mk.Modified(in(i)));
+            appendAll(images, mk.Generated(in(i)));
+            for (TopTools_ListIteratorOfListOfShape it(images); it.More(); it.Next()) {
+                if (!it.Value().IsSame(in(i))) wall.Append(it.Value());
+            }
+            rec.add(0, FK_HIST_FACE, i - 1, same, FK_HIST_SAME);
+            rec.add(0, FK_HIST_FACE, i - 1, wall, FK_HIST_GENERATED);
+        }
+        rec.generated(0, shape->shape, mk, false);
     }
     return wrap(mk.Shape());
     FK_END(nullptr)
@@ -543,12 +745,14 @@ FKShape *fk_draft_faces(const FKShape *shape, const int32_t *faceIndices, size_t
     if (!collect(shape->shape, TopAbs_FACE, faceIndices, count, faces, err)) return nullptr;
     const gp_Dir dir(pullDirection[0], pullDirection[1], pullDirection[2]);
     const gp_Pln neutral(gp_Pnt(planeOrigin[0], planeOrigin[1], planeOrigin[2]), dir);
-    TopoDS_Shape r = draftInOrOut(shape->shape, faces, dir, angle, neutral, outward != 0);
-    if (r.IsNull()) {
+    auto mk = draftInOrOut(shape->shape, faces, dir, angle, neutral, outward != 0);
+    if (!mk) {
         setError(err, FK_ERR_CONSTRUCTION_FAILED, "draft failed (faces must meet the neutral plane or be parallel to the pull direction)");
         return nullptr;
     }
-    return wrap(r);
+    Recorder rec(mk->Shape());
+    rec.sameFaces(0, shape->shape, modifiedShapeBy(*mk));
+    return wrap(mk->Shape());
     FK_END(nullptr)
 }
 
@@ -584,12 +788,14 @@ FKShape *fk_extrude_draft(const FKShape *profile, const double v[3], double angl
     }
     const gp_Dir dir(vec);
     const gp_Pln neutral(plane->Pln().Location(), dir);
-    TopoDS_Shape r = draftInOrOut(solid, sides, dir, angle, neutral, outward != 0);
-    if (r.IsNull()) {
+    auto mk = draftInOrOut(solid, sides, dir, angle, neutral, outward != 0);
+    if (!mk) {
         setError(err, FK_ERR_CONSTRUCTION_FAILED, "draft failed (angle too large for the depth?)");
         return nullptr;
     }
-    return wrap(r);
+    Recorder rec(mk->Shape(), {modifiedShapeBy(*mk)});
+    rec.sweep(profile->shape, prism);
+    return wrap(mk->Shape());
     FK_END(nullptr)
 }
 
@@ -663,6 +869,7 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
     FK_BEGIN
     auto pnt = [](const double *v) { return gp_Pnt(v[0], v[1], v[2]); };
     std::vector<TopoDS_Wire> wires;
+    std::vector<TopoDS_Edge> segmentEdges(loopStart[loopCount]);
     for (size_t li = 0; li < loopCount; ++li) {
         BRepBuilderAPI_MakeWire mw;
         for (int32_t si = loopStart[li]; si < loopStart[li + 1]; ++si) {
@@ -725,6 +932,7 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
                 setError(err, FK_ERR_INVALID_ARGUMENT, "unknown segment kind");
                 return nullptr;
             }
+            segmentEdges[si] = e;
             mw.Add(e);
             if (!mw.IsDone()) {
                 setError(err, FK_ERR_CONSTRUCTION_FAILED, "profile loop is not connected");
@@ -750,12 +958,35 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
         faces.push_back(fix.Face());
         li = lj;
     }
-    if (faces.size() == 1) return wrap(faces[0]);
-    BRep_Builder b;
-    TopoDS_Compound comp;
-    b.MakeCompound(comp);
-    for (auto &f : faces) b.Add(comp, f);
-    return wrap(comp);
+    TopoDS_Shape result = faces[0];
+    if (faces.size() > 1) {
+        BRep_Builder b;
+        TopoDS_Compound comp;
+        b.MakeCompound(comp);
+        for (auto &f : faces) b.Add(comp, f);
+        result = comp;
+    }
+    if (FKHistory *h = currentHistory) {
+        // Wire building and ShapeFix may rebuild edges: match each face edge to the segment
+        // it lies on by its midpoint.
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(result, TopAbs_EDGE, edges);
+        for (int k = 1; k <= edges.Extent(); ++k) {
+            const TopoDS_Edge &ek = TopoDS::Edge(edges(k));
+            if (BRep_Tool::Degenerated(ek)) continue;
+            BRepAdaptor_Curve c(ek);
+            const TopoDS_Vertex mid = BRepBuilderAPI_MakeVertex(c.Value((c.FirstParameter() + c.LastParameter()) / 2)).Vertex();
+            for (size_t si = 0; si < segmentEdges.size(); ++si) {
+                if (segmentEdges[si].IsNull()) continue;
+                BRepExtrema_DistShapeShape d(mid, segmentEdges[si]);
+                if (d.IsDone() && d.Value() < 1e-5) {
+                    h->records.push_back(FKHistoryRecord{0, FK_HIST_SEGMENT, (int32_t)si, k - 1, FK_HIST_SAME});
+                    break;
+                }
+            }
+        }
+    }
+    return wrap(result);
     FK_END(nullptr)
 }
 
@@ -772,6 +1003,8 @@ FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err) {
     TopTools_IndexedMapOfShape solids;
     TopExp::MapShapes(s, TopAbs_SOLID, solids);
     if (solids.Extent() == 1) s = solids(1);
+    Recorder rec(s);
+    rec.sweep(profile->shape, mk);
     return wrap(s);
     FK_END(nullptr)
 }
@@ -794,6 +1027,8 @@ FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double
     TopTools_IndexedMapOfShape solids;
     TopExp::MapShapes(s, TopAbs_SOLID, solids);
     if (solids.Extent() == 1) s = solids(1);
+    Recorder rec(s);
+    rec.sweep(profile->shape, mk);
     return wrap(s);
     FK_END(nullptr)
 }

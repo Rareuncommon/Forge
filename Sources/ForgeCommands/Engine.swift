@@ -232,7 +232,9 @@ public actor Engine {
                 if command == "body.fillet_edges" || command == "body.chamfer_edges" { edges = t.edges }
                 if command == "body.shell" || command == "body.draft" { edges = t.faces }
             }
-            doc.recordFeature(command: command, params: .object(p), createdBodies: created, edgeCount: edges)
+            // Face and edge references are stored by persistent name (docs/adr/0002).
+            let (named, refs) = before.persistentParams(.object(p))
+            doc.recordFeature(command: command, params: named, createdBodies: created, edgeCount: edges, references: refs.isEmpty ? nil : refs)
         } else if command == "sketch.create", let id = doc.sketchOrder.first(where: { before.sketches[$0] == nil }) {
             doc.recordFeature(command: "sketch.create", params: ["sketch": .string(id)], createdBodies: [], sketchName: doc.sketches[id]?.name)
         }

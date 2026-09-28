@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 998 rows — not started: 849 · in progress: 125 · done: 24 · verified: 0
+**Totals:** 998 rows — not started: 848 · in progress: 126 · done: 24 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -51,8 +51,8 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/scripting-js` | JavaScriptCore scripting (§5.3) | not started | — | — | — |  |
 | `P/scripting-python` | Python via forge-cli/socket (§5.3) | not started | — | — | — |  |
 | `P/macro-recorder` | Macro recorder with semantic references (§5.3) | not started | — | — | — |  |
-| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeCommandsTests/FileTests.swift | execute:feature.* | recorded body commands replayed on change; rollback, suppress, delete, rename, edit, error isolation, stable body ids, file schema 2; reorder/freeze/folders pending; persistent names (ADR 0002) pending |
-| `P/persistent-naming` | Persistent naming (§4.2) | not started | — | — | — |  |
+| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeCommandsTests/FileTests.swift | execute:feature.* | recorded body commands replayed on change; rollback, suppress, delete, rename, edit, error isolation, stable body ids, file schema 2; reorder/freeze/folders pending; face/edge references by persistent name (ADR 0002); editing a feature rolls back to it |
+| `P/persistent-naming` | Persistent naming (§4.2) | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/NamingTests.swift, Tests/ForgeUITests/AppModelTests.swift | query_faces (persistent_id), execute:query.find_faces, execute:feature.repair_reference | faces named from OCCT history (booleans, fillet, chamfer, shell, draft, extrude, revolve, transform, patterns, holes); edges by adjacent faces; features store names; split → set or reference_lost; ranked repairs; torture tests: dimension change, upstream insert, split edge, suppressed upstream; vertex references and sweep/loft roles pending |
 | `P/semantic-refs` | Semantic references (§4.3) | not started | — | — | — |  |
 | `P/parameters` | Global variables, equations, linked dims, design tables, configurations (§4.4) | not started | — | — | — |  |
 | `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | in progress | ForgeData | Tests/ForgeCommandsTests/FileTests.swift, Tests/GoldenModelTests/GoldenModelTests.swift | execute:document.save, execute:document.open | v1 package (ADR 0004): manifest, model.json, BREP bodies, thumbnail; byte-identical save→open→save; migration table empty; Quick Look/Spotlight NOT IMPLEMENTED |

@@ -303,9 +303,9 @@ public enum ViewPick: Command {
         let b = try doc.body(ds.bodies[Int(hit.objectID)])
         switch hit.element {
         case .face:
-            return Output(hit: ref, element: "face", face: FaceDescriptor(body: b.id, try b.shape.face(Int(hit.index))), edge: nil)
+            return Output(hit: ref, element: "face", face: FaceDescriptor(b, try b.shape.face(Int(hit.index))), edge: nil)
         case .edge:
-            return Output(hit: ref, element: "edge", face: nil, edge: EdgeDescriptor(body: b.id, try b.shape.edge(Int(hit.index))))
+            return Output(hit: ref, element: "edge", face: nil, edge: EdgeDescriptor(b, try b.shape.edge(Int(hit.index))))
         }
     }
 }

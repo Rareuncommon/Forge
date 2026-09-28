@@ -51,17 +51,21 @@ public struct DocumentPackage: Sendable, Equatable {
         public var name: String
         public var producedBy: String
         public var brep: String
+        /// Base names of each face, by index in the BREP (persistent naming, docs/adr/0002).
+        public var faceNames: [[String]]?
 
-        public init(id: String, name: String, producedBy: String, brep: String) {
+        public init(id: String, name: String, producedBy: String, brep: String, faceNames: [[String]]? = nil) {
             self.id = id
             self.name = name
             self.producedBy = producedBy
             self.brep = brep
+            self.faceNames = faceNames
         }
 
         enum CodingKeys: String, CodingKey {
             case id, name, brep
             case producedBy = "produced_by"
+            case faceNames = "face_names"
         }
     }
 
@@ -77,11 +81,14 @@ public struct DocumentPackage: Sendable, Equatable {
         /// Status at save time (ok, warning, error, suppressed, rolled_back) and its message.
         public var state: String
         public var error: ForgeError?
+        /// What each persistent reference in params designated when stored (RefDescriptor JSON).
+        public var references: JSONValue?
 
         public init(
             id: String, name: String, command: String, params: JSONValue, suppressed: Bool, createdBodies: [String], edgeCount: Int?,
-            state: String, error: ForgeError?
+            state: String, error: ForgeError?, references: JSONValue? = nil
         ) {
+            self.references = references
             self.id = id
             self.name = name
             self.command = command
@@ -97,6 +104,7 @@ public struct DocumentPackage: Sendable, Equatable {
             case id, name, command, params, suppressed, state, error
             case createdBodies = "created_bodies"
             case edgeCount = "edge_count"
+            case references
         }
     }
 

@@ -8,6 +8,13 @@ extension Sketch {
     /// in model coordinates. Throws a structured error listing the profile issues if the
     /// sketch is not a valid feature profile.
     func profileLoops() throws -> (loops: [[ProfileSegment]], regions: [Int]) {
+        let (loops, regions, _) = try profileLoopsWithIDs()
+        return (loops, regions)
+    }
+
+    /// As profileLoops, plus the sketch entity of each segment (in segment order), which names
+    /// the faces swept from it (docs/adr/0002).
+    func profileLoopsWithIDs() throws -> (loops: [[ProfileSegment]], regions: [Int], ids: [String]) {
         let report = profiles()
         guard report.valid else {
             throw ForgeError(
@@ -60,16 +67,18 @@ extension Sketch {
             }
         }
         // Region = an even-depth loop followed by its direct (odd-depth) children.
-        var loops: [[ProfileSegment]] = [], regions: [Int] = []
+        var loops: [[ProfileSegment]] = [], regions: [Int] = [], ids: [String] = []
         for (i, loop) in report.loops.enumerated() where loop.depth % 2 == 0 {
             loops.append(segments(loop))
             regions.append(i)
+            ids += loop.entities
             for hole in report.loops where hole.parent == i {
                 loops.append(segments(hole))
                 regions.append(i)
+                ids += hole.entities
             }
         }
-        return (loops, regions)
+        return (loops, regions, ids)
     }
 }
 
@@ -138,15 +147,15 @@ enum FeatureScope {
     }
 
     /// Cut `tool` from every body in scope it touches; returns the modified ids.
-    static func cut(_ tool: Shape, _ doc: inout Document, _ scope: [String]?, producedBy: String) throws -> [String] {
+    static func cut(_ tool: NamedShape, _ doc: inout Document, _ scope: [String]?, producedBy: String) throws -> [String] {
         var modified: [String] = []
         for b in try bodies(doc, scope) {
-            guard let d = try? Kernel.distance(tool, b.shape), d.distance < 1e-7 else { continue }
+            guard let d = try? Kernel.distance(tool.shape, b.shape), d.distance < 1e-7 else { continue }
             // Touching is not cutting: only a body that loses volume is modified.
-            let result = try Kernel.boolean(.cut, b.shape, tool)
+            let result = try Kernel.boolean(.cut, b.shape, tool.shape)
             let before = try b.shape.massProperties().volume, after = try result.massProperties().volume
             guard after < before - 1e-9 * max(1, before) else { continue }
-            try doc.replaceShape(of: b.id, with: result, producedBy: producedBy)
+            try doc.replaceShape(of: b.id, with: try Naming.named(result, [NamedShape(b), tool], feature: doc.currentFeature), producedBy: producedBy)
             modified.append(b.id)
         }
         guard !modified.isEmpty else {
@@ -156,20 +165,23 @@ enum FeatureScope {
     }
 
     /// The seed tool and its pattern instances (placements are 3×4 row-major transforms).
-    static func tools(_ seed: Shape, _ instances: [[Double]]?, only: Bool?) throws -> [Shape] {
-        let copies = try (instances ?? []).map { m -> Shape in
+    /// Instance k's faces are named after the seed's, with "@k".
+    static func tools(_ seed: NamedShape, _ instances: [[Double]]?, only: Bool?) throws -> [NamedShape] {
+        let copies = try (instances ?? []).enumerated().map { (k, m) -> NamedShape in
             guard m.count == 12 else { throw ForgeError(.invalidParams, "each instance is a 3×4 transform (12 numbers)") }
-            return try Kernel.transform(seed, Transform3(m: m))
+            var copy = try Naming.named(try Kernel.transform(seed.shape, Transform3(m: m)), [seed], feature: "instance")
+            copy.faces = copy.faces.map { $0.map { "\($0)@\(k + 1)" } }
+            return copy
         }
         return (only == true ? [] : [seed]) + copies
     }
 
     /// Combine tools the way a feature does: cut them, merge them, or make new bodies.
     /// Returns the ids of the bodies changed or created (the first is the feature's body).
-    static func apply(_ tools: [Shape], cut: Bool, merge: Bool, _ doc: inout Document, _ scope: [String]?, name: String?, producedBy: String) throws -> [String] {
+    static func apply(_ tools: [NamedShape], cut: Bool, merge: Bool, _ doc: inout Document, _ scope: [String]?, name: String?, producedBy: String) throws -> [String] {
         if cut {
             guard var tool = tools.first else { return [] }
-            for t in tools.dropFirst() { tool = try Kernel.boolean(.fuse, tool, t) }
+            for t in tools.dropFirst() { tool = try Naming.named(try Kernel.boolean(.fuse, tool.shape, t.shape), [tool, t], feature: doc.currentFeature) }
             return try Self.cut(tool, &doc, scope, producedBy: producedBy)
         }
         var out: [String] = []
@@ -177,7 +189,7 @@ enum FeatureScope {
             if merge, let id = try Self.merge(t, &doc, scope, producedBy: producedBy) {
                 if !out.contains(id) { out.append(id) }
             } else {
-                out.append(doc.addBody(name: out.isEmpty ? name : nil, shape: t, producedBy: producedBy).id)
+                out.append(doc.addBody(name: out.isEmpty ? name : nil, t, producedBy: producedBy).id)
             }
         }
         return out
@@ -185,12 +197,13 @@ enum FeatureScope {
 
     /// Merge `solid` into the bodies in scope it touches (the first keeps its id, the others
     /// are consumed); returns that id, or nil when it touches none.
-    static func merge(_ solid: Shape, _ doc: inout Document, _ scope: [String]?, producedBy: String) throws -> String? {
-        let touching = try bodies(doc, scope).filter { b in ((try? Kernel.distance(solid, b.shape))?.distance ?? 1) < 1e-7 }
+    static func merge(_ solid: NamedShape, _ doc: inout Document, _ scope: [String]?, producedBy: String) throws -> String? {
+        let touching = try bodies(doc, scope).filter { b in ((try? Kernel.distance(solid.shape, b.shape))?.distance ?? 1) < 1e-7 }
         guard let first = touching.first else { return nil }
-        var result = try Kernel.boolean(.fuse, first.shape, solid)
+        let feature = doc.currentFeature
+        var result = try Naming.named(try Kernel.boolean(.fuse, first.shape, solid.shape), [NamedShape(first), solid], feature: feature)
         for b in touching.dropFirst() {
-            result = try Kernel.boolean(.fuse, result, b.shape)
+            result = try Naming.named(try Kernel.boolean(.fuse, result.shape, b.shape), [result, NamedShape(b)], feature: feature)
             try doc.removeBody(b.id)
         }
         try doc.replaceShape(of: first.id, with: result, producedBy: producedBy)
@@ -331,9 +344,16 @@ public enum BodyExtrude: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let sk = try doc.sketch(p.sketch)
-        let (loops, regions) = try sk.profileLoops()
+        let (loops, regions, segmentIDs) = try sk.profileLoopsWithIDs()
+        let feature = doc.currentFeature
         var face = try Kernel.faces(loops: loops, regions: regions)
-        if let t = p.thin { face = try thinFace(face, t) }
+        // The profile's edges carry the sketch entities they came from: the side faces swept
+        // from them are "<feature>:side(line-3)". A thin wall's offset edges have no entity.
+        var edgeNames = try Naming.profileEdges(face, segmentIDs: segmentIDs)
+        if let t = p.thin {
+            face = try thinFace(face, t)
+            edgeNames = Array(repeating: "wall", count: try face.topology().edges)
+        }
         let n = sk.plane.normal, origin = sk.plane.origin
         let ec = p.endCondition ?? (p.direction == .midPlane ? .midPlane : .blind)
         let s1: Double = (p.reverse ?? false) || p.direction == .reverse ? -1 : 1
@@ -375,11 +395,14 @@ public enum BodyExtrude: Command {
             let depth = s1 > 0 ? b : -a
             solid = try Kernel.extrudeDrafted(face, by: n * (s1 * depth), angle: d.angle.radians, outward: d.outward ?? false)
         } else {
+            // A translated copy keeps the profile's edge order.
             let start = a == 0 ? face : try Kernel.transform(face, .translation(n * a))
             solid = try Kernel.extrude(start, by: n * (b - a))
         }
+        let profile = NamedShape(face, faces: [], edges: edgeNames)
+        let named = try Naming.named(solid, [profile], feature: feature, roles: NamingRoles(fromEdge: "side"))
 
-        let tools = try FeatureScope.tools(solid, p.instances, only: p.instancesOnly)
+        let tools = try FeatureScope.tools(named, p.instances, only: p.instancesOnly)
         let ids = try FeatureScope.apply(tools, cut: p.operation == .cut, merge: p.merge == true, &doc, p.scope, name: p.name, producedBy: name)
         ctx.document = doc
         return Output(body: try BodySummary(try doc.body(ids[0])), bodies: ids.count > 1 || p.operation == .cut || p.merge == true ? ids : nil)
@@ -437,7 +460,7 @@ public enum BodyRevolve: Command {
         guard axisEntity.kind == .line else { throw ForgeError(.invalidParams, "the revolve axis must be a line", entities: ["\(sk.id)/\(axisID)"]) }
         let (ax, ay) = sk.point(axisEntity.points[0]), (bx, by) = sk.point(axisEntity.points[1])
         let origin = sk.plane.point(ax, ay), dir = sk.plane.point(bx, by) - origin
-        let (loops, regions) = try sk.profileLoops()
+        let (loops, regions, segmentIDs) = try sk.profileLoopsWithIDs()
         let face = try Kernel.faces(loops: loops, regions: regions)
         let solid: Shape
         do {
@@ -446,7 +469,10 @@ public enum BodyRevolve: Command {
             e.entities = ["\(sk.id)/\(axisID)"]
             throw e
         }
-        let tools = try FeatureScope.tools(solid, p.instances, only: p.instancesOnly)
+        let profile = NamedShape(face, faces: [], edges: try Naming.profileEdges(face, segmentIDs: segmentIDs))
+        let named = try Naming.named(
+            solid, [profile], feature: doc.currentFeature, roles: NamingRoles(fromEdge: "swept", firstCap: "start_face", lastCap: "end_face"))
+        let tools = try FeatureScope.tools(named, p.instances, only: p.instancesOnly)
         let ids = try FeatureScope.apply(tools, cut: p.operation == .cut, merge: p.merge == true, &doc, p.scope, name: p.name, producedBy: name)
         ctx.document = doc
         return Output(body: try BodySummary(try doc.body(ids[0])), bodies: ids.count > 1 || p.operation == .cut || p.merge == true ? ids : nil)

@@ -12,12 +12,14 @@ enum DocumentFiles {
         var records: [DocumentPackage.BodyRecord] = []
         for b in doc.orderedBodies {
             breps[b.id] = try b.shape.brepData()
-            records.append(DocumentPackage.BodyRecord(id: b.id, name: b.name, producedBy: b.producedBy, brep: "bodies/\(b.id).brep"))
+            records.append(DocumentPackage.BodyRecord(
+                id: b.id, name: b.name, producedBy: b.producedBy, brep: "bodies/\(b.id).brep", faceNames: b.naming?.faceBases))
         }
-        let features = doc.features.map {
+        let features = try doc.features.map {
             DocumentPackage.FeatureRecord(
                 id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, createdBodies: $0.createdBodies,
-                edgeCount: $0.edgeCount, state: $0.status.state.rawValue, error: $0.status.error)
+                edgeCount: $0.edgeCount, state: $0.status.state.rawValue, error: $0.status.error,
+                references: try $0.references.map { try JSONCoding.toJSON($0) })
         }
         let model = DocumentPackage.Model(
             name: doc.name, units: doc.units, bodies: records, sketches: doc.orderedSketches,
@@ -46,17 +48,22 @@ enum DocumentFiles {
     static func document(from pkg: DocumentPackage, id: String) throws -> Document {
         let bodies = try pkg.model.bodies.map { r -> Body in
             guard let data = pkg.breps[r.id] else { throw ForgeError(.ioError, "missing BREP for \(r.id)") }
-            return Body(id: r.id, name: r.name, shape: try Shape.fromBREP(data), producedBy: r.producedBy)
+            let shape = try Shape.fromBREP(data)
+            // Bodies saved without names (older files) are named by position.
+            let n = try shape.topology().faces
+            let bases = r.faceNames?.count == n ? r.faceNames! : Array(repeating: ["\(r.id):face"], count: n)
+            return Body(id: r.id, name: r.name, shape: shape, producedBy: r.producedBy, naming: try? TopoNames.make(bases: bases, shape: shape))
         }
         var doc = Document.restore(
             id: id, name: pkg.model.name, units: pkg.model.units, bodies: bodies, sketches: pkg.model.sketches,
             nextBody: pkg.model.nextBody, nextSketch: pkg.model.nextSketch)
         // The saved bodies are the regeneration result; the tree regenerates on its next change.
         let m = pkg.model
-        doc.features = m.features.map {
+        doc.features = try m.features.map {
             Feature(
                 id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, createdBodies: $0.createdBodies,
-                status: FeatureStatus(state: FeatureStatus.State(rawValue: $0.state) ?? .ok, error: $0.error), edgeCount: $0.edgeCount)
+                status: FeatureStatus(state: FeatureStatus.State(rawValue: $0.state) ?? .ok, error: $0.error), edgeCount: $0.edgeCount,
+                references: try $0.references.map { try JSONCoding.fromJSON([String: RefDescriptor].self, $0) })
         }
         doc.rollback = m.rollback
         doc.nextFeatureNumber = m.nextFeature

@@ -16,9 +16,11 @@ import Foundation
 // Body ids are stable: a feature re-creates its bodies with the ids it produced first, so
 // suppressing or deleting an earlier feature never renumbers later bodies.
 //
-// Limitation until ADR 0002 names land: fillet edges are stored as transient indices of the
-// regenerated body; an upstream change that renumbers edges can move the fillet. Such edits
-// are flagged by a warning status when the edge count of the body changes.
+// Face and edge references are stored as persistent names (docs/adr/0002, Naming.swift), so
+// an upstream change that renumbers the kernel's indices does not move a fillet. A reference
+// that cannot be resolved fails the feature with reference_lost and repair suggestions.
+// Transient indices left in a feature (bodies without names) are flagged by a warning status
+// when the edge (face) count of the body changes.
 
 public struct Feature: Codable, Sendable, Hashable {
     public var id: String
@@ -33,6 +35,8 @@ public struct Feature: Codable, Sendable, Hashable {
     /// Fillet/chamfer: edge count (shell/draft: face count) of the body when the references
     /// were picked; a different count on regeneration means they may have been renumbered.
     public var edgeCount: Int?
+    /// What each named reference designated when it was stored (ranks repair candidates).
+    public var references: [String: RefDescriptor]?
 
     public var isSketch: Bool { command == "sketch.create" }
     public var sketchID: String? { params["sketch"]?.stringValue }
@@ -41,6 +45,23 @@ public struct Feature: Codable, Sendable, Hashable {
         case id, name, command, params, suppressed, status
         case createdBodies = "created_bodies"
         case edgeCount = "edge_count"
+        case references
+    }
+
+    /// Whether the parameters still hold transient face/edge indices.
+    var hasTransientRefs: Bool {
+        func walk(_ v: JSONValue, bare: Bool) -> Bool {
+            switch v {
+            case .string(let s):
+                if bare && Int(s) != nil { return true }
+                guard let r = EntityRef(parsing: s) else { return false }
+                return (r.kind == .face || r.kind == .edge) && r.name == nil
+            case .array(let a): return a.contains { walk($0, bare: bare) }
+            case .object(let o): return o.contains { walk($0.value, bare: ["edges", "faces", "neutral_plane"].contains($0.key)) }
+            default: return false
+            }
+        }
+        return walk(params, bare: false)
     }
 }
 
@@ -107,7 +128,9 @@ extension Document {
     }
 
     /// Record a feature for a command that just ran (at the rollback position).
-    mutating func recordFeature(command: String, params: JSONValue, createdBodies: [String], sketchName: String? = nil, edgeCount: Int? = nil) {
+    mutating func recordFeature(
+        command: String, params: JSONValue, createdBodies: [String], sketchName: String? = nil, edgeCount: Int? = nil, references: [String: RefDescriptor]? = nil
+    ) {
         let id = "feature-\(nextFeatureNumber)"
         nextFeatureNumber += 1
         let name: String
@@ -119,7 +142,9 @@ extension Document {
             featureNameCounters[stem] = n
             name = "\(stem)\(n)"
         }
-        let f = Feature(id: id, name: name, command: command, params: params, suppressed: false, createdBodies: createdBodies, status: .ok, edgeCount: edgeCount)
+        let f = Feature(
+            id: id, name: name, command: command, params: params, suppressed: false, createdBodies: createdBodies, status: .ok, edgeCount: edgeCount,
+            references: references)
         let at = rollback ?? features.count
         features.insert(f, at: at)
         if let r = rollback { rollback = r + 1 }
@@ -145,6 +170,14 @@ extension Document {
         if let i = features.firstIndex(where: { !$0.isSketch && $0.params["sketch"]?.stringValue == id }) { markDirty(from: i) }
     }
 
+    /// The model as it is just before feature `i` (regenerating when that is not cached).
+    mutating func state(before i: Int, registry: CommandRegistry) -> Document {
+        if snapshots.count <= i { regenerate(from: 0, registry: registry) }
+        var d = self
+        if i < snapshots.count { d.restoreBodies(snapshots[i]) }
+        return d
+    }
+
     var currentBodyState: BodyState { BodyState(bodies: bodies, order: bodyOrder, planes: refPlanes, planeOrder: refPlaneOrder) }
 
     mutating func restoreBodies(_ s: BodyState) {
@@ -157,7 +190,8 @@ extension Document {
     /// Replay the features from `start` (all when 0) and record each one's status. Errors do
     /// not stop the walk: a failed feature contributes nothing, later ones still run.
     mutating func regenerate(from start: Int = 0, registry: CommandRegistry) {
-        let begin = min(start, snapshots.count)
+        // snapshots[k] is the state before feature k: restart from the last one cached.
+        let begin = min(start, max(snapshots.count - 1, 0))
         if begin == 0 {
             restoreBodies(BodyState(bodies: Dictionary(uniqueKeysWithValues: baseBodies.map { ($0.id, $0) }), order: baseBodies.map(\.id)))
             snapshots = []
@@ -181,6 +215,8 @@ extension Document {
             if f.isSketch {
                 // A sketch on a reference plane or face moves with it.
                 if let sid = f.sketchID, var sk = sketches[sid], let ref = sk.placement {
+                    namingFeature = f.id
+                    defer { namingFeature = nil }
                     do {
                         let plane = try resolvePlacement(ref)
                         if plane != sk.plane {
@@ -190,7 +226,13 @@ extension Document {
                     } catch {
                         f.status = FeatureStatus(
                             state: .error,
-                            error: ForgeError(.referenceLost, "the plane of \(sk.name) (\(ref)) no longer exists: \(ForgeError.wrap(error).message)", entities: [sid]))
+                            error: {
+                                var e = ForgeError.wrap(error)
+                                e.code = .referenceLost
+                                e.message = "the plane of \(sk.name) (\(ref)) cannot be found: \(e.message)"
+                                e.entities = [sid] + e.entities
+                                return e
+                            }())
                         continue
                     }
                 }
@@ -210,6 +252,8 @@ extension Document {
                     throw ForgeError(.unknownCommand, "unknown command '\(f.command)'")
                 }
                 pendingBodyIDs = f.createdBodies
+                namingFeature = f.id
+                defer { namingFeature = nil }
                 var session = SessionState()
                 session.adopt(self, path: nil)
                 var ctx = CommandContext(session: session, documentID: id, registry: registry, dryRun: false)
@@ -220,7 +264,7 @@ extension Document {
                 f.status = .ok
                 // Fillet edges are indices (see the file comment): warn when the body they
                 // index was rebuilt with a different number of edges.
-                if let b = Self.referencedBody(f.params), let n = edgeCounts[b], let recorded = f.edgeCount, recorded != n {
+                if f.hasTransientRefs, let b = Self.referencedBody(f.params), let n = edgeCounts[b], let recorded = f.edgeCount, recorded != n {
                     f.status = FeatureStatus(
                         state: .warning,
                         error: ForgeError(

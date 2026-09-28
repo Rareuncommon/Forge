@@ -3,30 +3,8 @@ import ForgeKernel
 import Foundation
 
 // Applied features (docs/research §2.5): Chamfer, Shell, Draft. Each is recorded as a
-// feature (docs/adr/0011). Face and edge references are transient indices of the body they
-// act on, as for Fillet, until ADR 0002 names land.
-
-func resolveFaces(_ refs: [String], body: Body) throws -> [Int] {
-    let count = try body.shape.topology().faces
-    return try refs.map { r in
-        let idx: Int
-        if let i = Int(r) {
-            idx = i
-        } else {
-            let ref = try EntityRef.parse(r)
-            guard ref.kind == .face, ref.body == body.id, let i = ref.index else {
-                throw ForgeError(.invalidParams, "'\(r)' is not a face of \(body.id)", entities: [r])
-            }
-            idx = i
-        }
-        guard idx >= 0, idx < count else {
-            throw ForgeError(
-                .unknownEntity, "\(body.id) has no face \(idx) (it has \(count) faces)", entities: ["\(body.id)/face-\(idx)"],
-                suggestions: [SuggestedFix(description: "List the body's faces", command: "query.faces", params: ["body": .string(body.id)])])
-        }
-        return idx
-    }
-}
+// feature (docs/adr/0011); their face and edge references are stored by persistent name
+// (docs/adr/0002).
 
 public enum ChamferType: String, Codable, Sendable, CaseIterable, SchemaEnum {
     case equalDistance = "equal_distance", distanceDistance = "distance_distance", angleDistance = "angle_distance"
@@ -91,7 +69,7 @@ public enum BodyChamferEdges: Command {
                 e.entities = idx.map { "\(b.id)/edge-\($0)" }
                 throw e
             }
-            try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+            try doc.replaceShape(of: b.id, with: try Naming.named(shape, [NamedShape(b)], feature: doc.currentFeature), producedBy: name)
             changed.append(b.id)
         }
         ctx.document = doc
@@ -126,7 +104,7 @@ public enum BodyShell: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let b = try doc.body(p.body)
-        let idx = try resolveFaces(p.faces ?? [], body: b)
+        let idx = try doc.faceIndices(p.faces ?? [], of: b, sets: true)
         let shape: Shape
         do {
             shape = try Kernel.shell(b.shape, openFaces: idx, thickness: p.thickness.millimeters, outward: p.outward ?? false)
@@ -134,7 +112,8 @@ public enum BodyShell: Command {
             e.entities = [b.id] + idx.map { "\(b.id)/face-\($0)" }
             throw e
         }
-        try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+        let roles = NamingRoles(fromEdge: "rim", fromFace: "wall")
+        try doc.replaceShape(of: b.id, with: try Naming.named(shape, [NamedShape(b)], feature: doc.currentFeature, roles: roles), producedBy: name)
         ctx.document = doc
         return Output(body: try BodySummary(try doc.body(b.id)))
     }
@@ -176,12 +155,12 @@ public enum BodyDraft: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let b = try doc.body(p.body)
-        let neutral = try resolveFaces([p.neutralPlane], body: b)[0]
+        let neutral = try doc.faceIndices([p.neutralPlane], of: b, sets: false)[0]
         let info = try b.shape.face(neutral)
         guard info.surfaceType == .plane else {
             throw ForgeError(.invalidParams, "the neutral plane must be a planar face", entities: ["\(b.id)/face-\(neutral)"])
         }
-        let idx = try resolveFaces(p.faces, body: b)
+        let idx = try doc.faceIndices(p.faces, of: b, sets: true)
         let pull = (p.reverse ?? false) ? info.normal * -1 : info.normal
         let shape: Shape
         do {
@@ -190,7 +169,7 @@ public enum BodyDraft: Command {
             e.entities = idx.map { "\(b.id)/face-\($0)" }
             throw e
         }
-        try doc.replaceShape(of: b.id, with: shape, producedBy: name)
+        try doc.replaceShape(of: b.id, with: try Naming.named(shape, [NamedShape(b)], feature: doc.currentFeature), producedBy: name)
         ctx.document = doc
         return Output(body: try BodySummary(try doc.body(b.id)))
     }

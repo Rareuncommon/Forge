@@ -202,6 +202,11 @@ package final class AppModel {
     package var rollback: Int?
     /// The feature whose page is open for editing (OK runs feature.edit instead of creating).
     package var editingFeature: String?
+    /// While a feature is edited the model is rolled back to just before it (as in SolidWorks),
+    /// inside a transaction: the rollback position to return to (nil = the end).
+    package var editReturnRollback: String??
+    /// The rollback and re-selection that start an edit (awaited by tests).
+    package var editTask: Task<Void, Never>?
     package var selection: [String] = []
     package var inspector: JSONValue?
     package var lastError: ForgeError?

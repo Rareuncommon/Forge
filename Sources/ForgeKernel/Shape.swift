@@ -6,8 +6,13 @@ import Foundation
 /// after creation (meshing works on a private copy), hence `@unchecked Sendable`.
 public final class Shape: @unchecked Sendable {
     let handle: OpaquePointer
+    /// Where this shape's faces came from, for shapes made by an operation (docs/adr/0002).
+    public let history: FaceHistory?
 
-    init(owning handle: OpaquePointer) { self.handle = handle }
+    init(owning handle: OpaquePointer, history: FaceHistory? = nil) {
+        self.handle = handle
+        self.history = history
+    }
     deinit { fk_shape_release(handle) }
 
     public enum Kind: String, Codable, Sendable, CaseIterable, SchemaEnum {
@@ -236,5 +241,46 @@ public struct Mesh: Sendable {
             v += a.dot(b.cross(c))
         }
         return v / 6
+    }
+}
+
+/// Lineage of an operation's result faces (docs/adr/0002): for each result face, the input
+/// sub-shapes it is (`same`: unchanged, trimmed, moved or split) or was made from (`generated`).
+/// Operand 0 is the shape operated on (a boolean's target, a sweep's profile), 1 a boolean's tool.
+public struct FaceHistory: Sendable, Hashable {
+    public enum Input: Int32, Sendable {
+        case face = 0, edge, vertex
+        /// Sweep caps: the start (the profile itself) and the end.
+        case firstCap, lastCap
+        /// Kernel.faces: the output index is the edge built from profile segment `inputIndex`.
+        case segment
+    }
+    public enum Relation: Int32, Sendable { case same = 0, generated }
+
+    public struct Record: Sendable, Hashable {
+        public var operand: Int
+        public var input: Input
+        public var inputIndex: Int
+        public var outputIndex: Int
+        public var relation: Relation
+        public init(operand: Int, input: Input, inputIndex: Int, outputIndex: Int, relation: Relation) {
+            self.operand = operand
+            self.input = input
+            self.inputIndex = inputIndex
+            self.outputIndex = outputIndex
+            self.relation = relation
+        }
+    }
+
+    public var records: [Record]
+
+    public init(records: [Record]) { self.records = records }
+
+    init(_ h: OpaquePointer) {
+        records = (0..<fk_history_count(h)).compactMap { i in
+            let r = fk_history_record(h, i)
+            guard let input = Input(rawValue: r.input), let rel = Relation(rawValue: r.relation) else { return nil }
+            return Record(operand: Int(r.operand), input: input, inputIndex: Int(r.inputIndex), outputIndex: Int(r.outputIndex), relation: rel)
+        }
     }
 }

@@ -264,7 +264,8 @@ public enum SketchCreate: Command {
         }
         var s = doc.addSketch(name: p.name, plane: plane)
         if !standard {
-            s.placement = p.face ?? doc.refPlanes[ref]?.id ?? doc.orderedRefPlanes.first { $0.name == ref }?.id
+            // A face is stored by persistent name, so the sketch follows it (docs/adr/0002).
+            s.placement = p.face.map { doc.persistentRef($0, defaultBody: nil, bareKind: nil).ref } ?? doc.refPlanes[ref]?.id ?? doc.orderedRefPlanes.first { $0.name == ref }?.id
             doc.sketches[s.id] = s
         }
         doc.activeSketch = s.id

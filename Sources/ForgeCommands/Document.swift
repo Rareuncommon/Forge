@@ -14,12 +14,15 @@ public struct Body: Sendable {
     public var shape: Shape
     /// Command that last produced this body's geometry.
     public var producedBy: String
+    /// Persistent names of the faces and edges (docs/adr/0002).
+    public var naming: TopoNames?
 
-    public init(id: String, name: String, shape: Shape, producedBy: String) {
+    public init(id: String, name: String, shape: Shape, producedBy: String, naming: TopoNames? = nil) {
         self.id = id
         self.name = name
         self.shape = shape
         self.producedBy = producedBy
+        self.naming = naming
     }
 }
 
@@ -64,6 +67,8 @@ public struct Document: Sendable {
     public internal(set) var refPlanes: [String: RefPlane] = [:]
     public internal(set) var refPlaneOrder: [String] = []
     var nextPlaneNumber = 1
+    /// The feature whose command is running (set on regeneration); names the faces it makes.
+    var namingFeature: String?
 
     public init(id: String, name: String, units: UnitSystem = .mmgs) {
         self.id = id
@@ -74,7 +79,23 @@ public struct Document: Sendable {
     /// Bodies in creation order (stable ordering, SPEC §5.4).
     public var orderedBodies: [Body] { bodyOrder.compactMap { bodies[$0] } }
 
+    /// The feature id new faces are named after: the feature being regenerated, else the
+    /// one the running command is about to be recorded as.
+    var currentFeature: String { namingFeature ?? "feature-\(nextFeatureNumber)" }
+
+    /// Names for a shape from its faces' base names; faces without history are named
+    /// "<feature>:face" in geometric order.
+    func naming(_ shape: Shape, _ faces: [[String]]?) -> TopoNames? {
+        guard let n = try? shape.topology().faces else { return nil }
+        let bases = faces?.count == n ? faces! : Array(repeating: ["\(currentFeature):face"], count: n)
+        return try? TopoNames.make(bases: bases, shape: shape)
+    }
+
     public mutating func addBody(name: String?, shape: Shape, producedBy: String) -> Body {
+        addBody(name: name, shape: shape, producedBy: producedBy, faces: nil)
+    }
+
+    mutating func addBody(name: String?, shape: Shape, producedBy: String, faces: [[String]]?) -> Body {
         let id: String
         if let i = pendingBodyIDs.firstIndex(where: { $0.hasPrefix("body-") }) {
             id = pendingBodyIDs.remove(at: i)
@@ -82,17 +103,30 @@ public struct Document: Sendable {
             id = "body-\(nextBodyNumber)"
             nextBodyNumber += 1
         }
-        let body = Body(id: id, name: name ?? "Body\(id.dropFirst(5))", shape: shape, producedBy: producedBy)
+        let body = Body(id: id, name: name ?? "Body\(id.dropFirst(5))", shape: shape, producedBy: producedBy, naming: naming(shape, faces))
         bodies[id] = body
         bodyOrder.append(id)
         return body
     }
 
     public mutating func replaceShape(of id: String, with shape: Shape, producedBy: String) throws {
+        try replaceShape(of: id, with: shape, producedBy: producedBy, faces: nil)
+    }
+
+    mutating func replaceShape(of id: String, with shape: Shape, producedBy: String, faces: [[String]]?) throws {
         guard var b = bodies[id] else { throw unknownBody(id) }
         b.shape = shape
         b.producedBy = producedBy
+        b.naming = naming(shape, faces)
         bodies[id] = b
+    }
+
+    mutating func replaceShape(of id: String, with named: NamedShape, producedBy: String) throws {
+        try replaceShape(of: id, with: named.shape, producedBy: producedBy, faces: named.faces)
+    }
+
+    mutating func addBody(name: String?, _ named: NamedShape, producedBy: String) -> Body {
+        addBody(name: name, shape: named.shape, producedBy: producedBy, faces: named.faces)
     }
 
     public mutating func renameBody(_ id: String, to name: String) throws {
@@ -189,6 +223,13 @@ public struct Document: Sendable {
             return parts.count == 1 || sk.entities[parts[1]] != nil || sk.constraints.contains { $0.id == parts[1] }
         }
         guard let r = EntityRef(parsing: ref), let b = bodies[r.body] else { return false }
+        if let n = r.name {
+            switch r.kind {
+            case .face: return !(b.naming?.resolveFace(n).isEmpty ?? true)
+            case .edge: return !(b.naming?.resolveEdge(n).isEmpty ?? true)
+            default: return false
+            }
+        }
         guard let i = r.index, let t = try? b.shape.topology() else { return true }
         switch r.kind {
         case .body: return true
@@ -256,8 +297,9 @@ extension Document {
         default: break
         }
         if let p = refPlanes[ref] ?? orderedRefPlanes.first(where: { $0.name == ref }) { return p.plane }
-        if let r = EntityRef(parsing: ref), r.kind == .face, let i = r.index {
+        if let r = EntityRef(parsing: ref), r.kind == .face {
             let b = try body(r.body)
+            let i = try faceIndices([ref], of: b, sets: false)[0]
             let f = try b.shape.face(i)
             guard f.surfaceType == .plane else {
                 throw ForgeError(.invalidParams, "\(ref) is not a planar face", entities: [ref])
@@ -279,20 +321,24 @@ extension Document {
     }
 }
 
-/// Reference to a body or a topological sub-entity: "body-1", "body-1/face-3", "body-1/edge-0".
+/// Reference to a body or a topological sub-entity: "body-1", "body-1/face-3", "body-1/edge-0",
+/// or by persistent name (docs/adr/0002): "body-1/face@feature-1:+z", "body-1/edge@A|B".
 ///
-/// M0: sub-entity indices are transient kernel indices (valid for the current geometry of
-/// the body only). Persistent naming (docs/adr/0002) replaces them in M2.
+/// Indices are transient kernel indices, valid for the current geometry of the body only;
+/// features store names (see Naming.swift).
 public struct EntityRef: Hashable, Sendable, CustomStringConvertible {
     public enum Kind: String, Sendable { case body, face, edge, vertex }
     public var body: String
     public var kind: Kind
     public var index: Int?
+    /// Persistent name (face and edge references only).
+    public var name: String?
 
-    public init(body: String, kind: Kind = .body, index: Int? = nil) {
+    public init(body: String, kind: Kind = .body, index: Int? = nil, name: String? = nil) {
         self.body = body
         self.kind = kind
         self.index = index
+        self.name = name
     }
 
     public init?(parsing s: String) {
@@ -306,6 +352,14 @@ public struct EntityRef: Hashable, Sendable, CustomStringConvertible {
         }
         guard parts.count == 2 else { return nil }
         let sub = parts[1]
+        for k in [Kind.face, .edge] where sub.hasPrefix(k.rawValue + "@") {
+            let n = sub.dropFirst(k.rawValue.count + 1)
+            guard !n.isEmpty else { return nil }
+            kind = k
+            index = nil
+            name = String(n)
+            return
+        }
         guard let dash = sub.lastIndex(of: "-"), let k = Kind(rawValue: String(sub[..<dash])), k != .body,
             let i = Int(sub[sub.index(after: dash)...]), i >= 0
         else { return nil }
@@ -314,13 +368,14 @@ public struct EntityRef: Hashable, Sendable, CustomStringConvertible {
     }
 
     public var description: String {
-        kind == .body ? body : "\(body)/\(kind.rawValue)-\(index ?? 0)"
+        if let name { return "\(body)/\(kind.rawValue)@\(name)" }
+        return kind == .body ? body : "\(body)/\(kind.rawValue)-\(index ?? 0)"
     }
 
     public static func parse(_ s: String) throws -> EntityRef {
         guard let r = EntityRef(parsing: s) else {
             throw ForgeError(
-                .invalidParams, "'\(s)' is not an entity reference (expected 'body-1', 'body-1/face-0', 'body-1/edge-3' or 'body-1/vertex-2')",
+                .invalidParams, "'\(s)' is not an entity reference (expected 'body-1', 'body-1/face-0', 'body-1/edge-3', 'body-1/vertex-2' or a named 'body-1/face@<name>')",
                 entities: [s])
         }
         return r

@@ -192,6 +192,42 @@ FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err);
 /* Revolution about an axis through origin with direction axis, by angle (radians, ≤ 2π). */
 FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double axis[3], double angle, FKError *err);
 
+/* ---- history (persistent naming, docs/adr/0002) --------------------------------
+ * fk_history_begin installs a recorder on the calling thread; the next shape-producing
+ * operation on that thread fills it with where each face of the result came from, and
+ * fk_history_end uninstalls it. The recorder stays valid until fk_history_release.
+ * Operations that record: fk_boolean, fk_transform, fk_fillet_edges, fk_chamfer_edges,
+ * fk_shell, fk_draft_faces, fk_extrude, fk_extrude_draft, fk_revolve and fk_make_faces. */
+typedef struct FKHistory FKHistory;
+
+typedef enum FKHistoryInput {
+    FK_HIST_FACE = 0,        /* input face `input` of operand `operand` */
+    FK_HIST_EDGE = 1,        /* input edge */
+    FK_HIST_VERTEX = 2,      /* input vertex */
+    FK_HIST_FIRST = 3,       /* sweeps: the start cap (the profile itself); input = profile face */
+    FK_HIST_LAST = 4,        /* sweeps: the end cap */
+    FK_HIST_SEGMENT = 5,     /* fk_make_faces: output = the edge built from segment `input` */
+} FKHistoryInput;
+
+typedef enum FKHistoryRelation {
+    FK_HIST_SAME = 0,        /* the output face is the input face, unchanged or modified (trimmed, moved, split) */
+    FK_HIST_GENERATED = 1,   /* the output face is new, made from the input (fillet blend, sweep side, shell wall) */
+} FKHistoryRelation;
+
+typedef struct FKHistoryRecord {
+    int32_t operand;         /* 0 = the shape operated on (boolean target / sweep profile), 1 = boolean tool */
+    int32_t input;           /* FKHistoryInput */
+    int32_t inputIndex;      /* 0-based index of the input sub-shape in its operand */
+    int32_t outputIndex;     /* 0-based face index in the result (edge index for FK_HIST_SEGMENT) */
+    int32_t relation;        /* FKHistoryRelation */
+} FKHistoryRecord;
+
+FKHistory *fk_history_begin(void);
+void fk_history_end(void);
+void fk_history_release(FKHistory *history);
+size_t fk_history_count(const FKHistory *history);
+FKHistoryRecord fk_history_record(const FKHistory *history, size_t i);
+
 /* ---- queries ------------------------------------------------------------ */
 int32_t fk_shape_type(const FKShape *shape);
 int32_t fk_topology(const FKShape *shape, FKTopology *out, FKError *err);

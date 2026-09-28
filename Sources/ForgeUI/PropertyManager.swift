@@ -152,6 +152,28 @@ extension AppModel {
         editingFeature = nil
         form.result = nil
         clearOperationPreview()
+        if editReturnRollback != nil {
+            editReturnRollback = nil
+            Task { await run("transaction.rollback") }
+        }
+    }
+
+    /// Roll the model back to just before `f` for editing it, inside a transaction, so its
+    /// page shows and picks the geometry the feature was built on.
+    private func rollBackForEdit(_ f: FeatureRow) async {
+        guard editReturnRollback == nil else { return }
+        let returnTo: String? = rollback.flatMap { $0 < features.count ? features[$0].id : nil }
+        guard await run("transaction.begin", ["label": .string("Edit \(f.name)")]) != nil else { return }
+        editReturnRollback = .some(returnTo)
+        await run("feature.rollback", ["before": .string(f.id)])
+    }
+
+    /// Back to the rollback position the edit started from, closing its transaction.
+    private func finishFeatureEdit() async {
+        guard let returnTo = editReturnRollback else { return }
+        editReturnRollback = nil
+        await run("feature.rollback", returnTo.map { ["before": .string($0)] } ?? [:])
+        await run("transaction.commit")
     }
 
     // MARK: editing a feature (double-click in the tree): its page, filled from its params
@@ -175,6 +197,12 @@ extension AppModel {
         let p = f.params
         begin(op)
         editingFeature = f.id
+        editTask = Task {
+            await rollBackForEdit(f)
+            // Stored references are persistent names of the model before the feature.
+            if op == .fillet || op == .chamfer { await select(p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []) }
+            await updatePreview()
+        }
         let t = Self.fieldText
         switch op {
         case .extrude, .cutExtrude:
@@ -244,15 +272,11 @@ extension AppModel {
             form.merge = p["merge"]?.boolValue ?? false
         case .fillet:
             form.radius = t(p["radius"]) ?? form.radius
-            let edges = p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            Task { await select(edges) }
         case .chamfer:
             form.chamferType = p["type"]?.stringValue ?? "equal_distance"
             form.chamferDistance = t(p["distance"]) ?? form.chamferDistance
             form.chamferDistance2 = t(p["distance2"]) ?? form.chamferDistance2
             form.chamferAngle = t(p["angle"]) ?? form.chamferAngle
-            let edges = p["edges"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            Task { await select(edges) }
         case .shell:
             form.shellThickness = t(p["thickness"]) ?? form.shellThickness
             form.shellOutward = p["outward"]?.boolValue ?? false
@@ -307,6 +331,7 @@ extension AppModel {
         }
         let replace: Bool = op != .combine
         if await run("feature.edit", ["feature": .string(id), "params": params, "replace": .bool(replace)]) != nil {
+            await finishFeatureEdit()
             operation = nil
             editingFeature = nil
             clearOperationPreview()
@@ -535,8 +560,15 @@ extension AppModel {
             return
         }
         if let fid = editingFeature {
-            guard let params = featureEditParams(fid, op) else { return clearOperationPreview() }
-            items = [Invocation("feature.edit", ["feature": .string(fid), "params": params, "replace": .bool(op != .combine)])]
+            guard let params = featureEditParams(fid, op), let f = features.first(where: { $0.id == fid }) else { return clearOperationPreview() }
+            if editReturnRollback != nil {
+                // Rolled back to just before the feature: preview it as if it were new.
+                var merged = op == .combine ? (f.params.objectValue ?? [:]) : [:]
+                for (k, v) in params.objectValue ?? [:] { merged[k] = v }
+                items = [Invocation(f.command, .object(merged))]
+            } else {
+                items = [Invocation("feature.edit", ["feature": .string(fid), "params": params, "replace": .bool(op != .combine)])]
+            }
         }
         do {
             let (doc, changes) = try await engine.preview(items)

@@ -1,5 +1,23 @@
 # Progress
 
+## Session 5 — 2026-09-28 — Persistent naming
+
+- **Persistent naming (ADR 0002)** for faces and edges: the kernel records face history for
+  every operation; bodies carry names (feature + role, split `#k`, merged aliases); edges are
+  named by their faces. Features store `body-1/edge@…` names with descriptors; unresolvable
+  references fail with `reference_lost` and ranked `feature.repair_reference` fixes (shown by
+  `feature.list`); split references resolve to all pieces where a set is accepted. Names are
+  saved in documents. `query.find_faces` answers "the end cap of Boss-Extrude1".
+- Torture tests (Tests/ForgeCommandsTests/NamingTests.swift): a fillet survives a dimension
+  change and an inserted upstream cut on the intended edge, fillets both pieces of a split
+  edge, and fails (then repairs) when its edge is suppressed away. Expected volumes derived
+  analytically.
+- **Feature editing in the UI** rolls back to the feature inside a transaction (one undo step;
+  Cancel restores), so a fillet's stored edges are picked again on the pre-fillet model.
+- Fixed: regeneration indexed past its snapshot cache after two features were inserted at
+  the rollback bar.
+
+
 ## Session 4 — 2026-09-25 — Native Windows app
 
 The user asked for a Windows port; chose a native app over a shared web UI (docs/adr/0012).

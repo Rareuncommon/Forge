@@ -185,18 +185,23 @@ public enum BodyHole: Command {
             break
         }
         let drillPoint = (p.endCondition ?? .throughAll) == .blind && (p.drillPoint ?? true)
-        var tool: Shape?
+        // Faces are named by hole and part: "<feature>:hole(point-3).drill:side".
+        let feature = doc.currentFeature
+        var tool: NamedShape?
         for c in centres {
             let (u, v) = sk.point(c.id)
             let top = sk.plane.point(u, v)
-            var parts: [Shape] = [try Kernel.cylinder(origin: top, axis: dir, radius: d / 2, height: depth)]
+            var parts: [(String, Shape)] = [("drill", try Kernel.cylinder(origin: top, axis: dir, radius: d / 2, height: depth))]
             if drillPoint {
                 // 118° point: height r / tan 59°.
-                parts.append(try Kernel.cone(origin: top + dir * depth, axis: dir, radius1: d / 2, radius2: 0, height: d / 2 / tan(59 * Double.pi / 180)))
+                parts.append(("point", try Kernel.cone(origin: top + dir * depth, axis: dir, radius1: d / 2, radius2: 0, height: d / 2 / tan(59 * Double.pi / 180))))
             }
-            if let (cd, ch) = cbore { parts.append(try Kernel.cylinder(origin: top, axis: dir, radius: cd / 2, height: ch)) }
-            if let cs = csink { parts.append(try Kernel.cone(origin: top, axis: dir, radius1: cs / 2, radius2: d / 2, height: (cs - d) / 2)) }
-            for part in parts { tool = try tool.map { try Kernel.boolean(.fuse, $0, part) } ?? part }
+            if let (cd, ch) = cbore { parts.append(("counterbore", try Kernel.cylinder(origin: top, axis: dir, radius: cd / 2, height: ch))) }
+            if let cs = csink { parts.append(("countersink", try Kernel.cone(origin: top, axis: dir, radius1: cs / 2, radius2: d / 2, height: (cs - d) / 2))) }
+            for (role, shape) in parts {
+                let part = NamedShape(shape, faces: try Naming.primitive(shape, feature: "\(feature):hole(\(c.id)).\(role)", axis: dir))
+                tool = try tool.map { try Naming.named(try Kernel.boolean(.fuse, $0.shape, part.shape), [$0, part], feature: feature) } ?? part
+            }
         }
         let tools = try FeatureScope.tools(tool!, p.instances, only: p.instancesOnly)
         let modified = try FeatureScope.apply(tools, cut: true, merge: false, &doc, p.scope, name: nil, producedBy: name)

@@ -65,8 +65,11 @@ enum PatternSeeds {
             guard v.length > 1e-12 else { throw ForgeError(.invalidParams, "the direction is zero") }
             return (.zero, v.normalized)
         }
-        if let r = EntityRef(parsing: s), r.kind == .edge, let i = r.index {
-            let e = try doc.body(r.body).shape.edge(i)
+        if let r = EntityRef(parsing: s), r.kind == .edge {
+            let b = try doc.body(r.body)
+            let found = try doc.edgeIndices([s], of: b)
+            guard found.count == 1 else { throw ForgeError(.invalidParams, "\(s) designates \(found.count) edges; choose one", entities: [s]) }
+            let e = try b.shape.edge(found[0])
             guard e.curveType == .line else { throw ForgeError(.invalidParams, "\(s) is not a straight edge", entities: [s]) }
             return (e.start, (e.end - e.start).normalized)
         }

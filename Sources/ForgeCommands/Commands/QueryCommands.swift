@@ -28,7 +28,7 @@ public enum QueryFaces: Command {
 
     public static let name = "query.faces"
     public static let summary = "Faces of a body with surface type, area, centroid and outward normal"
-    public static let discussion = "Face ids are transient in M0 (they index the current geometry). Use the descriptors to confirm you picked the right face."
+    public static let discussion = "id indexes the current geometry; persistent_id (docs/adr/0002) stays valid when the model regenerates. Either can be passed to commands; features store persistent ids."
     public static let category = CommandCategory.query
     public static let undo = UndoBehavior.none
     public static let errors: [ErrorCode] = [.unknownEntity]
@@ -37,7 +37,52 @@ public enum QueryFaces: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let b = try ctx.requireDocument().body(p.body)
         let n = try b.shape.topology().faces
-        return Output(faces: try (0..<n).map { FaceDescriptor(body: b.id, try b.shape.face($0)) })
+        return Output(faces: try (0..<n).map { FaceDescriptor(b, try b.shape.face($0)) })
+    }
+}
+
+public enum QueryFindFaces: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented {
+        public var feature: String
+        public var role: String?
+        public var body: String?
+        public static let fieldDocs: [String: FieldDoc] = [
+            "feature": "Feature id or name (\"Boss-Extrude1\")",
+            "role": FieldDoc(
+                "Role of the face in that feature: end_cap, start_cap, side (extrude); swept, start_face, end_face (revolve); blend (fillet, chamfer); wall, rim (shell); +x … -z (box); top, bottom, side (cylinder, cone); a sketch entity (\"line-3\") matches the faces made from it",
+                default: "any"),
+            "body": FieldDoc("Only this body", default: "all bodies"),
+        ]
+    }
+    public struct Output: Codable, Sendable { public var faces: [FaceDescriptor] }
+
+    public static let name = "query.find_faces"
+    public static let summary = "Find faces by the feature that made them and their role (\"the end cap of Boss-Extrude1\")"
+    public static let discussion = "Semantic queries resolve to persistent ids (docs/adr/0002): pass persistent_id to a command and the reference keeps its meaning when the model changes."
+    public static let category = CommandCategory.query
+    public static let undo = UndoBehavior.none
+    public static let errors: [ErrorCode] = [.unknownEntity]
+    public static let examples: [JSONValue] = [["feature": "Boss-Extrude1", "role": "end_cap"], ["feature": "Fillet1", "role": "blend"]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        let doc = try ctx.requireDocument()
+        let f = doc.features[try doc.featureIndex(p.feature)]
+        let prefix = "\(f.id):"
+        func matches(_ base: String) -> Bool {
+            guard base.hasPrefix(prefix) else { return false }
+            guard let role = p.role else { return true }
+            let rest = base.dropFirst(prefix.count)
+            return rest == role || rest.hasPrefix(role + "(") || rest.hasPrefix(role + "@") || rest.contains("(\(role))")
+        }
+        let bodies = try p.body.map { [try doc.body($0)] } ?? doc.orderedBodies
+        var out: [FaceDescriptor] = []
+        for b in bodies {
+            guard let n = b.naming else { continue }
+            for i in n.faceBases.indices where n.faceBases[i].contains(where: matches) {
+                out.append(FaceDescriptor(b, try b.shape.face(i)))
+            }
+        }
+        return Output(faces: out)
     }
 }
 
@@ -55,14 +100,14 @@ public enum QueryEdges: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let b = try ctx.requireDocument().body(p.body)
         let n = try b.shape.topology().edges
-        return Output(edges: try (0..<n).map { EdgeDescriptor(body: b.id, try b.shape.edge($0)) })
+        return Output(edges: try (0..<n).map { EdgeDescriptor(b, try b.shape.edge($0)) })
     }
 }
 
 public enum QueryEntity: Command {
     public struct Params: Codable, Sendable, SchemaDocumented {
         public var ref: String
-        public static let fieldDocs: [String: FieldDoc] = ["ref": "Entity reference: \"body-1\", \"body-1/face-2\" or \"body-1/edge-5\""]
+        public static let fieldDocs: [String: FieldDoc] = ["ref": "Entity reference: \"body-1\", \"body-1/face-2\", \"body-1/edge-5\" or a persistent one (\"body-1/face@feature-1:+z\")"]
     }
     public struct Output: Codable, Sendable {
         public var kind: String
@@ -80,16 +125,21 @@ public enum QueryEntity: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let ref = try EntityRef.parse(p.ref)
-        let b = try ctx.requireDocument().body(ref.body)
+        let doc = try ctx.requireDocument()
+        let b = try doc.body(ref.body)
         switch ref.kind {
         case .body:
             return Output(kind: "body", body: try BodySummary(b))
         case .face:
-            return Output(kind: "face", face: FaceDescriptor(body: b.id, try b.shape.face(ref.index!)))
+            return Output(kind: "face", face: FaceDescriptor(b, try b.shape.face(try doc.faceIndices([p.ref], of: b, sets: false)[0])))
         case .edge:
-            return Output(kind: "edge", edge: EdgeDescriptor(body: b.id, try b.shape.edge(ref.index!)))
+            let e = try doc.edgeIndices([p.ref], of: b)
+            guard e.count == 1 else {
+                throw ForgeError(.invalidParams, "\(p.ref) designates \(e.count) edges", entities: e.map { "\(b.id)/edge-\($0)" })
+            }
+            return Output(kind: "edge", edge: EdgeDescriptor(b, try b.shape.edge(e[0])))
         case .vertex:
-            throw ForgeError(.notImplemented, "vertex queries arrive with persistent naming (M2)", entities: [p.ref])
+            throw ForgeError(.notImplemented, "vertex queries are not implemented yet", entities: [p.ref])
         }
     }
 }
@@ -167,7 +217,7 @@ public enum QueryMeasure: Command {
 
     public static let name = "query.measure"
     public static let summary = "Minimum distance between two bodies, with the closest points"
-    public static let discussion = "M0 measures body to body. Face/edge/vertex measurement and angles arrive with persistent naming (M2)."
+    public static let discussion = "M0 measures body to body. Face/edge/vertex measurement and angles are not implemented yet."
     public static let category = CommandCategory.query
     public static let undo = UndoBehavior.none
     public static let errors: [ErrorCode] = [.unknownEntity, .notImplemented]
@@ -263,8 +313,18 @@ public enum SelectionSet: Command {
                 refs.append(s)
                 continue
             }
-            let r = try EntityRef.parse(s)
+            var r = try EntityRef.parse(s)
             let b = try doc.body(r.body)
+            if r.name != nil {
+                // Selection is transient: a persistent reference selects what it designates now.
+                let current = doc.transientRefs(s)
+                guard !current.isEmpty else {
+                    throw ForgeError(.referenceLost, "\(s) does not exist in the current model", entities: [s])
+                }
+                refs += current.filter { !refs.contains($0) }
+                continue
+            }
+            r.body = b.id
             let t = try b.shape.topology()
             if let i = r.index {
                 let count = r.kind == .face ? t.faces : r.kind == .edge ? t.edges : t.vertices

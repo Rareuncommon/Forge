@@ -1,6 +1,6 @@
 # ADR 0002 — Persistent (topological) naming
 
-- Status: accepted (design); implementation in M2
+- Status: accepted; implemented for faces and edges (2026-09-28, see "Implementation")
 - Date: 2026-09-23
 
 ## Context
@@ -69,3 +69,40 @@ segments. Each asserts that references either resolve to the geometrically-inten
 - M0 exposes transient `body-N/face-K` references and documents them as transient.
 - Every M2+ feature must define its role vocabulary and emit history; this is enforced by a
   registry test (features without a naming table cannot be registered).
+
+## Implementation (2026-09-28)
+
+- **Kernel history.** `fk_history_begin` installs a per-thread recorder that the next
+  operation fills with `(operand, input sub-shape, output face, same | generated)` records,
+  traced through every stage the operation runs (e.g. boolean → UnifySameDomain). Recorded by
+  booleans, transform, fillet, chamfer, shell (walls from faces, rims from edges), draft
+  (`ModifiedShape`), extrude / drafted extrude / revolve (sides from profile edges, caps from
+  `FirstShape`/`LastShape`) and `fk_make_faces` (which profile segment each edge lies on,
+  matched by midpoint because wire building may rebuild edges). The Swift wrapper attaches
+  the records to the result (`Shape.history`).
+- **Names** (`Sources/ForgeCommands/Naming.swift`). Faces carry base names; roles:
+  extrude `side(<sketch entity>)`, `start_cap`, `end_cap`; revolve `swept(<entity>)`,
+  `start_face`, `end_face`; fillet/chamfer `blend(<edge name>)`, `corner`; shell
+  `wall(<face>)`, `rim(<edge>)`; box `+x`…`-z`; cylinder/cone `side`, `top`, `bottom`;
+  sphere/torus `surface`; holes `hole(<point>).drill:side` etc.; pattern instances and
+  copies append `@k`. Faces without history are `<feature>:new` / `:face`. Split pieces are
+  numbered `#k` by centroid (x, then y, then z); merged faces keep every base name.
+  Edge names are the sorted names of their two faces joined by `|`, `~k` when repeated.
+  The feature id is the feature being regenerated (`Document.namingFeature`), else the id the
+  running command will be recorded as.
+- **References.** `body-1/face@<name>`, `body-1/edge@<name>`. The engine rewrites transient
+  references in a feature's parameters to names when it records the feature (and in
+  `feature.edit`, against the model before the feature), storing a descriptor (type,
+  centroid, size) of each. Sketch placements on faces are stored by name. Face and edge
+  resolution: exact name; else the pieces of the split entity (all of them for fillet,
+  chamfer, shell and draft faces; an error with the pieces as candidates for single
+  references such as a draft's neutral plane or a sketch face); else `reference_lost` with
+  the three most similar entities as `feature.repair_reference` fixes. `feature.list` shows
+  the fixes. Names are saved with each body (`face_names`); older files get positional names.
+- **Queries.** `query.faces` / `query.edges` return `persistent_id`; `query.find_faces`
+  finds faces by feature and role.
+- **UI.** Editing a feature rolls the model back to just before it inside a transaction (as
+  SolidWorks does), so stored references are shown and picked on the geometry they name;
+  OK rolls forward and commits one undo step, Cancel discards.
+
+Not yet: vertex references; the registry test that rejects features without a naming table.

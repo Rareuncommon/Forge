@@ -128,10 +128,16 @@ public enum Kernel {
 
     // MARK: helpers
 
+    /// Run a shape-producing kernel call, recording the history of the result's faces.
     static func call(_ body: (UnsafeMutablePointer<FKError>) -> OpaquePointer?) throws -> Shape {
         var err = FKError()
-        guard let h = body(&err) else { throw error(err) }
-        return Shape(owning: h)
+        let recorder = fk_history_begin()
+        defer { fk_history_release(recorder) }
+        let result = body(&err)
+        fk_history_end()
+        guard let h = result else { throw error(err) }
+        let history = recorder.map { FaceHistory($0) }
+        return Shape(owning: h, history: history?.records.isEmpty == false ? history : nil)
     }
 
     static func error(_ err: FKError) -> ForgeError {
