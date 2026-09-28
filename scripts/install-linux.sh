@@ -103,10 +103,13 @@ elif [[ ! -x "$SWIFT" ]]; then
   say "Verifying its signature with swift.org's keys"
   export GNUPGHOME="$tmp/gnupg"
   mkdir -m 700 "$GNUPGHOME"
-  curl -fsSL -o "$tmp/swift-keys.asc" https://www.swift.org/keys/all-keys.asc
-  # gpg exits 2 when some keys of the bundle cannot be imported (expired, no user id); the
-  # signature check below is what decides.
-  gpg --quiet --import "$tmp/swift-keys.asc" 2>/dev/null || true
+  # swift.org's public signing keys ship with Forge (packaging/linux, from
+  # https://www.swift.org/keys/all-keys.asc); newer keys are fetched too when reachable.
+  # gpg exits 2 when some keys of a bundle cannot be imported; the signature check decides.
+  gpg --quiet --import "$ROOT/packaging/linux/swift-signing-keys.asc" 2>/dev/null || true
+  if curl -fsSL -o "$tmp/swift-keys.asc" https://www.swift.org/keys/all-keys.asc 2>/dev/null; then
+    gpg --quiet --import "$tmp/swift-keys.asc" 2>/dev/null || true
+  fi
   if ! out="$(gpg --verify "$tmp/swift.tar.gz.sig" "$tmp/swift.tar.gz" 2>&1)"; then
     echo "$out" >&2
     die "the toolchain's signature does not verify"
