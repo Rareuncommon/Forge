@@ -30,6 +30,10 @@ final class WinShell {
     // Set by Observation when what an area shows changed.
     private var dirtyRibbon = true, dirtyTree = true, dirtyPanel = true, dirtyStatus = true, dirtyMenus = true
     private var sketching = false
+    // Live preview of the open operation, recomputed shortly after its inputs change (as the
+    // macOS page does with .task(id: previewKey)).
+    private var previewKey = ""
+    private var previewTask: Task<Void, Never>?
 
     init() {}
 
@@ -97,7 +101,12 @@ final class WinShell {
             return
         }
         defer { fw_free(pixels) }
-        // Half size (2×2 average) keeps the file small.
+        // Half size (2×2 average) keeps the file small; FORGE_SCREENSHOT_FULL=1 keeps every pixel.
+        if ProcessInfo.processInfo.environment["FORGE_SCREENSHOT_FULL"] == "1" {
+            let full = [UInt8](UnsafeBufferPointer(start: pixels, count: Int(w) * Int(h) * 4))
+            try? PNG.encode(rgba: full, width: Int(w), height: Int(h)).write(to: URL(fileURLWithPath: path))
+            return
+        }
         let W = Int(w) / 2, H = Int(h) / 2
         var out = [UInt8](repeating: 255, count: W * H * 4)
         for y in 0..<H {
@@ -151,6 +160,18 @@ final class WinShell {
         if dirtyMenus {
             dirtyMenus = false
             pushMenus()
+        }
+        let key = model.operation == nil ? "" : model.previewKey
+        if key != previewKey {
+            previewKey = key
+            previewTask?.cancel()
+            if !key.isEmpty {
+                previewTask = Task { [model] in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard !Task.isCancelled else { return }
+                    await model.updatePreview()
+                }
+            }
         }
         viewport.sync()
     }

@@ -80,6 +80,8 @@ PLATFORM = [
     ("P/app-model-shared", "Shared app model for every front end: ForgeUI (docs/adr/0012)"),
     ("P/windows-app", "Native Windows app: Win32 + Direct3D 11 shell, ForgeWin front end (docs/adr/0012)"),
     ("P/windows-engine", "Engine, tests and forge-cli on Windows (MSVC OCCT)"),
+    ("P/linux-app", "Native Linux app: GTK 4 + OpenGL shell on the shared front end (docs/adr/0013)"),
+    ("P/linux-install", "Linux desktop install: scripts/install-linux.sh (CachyOS / Arch, Ubuntu)"),
     ("P/command-palette", "Command palette ⌘K with inline parameter entry (§6.1)"),
     ("P/inspector", "Inspector panel instead of modal PropertyManagers (§6.2)"),
     ("P/handles", "Direct-manipulation handles (§6.3)"),

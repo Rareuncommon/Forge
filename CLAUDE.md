@@ -14,6 +14,10 @@ relevant ADRs in docs/adr/ before changing architecture.
 - Windows (docs/adr/0012): `scripts/fetch-occt-windows.sh`, `. Vendor/occt/windows-x64/forge-env.sh`,
   then `swift build --product ForgeWin` (Git Bash, Swift 6.4). Off Windows,
   `FORGE_WIN_CHECK=1 swift build --product ForgeWin` type-checks the Windows front end.
+- Linux app (docs/adr/0013): builds as `forge` when GTK 4 dev files are present
+  (`FORGE_LINUX_APP=1` to require); `xvfb-run -a env GDK_BACKEND=x11 .build/debug/forge --screenshot x.png`
+  checks it headless. `scripts/install-linux.sh` is the desktop install (CachyOS/Arch, Ubuntu).
+  A shell-API change goes in `CForgeWin/app.cpp`+`render.cpp`, `gtk/` and `headless/`.
 - App logic belongs in ForgeUI (shared by macOS and Windows, tested in Tests/ForgeUITests);
   a PropertyManager page change goes in both `PanelSpec.swift` and the macOS `PMPages.swift`.
 

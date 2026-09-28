@@ -149,7 +149,7 @@ if windowsShell || env["FORGE_WIN_CHECK"] != nil {
         .target(
             name: "CForgeWin",
             path: "Sources/CForgeWin",
-            exclude: windowsShell ? ["headless"] : ["app.cpp", "render.cpp"],
+            exclude: windowsShell ? ["headless", "gtk"] : ["app.cpp", "render.cpp", "gtk"],
             cSettings: [.define("UNICODE"), .define("_UNICODE")],
             cxxSettings: [
                 .define("UNICODE"), .define("_UNICODE"), .define("NOMINMAX"),
@@ -169,6 +169,51 @@ if windowsShell || env["FORGE_WIN_CHECK"] != nil {
         ))
     products.append(.executable(name: "ForgeWin", targets: ["ForgeWin"]))
 }
+
+// The native Linux app (docs/adr/0013-linux-app.md): the same Swift front end (Sources/ForgeWin)
+// on a GTK 4 + OpenGL implementation of the shell API (Sources/CForgeWin/gtk). Built when
+// GTK 4 development files are installed (pkg-config gtk4 epoxy); FORGE_LINUX_APP=0 leaves it
+// out, FORGE_LINUX_APP=1 requires it.
+#if os(Linux)
+func pkgConfig(_ args: [String]) -> [String]? {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    p.arguments = ["pkg-config"] + args
+    let out = Pipe()
+    p.standardOutput = out
+    p.standardError = FileHandle.nullDevice
+    guard (try? p.run()) != nil else { return nil }
+    p.waitUntilExit()
+    guard p.terminationStatus == 0 else { return nil }
+    let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    return text.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+}
+let linuxAppWanted = env["FORGE_LINUX_APP"] != "0" && env["FORGE_WIN_CHECK"] == nil
+let gtkFlags = linuxAppWanted ? pkgConfig(["--cflags", "gtk4", "epoxy"]) : nil
+let gtkLibs = linuxAppWanted ? pkgConfig(["--libs", "gtk4", "epoxy"]) : nil
+if env["FORGE_LINUX_APP"] == "1" && gtkFlags == nil {
+    fatalError("FORGE_LINUX_APP=1 but pkg-config cannot find gtk4 and epoxy (install GTK 4 and libepoxy development files)")
+}
+if let gtkFlags, let gtkLibs {
+    targets.append(
+        .target(
+            name: "CForgeWin",
+            path: "Sources/CForgeWin",
+            exclude: ["app.cpp", "render.cpp", "headless", "fw_internal.h"],
+            sources: ["gtk"],
+            cSettings: [.unsafeFlags(gtkFlags + ["-Wno-deprecated-declarations"])],
+            linkerSettings: [.unsafeFlags(gtkLibs)]
+        ))
+    targets.append(
+        .executableTarget(
+            name: "ForgeLinux",
+            dependencies: ["CForgeWin", "ForgeCore", "ForgeKernel", "ForgeSketch", "ForgeCommands", "ForgeRender", "ForgeUI"],
+            path: "Sources/ForgeWin",
+            swiftSettings: strictSwift
+        ))
+    products.append(.executable(name: "forge", targets: ["ForgeLinux"]))
+}
+#endif
 
 let package = Package(
     name: "Forge",

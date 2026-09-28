@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 998 rows — not started: 843 · in progress: 130 · done: 25 · verified: 0
+**Totals:** 1000 rows — not started: 843 · in progress: 131 · done: 26 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -63,6 +63,8 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/app-model-shared` | Shared app model for every front end: ForgeUI (docs/adr/0012) | done | ForgeUI | Tests/ForgeUITests/AppModelTests.swift | — | AppModel, operations, previews, sketch tools; PanelSpec / RibbonSpec / TreeSpec as data; PlatformServices for dialogs |
 | `P/windows-app` | Native Windows app: Win32 + Direct3D 11 shell, ForgeWin front end (docs/adr/0012) | in progress | CForgeWin / ForgeWin | CI windows job (build + --screenshot self-test); Linux type-check (FORGE_WIN_CHECK=1); Wine check of the C++ shell | — | ribbon, tree, PropertyManager, viewport (D3D11 + picking + D2D labels), sketching, dialogs; no icons, command palette, context/shortcut bars or installer yet |
 | `P/windows-engine` | Engine, tests and forge-cli on Windows (MSVC OCCT) | done | all engine modules | CI windows job | — | builds; all test suites and the 28 golden models pass on windows-2025 (OCCT 8.0.0 official MSVC build via scripts/fetch-occt-windows.sh); MCP socket transport not available on Windows |
+| `P/linux-app` | Native Linux app: GTK 4 + OpenGL shell on the shared front end (docs/adr/0013) | in progress | CForgeWin (gtk/) / ForgeLinux | CI linux job (build + --screenshot under Xvfb); CI cachyos job | — | ribbon, tree, PropertyManager, live previews, GPU picking, sketching, menus, GTK file dialogs; verified on Ubuntu (GTK 4.14) and CachyOS (GTK 4.22, OCCT 7.9.3). Ribbon icons, command palette, context/shortcut bars not yet |
+| `P/linux-install` | Linux desktop install: scripts/install-linux.sh (CachyOS / Arch, Ubuntu) | done | scripts/install-linux.sh | CI cachyos job | — | pacman/apt dependencies, swift.org toolchain (signature-verified) with a private ncurses compat link, release build, bundled Swift runtime (lib/forge), desktop entry + icon; --system, --uninstall |
 | `P/command-palette` | Command palette ⌘K with inline parameter entry (§6.1) | in progress | ForgeApp | — | — | searches all commands; runs parameterless ones directly, JSON entry otherwise; inline typed entry pending |
 | `P/inspector` | Inspector panel instead of modal PropertyManagers (§6.2) | in progress | ForgeApp | — | — | PropertyManager panels (OK/Cancel, groups, selection boxes) for every UI operation; read-only entity descriptors |
 | `P/handles` | Direct-manipulation handles (§6.3) | not started | — | — | — |  |

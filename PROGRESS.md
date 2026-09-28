@@ -1,5 +1,33 @@
 # Progress
 
+## Session 6 — 2026-09-28 — Native Linux app, CachyOS install
+
+The user runs CachyOS and asked for a dedicated full Linux build. The AUR `swift-bin` they
+tried lacks toolchain files (no `swift-frontend`), so nothing could build with it.
+
+- **Linux app** (docs/adr/0013): a GTK 4 + OpenGL 3.3 implementation of the shell C API in
+  `Sources/CForgeWin/gtk`, so the Swift front end (`Sources/ForgeWin`) builds unchanged as
+  `forge`. Menus, ribbon, tree, PropertyManager, Modify box, GTK dialogs, GLSL ports of the
+  viewport shaders, R32UI picking, Cairo/Pango labels.
+- **`scripts/install-linux.sh`**: pacman (CachyOS/Arch) or apt dependencies; the swift.org
+  toolchain (signature-verified) in `~/.local/share/forge` with a private `libncurses.so.6`
+  link for Arch; release build; binaries in `~/.local/bin` with their Swift runtime in
+  `~/.local/lib/forge` (`--static-swift-stdlib` does not link Foundation with this toolchain);
+  desktop entry and icon (`packaging/linux`).
+- Verified in the `cachyos/cachyos` container (OCCT 7.9.3, GTK 4.22): install as a user with
+  sudo, 31/31 golden models, the installed app's screenshot self-test. Interactively on
+  Ubuntu under Xvfb with xdotool: box preview + OK, face picking with persistent id,
+  rotate/zoom, sketching a triangle with inferred relations, menus, Save via the dialog.
+- Fixed in the shared Windows/Linux front end: live previews were never scheduled while
+  editing an operation's page (only the self-test called updatePreview).
+- CI: the Linux job builds `forge` and runs its self-test under Xvfb; a new `cachyos` job runs
+  the installer in the CachyOS container.
+
+### Not done / known gaps (Linux)
+
+- Ribbon and tree icons, command palette, context toolbar and shortcut bar (as on Windows).
+- A PKGBUILD / Flatpak (the installer downloads the 1.1 GB Swift toolchain once).
+
 ## Session 5 — 2026-09-28 — Persistent naming; Sweep, Loft, Rib
 
 - **Persistent naming (ADR 0002)** for faces and edges: the kernel records face history for

@@ -26,7 +26,7 @@ Sources/
   forge-cli/      Headless engine CLI
   ForgeApp/       SwiftUI shell (macOS only)
 Tests/            Swift Testing suites + GoldenModelTests/Models/*.json
-scripts/          build-occt.sh, bootstrap-linux.sh, make-app-bundle.sh, features.py
+scripts/          build-occt.sh, bootstrap-linux.sh, install-linux.sh, make-app-bundle.sh, features.py
 ```
 
 ## Build
@@ -39,10 +39,17 @@ swift build && swift test
 swift run ForgeApp               # or scripts/make-app-bundle.sh → build/Forge.app
 ```
 
-Linux (headless engine, CI):
+Linux desktop (CachyOS / Arch, Ubuntu) — the app `forge` (GTK 4 + OpenGL) and `forge-cli`:
 
 ```sh
-scripts/bootstrap-linux.sh       # Swift 6.4.0 + Ubuntu OCCT 7.6 packages
+scripts/install-linux.sh         # packages, swift.org toolchain, release build → ~/.local
+forge                            # or Forge in the application menu
+```
+
+Linux development (engine + app, CI):
+
+```sh
+scripts/bootstrap-linux.sh       # Swift 6.4.0 + Ubuntu OCCT 7.6 + GTK 4 packages
 export PATH=/opt/swift/usr/bin:$PATH
 swift build && swift test
 # or against a self-built OCCT: FORGE_OCCT_PREFIX=/opt/occt-8.0.1 swift build

@@ -39,6 +39,18 @@ jobs:
         run: python3 scripts/features.py --check
       - name: Type-check the Windows front end (headless shell API)
         run: FORGE_WIN_CHECK=1 /opt/swift/usr/bin/swift build --product ForgeWin
+      # The Linux app (docs/adr/0013): GTK 4 + OpenGL shell, run headless under Xvfb (Mesa).
+      - name: Build the Linux app
+        run: FORGE_LINUX_APP=1 /opt/swift/usr/bin/swift build --product forge
+      - name: Run the Linux app (screenshot self-test)
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1-mesa-dri
+          xvfb-run -a -s "-screen 0 1600x1000x24" env GDK_BACKEND=x11 .build/debug/forge --screenshot forge-linux.png
+          test -s forge-linux.png
+      - uses: actions/upload-artifact@v5
+        with:
+          name: forge-linux-screenshot
+          path: forge-linux.png
       # Solver cross-check against FreeCAD's planegcs (docs/adr/0003). The oracle is an external,
       # test-only executable (planegcs is LGPL-2.1+ and never linked into Forge, docs/adr/0005).
       - name: Build the planegcs oracle
@@ -47,6 +59,38 @@ jobs:
           tools/planegcs-oracle/build.sh "$RUNNER_TEMP/oracle"
       - name: Cross-check the solver against planegcs
         run: FORGE_PLANEGCS_ORACLE="$RUNNER_TEMP/oracle/planegcs-oracle" /opt/swift/usr/bin/swift test --filter PlanegcsOracle
+
+  cachyos:
+    # The desktop install path on CachyOS (Arch): scripts/install-linux.sh installs the
+    # distribution packages (OCCT 7.9, GTK 4), the swift.org toolchain, builds release binaries
+    # and installs them; then the app's screenshot self-test runs under Xvfb.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container: cachyos/cachyos:latest
+    steps:
+      - name: Prepare the container
+        run: |
+          pacman -Syu --noconfirm --needed git sudo xorg-server-xvfb xorg-xauth mesa
+          useradd -m forge && echo "forge ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/forge
+      - uses: actions/checkout@v5
+      - name: Cache the Swift toolchain
+        uses: actions/cache@v5
+        with:
+          path: /home/forge/.local/share/forge
+          key: swift-6.4.0-cachyos-${{ runner.arch }}
+      - name: Install Forge (as a user, with sudo)
+        run: |
+          chown -R forge . && mkdir -p /home/forge/.local/share && chown -R forge /home/forge
+          sudo -u forge -H bash scripts/install-linux.sh
+      - name: Run the installed app (screenshot self-test) and forge-cli
+        run: |
+          sudo -u forge -H bash -c 'cd /home/forge && xvfb-run -a -s "-screen 0 1600x1000x24" env GDK_BACKEND=x11 ~/.local/bin/forge --screenshot forge-cachyos.png && test -s forge-cachyos.png'
+          sudo -u forge -H /home/forge/.local/bin/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
+          cp /home/forge/forge-cachyos.png .
+      - uses: actions/upload-artifact@v5
+        with:
+          name: forge-cachyos-screenshot
+          path: forge-cachyos.png
 
   macos-app:
     # Builds OCCT 8.0.1 with the reproducible script, then the whole package including the

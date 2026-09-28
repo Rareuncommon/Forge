@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Forge app icon: the design's part glyph (Sources/ForgeUI/Icons.swift, .part) on the accent colour. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B7BF0"/>
+      <stop offset="1" stop-color="#1A4FB3"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#bg)"/>
+  <g transform="translate(32 32) scale(8)" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M12 3 L20 7.5 L12 12 L4 7.5 Z" fill="#FFFFFF"/>
+    <path d="M4 7.5 L12 12 V21 L4 16.5 Z" fill="#DCE7FB"/>
+    <path d="M20 7.5 L12 12 V21 L20 16.5 Z" fill="#AFC7F4"/>
+    <path d="M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z M4 7.5 L12 12 L20 7.5 M12 12 V21" fill="none" stroke="#0F2F6B" stroke-width="0.6"/>
+  </g>
+</svg>

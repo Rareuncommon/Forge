@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Set up a Linux (Ubuntu 24.04) machine to build and test the headless Forge engine:
-# Swift 6.4.0 toolchain + the distribution's OCCT development packages (7.6.x).
+# Set up a Linux (Ubuntu 24.04) machine to build and test Forge: Swift 6.4.0 toolchain, the
+# distribution's OCCT development packages (7.6.x) and GTK 4 for the Linux app (docs/adr/0013).
+# To install Forge on a desktop (CachyOS, Arch, Ubuntu) use scripts/install-linux.sh instead.
 # Used by CI and cloud dev sessions. The macOS app uses scripts/build-occt.sh instead.
 set -euo pipefail
 
@@ -12,7 +13,7 @@ SUDO=""
 $SUDO apt-get update -q
 $SUDO apt-get install -y -q --no-install-recommends \
   libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev \
-  libocct-data-exchange-dev libocct-ocaf-dev \
+  libocct-data-exchange-dev libocct-ocaf-dev libgtk-4-dev libepoxy-dev \
   binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev libpython3-dev \
   libsqlite3-0 libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config tzdata unzip zlib1g-dev \
   python3 curl ca-certificates
