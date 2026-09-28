@@ -1,6 +1,6 @@
 # Progress
 
-## Session 5 — 2026-09-28 — Persistent naming
+## Session 5 — 2026-09-28 — Persistent naming; Sweep, Loft, Rib
 
 - **Persistent naming (ADR 0002)** for faces and edges: the kernel records face history for
   every operation; bodies carry names (feature + role, split `#k`, merged aliases); edges are
@@ -16,6 +16,22 @@
   Cancel restores), so a fillet's stored edges are picked again on the pre-fillet model.
 - Fixed: regeneration indexed past its snapshot cache after two features were inserted at
   the rollback bar.
+- **Sweep, Loft, Rib**: kernel `fk_make_wire`, `fk_sweep` (MakePipe, follow path / keep
+  normal), `fk_loft` (ThruSections, smooth or ruled), solids of a compound; commands
+  `body.sweep` (sketch or circular profile, boss/cut), `body.loft` (2+ profiles, boss/cut),
+  `body.rib` (line chain, both/one side, parallel/normal to sketch, extended until it meets the
+  body — the piece of the slab outside the body that holds the profile, refused if unbounded).
+  All recorded as features that regenerate when any sketch they use changes; faces named
+  (`side(<entity>)`, caps, `rib(...)`). Pages in PanelSpec (Windows) and PMPages (macOS),
+  ribbon buttons in both, palette entries. Goldens 023–025; analytic tests (Pappus, frustum,
+  L-bracket rib).
+
+### Not done / known gaps
+
+- Sweep: guide curves, twist, thin, solid-body sweep. Loft: guide curves, centerline,
+  tangency constraints, point profiles, inner loops. Rib: arcs/splines, draft,
+  normal-to-sketch from several lines.
+- Vertex references by persistent name.
 
 
 ## Session 4 — 2026-09-25 — Native Windows app

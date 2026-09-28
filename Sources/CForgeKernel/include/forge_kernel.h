@@ -192,12 +192,32 @@ FKShape *fk_extrude(const FKShape *profile, const double v[3], FKError *err);
 /* Revolution about an axis through origin with direction axis, by angle (radians, ≤ 2π). */
 FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double axis[3], double angle, FKError *err);
 
+/* A wire (open or closed) through `count` connected segments (e.g. a sweep path). Records
+   FK_HIST_SEGMENT history like fk_make_faces. */
+FKShape *fk_make_wire(const FKSegment *segments, size_t count, const double *poles, size_t poleCount, FKError *err);
+
+typedef enum FKSweepMode {
+    FK_SWEEP_FOLLOW_PATH = 0,   /* the profile turns with the path (corrected Frenet frame) */
+    FK_SWEEP_KEEP_NORMAL = 1,   /* the profile keeps its orientation */
+} FKSweepMode;
+
+/* Sweep a profile face along a path (wire or edge). The profile should lie at the start of
+   the path. */
+FKShape *fk_sweep(const FKShape *profile, const FKShape *path, int32_t mode, FKError *err);
+/* Loft through two or more sections (faces: their outer wire; or wires), in order. */
+FKShape *fk_loft(const FKShape *const *sections, size_t count, int32_t ruled, FKError *err);
+
+/* Solids of a shape (a compound from a boolean may hold several). */
+int32_t fk_solid_count(const FKShape *shape);
+FKShape *fk_solid(const FKShape *shape, int32_t index, FKError *err);
+
 /* ---- history (persistent naming, docs/adr/0002) --------------------------------
  * fk_history_begin installs a recorder on the calling thread; the next shape-producing
  * operation on that thread fills it with where each face of the result came from, and
  * fk_history_end uninstalls it. The recorder stays valid until fk_history_release.
  * Operations that record: fk_boolean, fk_transform, fk_fillet_edges, fk_chamfer_edges,
- * fk_shell, fk_draft_faces, fk_extrude, fk_extrude_draft, fk_revolve and fk_make_faces. */
+ * fk_shell, fk_draft_faces, fk_extrude, fk_extrude_draft, fk_revolve, fk_sweep, fk_loft,
+ * fk_make_faces and fk_make_wire. */
 typedef struct FKHistory FKHistory;
 
 typedef enum FKHistoryInput {

@@ -234,16 +234,7 @@ extension Kernel {
         var poles: [Double] = []
         for l in loops {
             starts.append(Int32(segs.count))
-            for seg in l {
-                var c = seg.c
-                if case .bspline(let ps, let degree) = seg {
-                    c.p.0 = Double(poles.count / 3)
-                    c.p.1 = Double(ps.count)
-                    c.p.2 = Double(degree)
-                    for q in ps { poles += [q.x, q.y, q.z] }
-                }
-                segs.append(c)
-            }
+            segs += pack(l, poles: &poles)
         }
         starts.append(Int32(segs.count))
         let reg = regions.map { Int32($0) }
@@ -259,6 +250,51 @@ extension Kernel {
                 }
             }
         }
+    }
+
+    /// Kernel segments for `segments`, appending B-spline poles to `poles`.
+    static func pack(_ segments: [ProfileSegment], poles: inout [Double]) -> [FKSegment] {
+        segments.map { seg in
+            var c = seg.c
+            if case .bspline(let ps, let degree) = seg {
+                c.p.0 = Double(poles.count / 3)
+                c.p.1 = Double(ps.count)
+                c.p.2 = Double(degree)
+                for q in ps { poles += [q.x, q.y, q.z] }
+            }
+            return c
+        }
+    }
+
+    /// A wire through connected segments (a sweep path). Its history maps edges to segments.
+    public static func wire(_ segments: [ProfileSegment]) throws -> Shape {
+        guard !segments.isEmpty else { throw ForgeError(.invalidParams, "no path segments") }
+        var poles: [Double] = []
+        let segs = pack(segments, poles: &poles)
+        return try call { err in
+            segs.withUnsafeBufferPointer { sp in
+                poles.withUnsafeBufferPointer { pp in fk_make_wire(sp.baseAddress, sp.count, pp.baseAddress, poles.count / 3, err) }
+            }
+        }
+    }
+
+    public enum SweepOrientation: String, Codable, Sendable, CaseIterable, SchemaEnum {
+        /// The profile turns with the path.
+        case followPath = "follow_path"
+        /// The profile keeps its orientation.
+        case keepNormalConstant = "keep_normal_constant"
+    }
+
+    /// Sweep a profile face along a path wire; the profile should lie at the path's start.
+    public static func sweep(_ profile: Shape, along path: Shape, orientation: SweepOrientation = .followPath) throws -> Shape {
+        let mode = orientation == .followPath ? Int32(FK_SWEEP_FOLLOW_PATH.rawValue) : Int32(FK_SWEEP_KEEP_NORMAL.rawValue)
+        return try call { err in fk_sweep(profile.handle, path.handle, mode, err) }
+    }
+
+    /// Loft through sections (faces or wires) in order; `ruled` joins them with flat faces.
+    public static func loft(_ sections: [Shape], ruled: Bool = false) throws -> Shape {
+        let handles: [OpaquePointer?] = sections.map { $0.handle }
+        return try call { err in handles.withUnsafeBufferPointer { fk_loft($0.baseAddress, $0.count, ruled ? 1 : 0, err) } }
     }
 
     public static func extrude(_ profile: Shape, by v: Vec3) throws -> Shape {

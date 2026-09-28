@@ -274,3 +274,55 @@ struct KernelTransformTests {
         #expect((t.apply(Vec3(1, 0, 0)) - Vec3(0, 2, 0)).length < 1e-12)
     }
 }
+
+@Suite("Kernel: sweep, loft and history")
+struct KernelSweepLoftTests {
+    /// Square profile side a in the plane z = z0, corner at (x0, y0).
+    func square(_ a: Double, at x0: Double = 0, _ y0: Double = 0, z z0: Double = 0) throws -> Shape {
+        let p = [Vec3(x0, y0, z0), Vec3(x0 + a, y0, z0), Vec3(x0 + a, y0 + a, z0), Vec3(x0, y0 + a, z0)]
+        return try Kernel.faces(loops: [(0..<4).map { .line(p[$0], p[($0 + 1) % 4]) }], regions: [0])
+    }
+
+    @Test func sweepAlongALineAndAnArc() throws {
+        // Circle r = 2 in the plane x = 0, swept along +x for 10: a cylinder, π r² · 10.
+        let circle = try Kernel.faces(loops: [[.circle(center: .zero, normal: .unitX, radius: 2)]], regions: [0])
+        let straight = try Kernel.sweep(circle, along: try Kernel.wire([.line(.zero, Vec3(10, 0, 0))]))
+        #expect(abs(try straight.massProperties().volume - .pi * 4 * 10) < 1e-6)
+        // Along a quarter arc of radius 20 (centre (0, 20, 0)): Pappus, π r² · (π · 20 / 2).
+        let s = 20 * sin(Double.pi / 4)
+        let arc = try Kernel.wire([.arc(.zero, Vec3(s, 20 - s, 0), Vec3(20, 20, 0))])
+        let bent = try Kernel.sweep(circle, along: arc)
+        #expect(abs(try bent.massProperties().volume - .pi * 4 * (.pi * 10)) < 1e-4)
+        #expect(try bent.check().isValid)
+        // Side faces come from the profile's edge; the caps are the profile and its image.
+        let h = try #require(bent.history)
+        #expect(h.records.contains { $0.input == .edge && $0.relation == .generated })
+        #expect(h.records.contains { $0.input == .firstCap } && h.records.contains { $0.input == .lastCap })
+    }
+
+    @Test func loftBetweenSquares() throws {
+        // Equal squares 10 apart: a prism, 1000.
+        let prism = try Kernel.loft([try square(10), try square(10, z: 10)])
+        #expect(abs(try prism.massProperties().volume - 1000) < 1e-6)
+        // Side 10 → 20 over height 10, ruled: frustum h/3 (A1 + A2 + √(A1 A2)) = 7000 / 3.
+        let frustum = try Kernel.loft([try square(10, at: 5, 5), try square(20, z: 10)], ruled: true)
+        #expect(abs(try frustum.massProperties().volume - 7000.0 / 3) < 1e-6)
+        let h = try #require(frustum.history)
+        #expect(Set(h.records.filter { $0.input == .edge }.map(\.outputIndex)).count == 4)
+    }
+
+    @Test func wiresRecordTheirSegments() throws {
+        let w = try Kernel.wire([.line(.zero, Vec3(10, 0, 0)), .line(Vec3(10, 0, 0), Vec3(10, 10, 0))])
+        #expect(try w.topology().edges == 2)
+        #expect(Set(try #require(w.history).records.map(\.inputIndex)) == [0, 1])
+    }
+
+    @Test func solidsOfACompound() throws {
+        // Cutting a bar with a slab through its middle leaves two solids.
+        let bar = try Kernel.box(size: Vec3(30, 10, 10))
+        let cut = try Kernel.boolean(.cut, bar, try Kernel.box(origin: Vec3(10, -1, -1), size: Vec3(10, 12, 12)))
+        let parts = try cut.solids()
+        #expect(parts.count == 2)
+        for part in parts { #expect(abs(try part.massProperties().volume - 1000) < 1e-6) }
+    }
+}

@@ -50,6 +50,10 @@ extension AppModel {
             RibbonGroupSpec(title: "Boss / Base", buttons: [
                 button("extrude", .extrude, "Extruded Boss/Base", help: "Extrude a closed sketch profile into a new body", active: o == .extrude, enabled: hasSketch, op(.extrude)),
                 button("revolve", .revolve, "Revolved Boss/Base", help: "Revolve a sketch profile about a sketch line", active: o == .revolve, enabled: hasSketch, op(.revolve)),
+                button("sweep", .sweep, "Swept Boss/Base", help: "Sweep a profile (or a circle) along a path sketch", active: o == .sweep, enabled: hasSketch,
+                       large: false, op(.sweep)),
+                button("loft", .loft, "Lofted Boss/Base", help: "Loft through two or more profile sketches", active: o == .loft, enabled: sketches.count >= 2,
+                       large: false, op(.loft)),
             ]),
             RibbonGroupSpec(title: "Cut", buttons: [
                 button("cutExtrude", .cutExtrude, "Extruded Cut", help: "Extrude a sketch profile and remove it from a body", active: o == .cutExtrude,
@@ -57,10 +61,16 @@ extension AppModel {
                 button("cutRevolve", .cutRevolve, "Revolved Cut", help: "Revolve a sketch profile and remove it from a body", active: o == .cutRevolve,
                        enabled: hasSketch && hasBody, op(.cutRevolve)),
                 button("hole", .hole, "Hole Wizard", help: "Standard holes (ISO) at the points of a sketch", active: o == .hole, enabled: hasSketch && hasBody, op(.hole)),
+                button("cutSweep", .sweep, "Swept Cut", help: "Sweep a profile along a path and remove it from a body", active: o == .cutSweep,
+                       enabled: hasSketch && hasBody, large: false, op(.cutSweep)),
+                button("cutLoft", .loft, "Lofted Cut", help: "Loft through profiles and remove it from a body", active: o == .cutLoft,
+                       enabled: sketches.count >= 2 && hasBody, large: false, op(.cutLoft)),
             ]),
             RibbonGroupSpec(title: "Modify", buttons: [
                 button("fillet", o == .chamfer ? .chamfer : .fillet, o == .chamfer ? "Chamfer" : "Fillet", active: o == .fillet || o == .chamfer, enabled: hasBody,
                        variants: [("Fillet", op(.fillet)), ("Chamfer", op(.chamfer))], op(o == .chamfer ? .chamfer : .fillet)),
+                button("rib", .rib, "Rib", help: "A wall from an open sketch profile, extended to meet the body", active: o == .rib, enabled: hasSketch && hasBody,
+                       large: false, op(.rib)),
                 button("draft", .draft, "Draft", active: o == .draft, enabled: hasBody, large: false, op(.draft)),
                 button("shell", .shell, "Shell", active: o == .shell, enabled: hasBody, large: false, op(.shell)),
                 button("combine", .combine, "Combine", active: o == .combine, enabled: bodies.count >= 2, large: false, op(.combine)),

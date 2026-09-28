@@ -68,6 +68,9 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepOffsetAPI_MakePipe.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GC_MakeArcOfEllipse.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -859,6 +862,94 @@ FKShape *fk_offset_face(const FKShape *face, double distance, FKError *err) {
 
 // ---- profiles → solids ----------------------------------------------------------
 
+namespace {
+/* The edge of one profile segment (see FKSegment); false with err set on failure. */
+bool segmentEdge(const FKSegment &sg, const double *poles, size_t poleCount, TopoDS_Edge &e, FKError *err) {
+    auto pnt = [](const double *v) { return gp_Pnt(v[0], v[1], v[2]); };
+    switch (sg.kind) {
+    case FK_SEG_LINE:
+        e = BRepBuilderAPI_MakeEdge(pnt(sg.p), pnt(sg.p + 3));
+        break;
+    case FK_SEG_ARC: {
+        GC_MakeArcOfCircle arc(pnt(sg.p), pnt(sg.p + 3), pnt(sg.p + 6));
+        if (!arc.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate arc in profile");
+            return false;
+        }
+        e = BRepBuilderAPI_MakeEdge(arc.Value());
+        break;
+    }
+    case FK_SEG_CIRCLE: {
+        gp_Circ c(gp_Ax2(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5])), sg.p[9]);
+        e = BRepBuilderAPI_MakeEdge(c);
+        break;
+    }
+    case FK_SEG_ELLIPSE: {
+        gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
+        e = BRepBuilderAPI_MakeEdge(gp_Elips(ax, sg.p[9], sg.p[10]));
+        break;
+    }
+    case FK_SEG_ELLIPSE_ARC: {
+        gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
+        GC_MakeArcOfEllipse arc(gp_Elips(ax, sg.p[9], sg.p[10]), sg.p[11], sg.p[12], Standard_True);
+        if (!arc.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate elliptical arc in profile");
+            return false;
+        }
+        e = BRepBuilderAPI_MakeEdge(arc.Value());
+        break;
+    }
+    case FK_SEG_BSPLINE: {
+        const int first = (int)sg.p[0], count = (int)sg.p[1], degree = (int)sg.p[2];
+        if (!poles || first < 0 || count < 2 || degree < 1 || degree >= count || (size_t)(first + count) > poleCount) {
+            setError(err, FK_ERR_INVALID_ARGUMENT, "invalid B-spline segment");
+            return false;
+        }
+        // Clamped uniform knots: end multiplicity degree+1, interior knots simple.
+        const int spans = count - degree;
+        TColgp_Array1OfPnt P(1, count);
+        for (int i = 0; i < count; ++i) P.SetValue(i + 1, pnt(poles + 3 * (first + i)));
+        TColStd_Array1OfReal K(1, spans + 1);
+        TColStd_Array1OfInteger M(1, spans + 1);
+        for (int i = 0; i <= spans; ++i) {
+            K.SetValue(i + 1, (double)i / spans);
+            M.SetValue(i + 1, (i == 0 || i == spans) ? degree + 1 : 1);
+        }
+        Handle(Geom_BSplineCurve) c = new Geom_BSplineCurve(P, K, M, degree);
+        e = BRepBuilderAPI_MakeEdge(c);
+        break;
+    }
+    default:
+        setError(err, FK_ERR_INVALID_ARGUMENT, "unknown segment kind");
+        return false;
+    }
+    return true;
+}
+
+/* Record which segment each edge of `result` lies on (wire building and ShapeFix may rebuild
+   edges, so edges are matched to segments by their midpoint). */
+void recordSegments(const TopoDS_Shape &result, const std::vector<TopoDS_Edge> &segmentEdges) {
+    FKHistory *h = currentHistory;
+    if (!h) return;
+    TopTools_IndexedMapOfShape edges;
+    TopExp::MapShapes(result, TopAbs_EDGE, edges);
+    for (int k = 1; k <= edges.Extent(); ++k) {
+        const TopoDS_Edge &ek = TopoDS::Edge(edges(k));
+        if (BRep_Tool::Degenerated(ek)) continue;
+        BRepAdaptor_Curve c(ek);
+        const TopoDS_Vertex mid = BRepBuilderAPI_MakeVertex(c.Value((c.FirstParameter() + c.LastParameter()) / 2)).Vertex();
+        for (size_t si = 0; si < segmentEdges.size(); ++si) {
+            if (segmentEdges[si].IsNull()) continue;
+            BRepExtrema_DistShapeShape d(mid, segmentEdges[si]);
+            if (d.IsDone() && d.Value() < 1e-5) {
+                h->records.push_back(FKHistoryRecord{0, FK_HIST_SEGMENT, (int32_t)si, k - 1, FK_HIST_SAME});
+                break;
+            }
+        }
+    }
+}
+} // namespace
+
 FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, const int32_t *regionOf, size_t loopCount,
                        const double *poles, size_t poleCount, FKError *err) {
     clearError(err);
@@ -867,7 +958,6 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
         return nullptr;
     }
     FK_BEGIN
-    auto pnt = [](const double *v) { return gp_Pnt(v[0], v[1], v[2]); };
     std::vector<TopoDS_Wire> wires;
     std::vector<TopoDS_Edge> segmentEdges(loopStart[loopCount]);
     for (size_t li = 0; li < loopCount; ++li) {
@@ -875,63 +965,7 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
         for (int32_t si = loopStart[li]; si < loopStart[li + 1]; ++si) {
             const FKSegment &sg = segments[si];
             TopoDS_Edge e;
-            switch (sg.kind) {
-            case FK_SEG_LINE:
-                e = BRepBuilderAPI_MakeEdge(pnt(sg.p), pnt(sg.p + 3));
-                break;
-            case FK_SEG_ARC: {
-                GC_MakeArcOfCircle arc(pnt(sg.p), pnt(sg.p + 3), pnt(sg.p + 6));
-                if (!arc.IsDone()) {
-                    setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate arc in profile");
-                    return nullptr;
-                }
-                e = BRepBuilderAPI_MakeEdge(arc.Value());
-                break;
-            }
-            case FK_SEG_CIRCLE: {
-                gp_Circ c(gp_Ax2(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5])), sg.p[9]);
-                e = BRepBuilderAPI_MakeEdge(c);
-                break;
-            }
-            case FK_SEG_ELLIPSE: {
-                gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
-                e = BRepBuilderAPI_MakeEdge(gp_Elips(ax, sg.p[9], sg.p[10]));
-                break;
-            }
-            case FK_SEG_ELLIPSE_ARC: {
-                gp_Ax2 ax(pnt(sg.p), gp_Dir(sg.p[3], sg.p[4], sg.p[5]), gp_Dir(sg.p[6], sg.p[7], sg.p[8]));
-                GC_MakeArcOfEllipse arc(gp_Elips(ax, sg.p[9], sg.p[10]), sg.p[11], sg.p[12], Standard_True);
-                if (!arc.IsDone()) {
-                    setError(err, FK_ERR_CONSTRUCTION_FAILED, "degenerate elliptical arc in profile");
-                    return nullptr;
-                }
-                e = BRepBuilderAPI_MakeEdge(arc.Value());
-                break;
-            }
-            case FK_SEG_BSPLINE: {
-                const int first = (int)sg.p[0], count = (int)sg.p[1], degree = (int)sg.p[2];
-                if (!poles || first < 0 || count < 2 || degree < 1 || degree >= count || (size_t)(first + count) > poleCount) {
-                    setError(err, FK_ERR_INVALID_ARGUMENT, "invalid B-spline segment");
-                    return nullptr;
-                }
-                // Clamped uniform knots: end multiplicity degree+1, interior knots simple.
-                const int spans = count - degree;
-                TColgp_Array1OfPnt P(1, count);
-                for (int i = 0; i < count; ++i) P.SetValue(i + 1, pnt(poles + 3 * (first + i)));
-                TColStd_Array1OfReal K(1, spans + 1);
-                TColStd_Array1OfInteger M(1, spans + 1);
-                for (int i = 0; i <= spans; ++i) {
-                    K.SetValue(i + 1, (double)i / spans);
-                    M.SetValue(i + 1, (i == 0 || i == spans) ? degree + 1 : 1);
-                }
-                Handle(Geom_BSplineCurve) c = new Geom_BSplineCurve(P, K, M, degree);
-                e = BRepBuilderAPI_MakeEdge(c);
-                break;
-            }
-            default:
-                setError(err, FK_ERR_INVALID_ARGUMENT, "unknown segment kind");
-                return nullptr;
-            }
+            if (!segmentEdge(sg, poles, poleCount, e, err)) return nullptr;
             segmentEdges[si] = e;
             mw.Add(e);
             if (!mw.IsDone()) {
@@ -966,26 +1000,7 @@ FKShape *fk_make_faces(const FKSegment *segments, const int32_t *loopStart, cons
         for (auto &f : faces) b.Add(comp, f);
         result = comp;
     }
-    if (FKHistory *h = currentHistory) {
-        // Wire building and ShapeFix may rebuild edges: match each face edge to the segment
-        // it lies on by its midpoint.
-        TopTools_IndexedMapOfShape edges;
-        TopExp::MapShapes(result, TopAbs_EDGE, edges);
-        for (int k = 1; k <= edges.Extent(); ++k) {
-            const TopoDS_Edge &ek = TopoDS::Edge(edges(k));
-            if (BRep_Tool::Degenerated(ek)) continue;
-            BRepAdaptor_Curve c(ek);
-            const TopoDS_Vertex mid = BRepBuilderAPI_MakeVertex(c.Value((c.FirstParameter() + c.LastParameter()) / 2)).Vertex();
-            for (size_t si = 0; si < segmentEdges.size(); ++si) {
-                if (segmentEdges[si].IsNull()) continue;
-                BRepExtrema_DistShapeShape d(mid, segmentEdges[si]);
-                if (d.IsDone() && d.Value() < 1e-5) {
-                    h->records.push_back(FKHistoryRecord{0, FK_HIST_SEGMENT, (int32_t)si, k - 1, FK_HIST_SAME});
-                    break;
-                }
-            }
-        }
-    }
+    recordSegments(result, segmentEdges);
     return wrap(result);
     FK_END(nullptr)
 }
@@ -1031,6 +1046,157 @@ FKShape *fk_revolve(const FKShape *profile, const double origin[3], const double
     rec.sweep(profile->shape, mk);
     return wrap(s);
     FK_END(nullptr)
+}
+
+FKShape *fk_make_wire(const FKSegment *segments, size_t count, const double *poles, size_t poleCount, FKError *err) {
+    clearError(err);
+    if (!segments || count == 0) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "no path segments");
+        return nullptr;
+    }
+    FK_BEGIN
+    BRepBuilderAPI_MakeWire mw;
+    std::vector<TopoDS_Edge> segmentEdges(count);
+    for (size_t si = 0; si < count; ++si) {
+        TopoDS_Edge e;
+        if (!segmentEdge(segments[si], poles, poleCount, e, err)) return nullptr;
+        segmentEdges[si] = e;
+        mw.Add(e);
+        if (!mw.IsDone()) {
+            setError(err, FK_ERR_CONSTRUCTION_FAILED, "path segments are not connected end to end");
+            return nullptr;
+        }
+    }
+    TopoDS_Wire w = mw.Wire();
+    recordSegments(w, segmentEdges);
+    return wrap(w);
+    FK_END(nullptr)
+}
+
+namespace {
+/* The wire to sweep along: a wire, or the wire of an edge. */
+bool asWire(const TopoDS_Shape &s, TopoDS_Wire &w) {
+    if (s.ShapeType() == TopAbs_WIRE) {
+        w = TopoDS::Wire(s);
+        return true;
+    }
+    TopExp_Explorer ex(s, TopAbs_WIRE);
+    if (ex.More()) {
+        w = TopoDS::Wire(ex.Current());
+        return true;
+    }
+    TopExp_Explorer ee(s, TopAbs_EDGE);
+    if (!ee.More()) return false;
+    w = BRepBuilderAPI_MakeWire(TopoDS::Edge(ee.Current())).Wire();
+    return true;
+}
+
+TopoDS_Shape singleSolid(const TopoDS_Shape &s) {
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(s, TopAbs_SOLID, solids);
+    return solids.Extent() == 1 ? solids(1) : s;
+}
+} // namespace
+
+FKShape *fk_sweep(const FKShape *profile, const FKShape *path, int32_t mode, FKError *err) {
+    clearError(err);
+    if (!hasShape(profile, err) || !hasShape(path, err)) return nullptr;
+    FK_BEGIN
+    TopoDS_Wire spine;
+    if (!asWire(path->shape, spine)) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "the sweep path must be a wire or an edge");
+        return nullptr;
+    }
+    const GeomFill_Trihedron trihedron = mode == FK_SWEEP_KEEP_NORMAL ? GeomFill_IsFixed : GeomFill_IsCorrectedFrenet;
+    BRepOffsetAPI_MakePipe mk(spine, profile->shape, trihedron, Standard_False);
+    mk.Build();
+    if (!mk.IsDone() || mk.Shape().IsNull()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "sweep failed (does the profile intersect itself along the path?)");
+        return nullptr;
+    }
+    TopoDS_Shape s = singleSolid(mk.Shape());
+    Recorder rec(s);
+    if (rec.active()) {
+        rec.generated(0, profile->shape, mk, false);
+        TopTools_ListOfShape first, last;
+        for (TopExp_Explorer ex(mk.FirstShape(), TopAbs_FACE); ex.More(); ex.Next()) first.Append(ex.Current());
+        for (TopExp_Explorer ex(mk.LastShape(), TopAbs_FACE); ex.More(); ex.Next()) last.Append(ex.Current());
+        rec.add(0, FK_HIST_FIRST, 0, first, FK_HIST_SAME);
+        rec.add(0, FK_HIST_LAST, 0, last, FK_HIST_SAME);
+    }
+    return wrap(s);
+    FK_END(nullptr)
+}
+
+FKShape *fk_loft(const FKShape *const *sections, size_t count, int32_t ruled, FKError *err) {
+    clearError(err);
+    if (!sections || count < 2) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "a loft needs at least two profiles");
+        return nullptr;
+    }
+    FK_BEGIN
+    BRepOffsetAPI_ThruSections mk(Standard_True, ruled != 0);
+    mk.CheckCompatibility(Standard_True);
+    std::vector<TopoDS_Wire> wires;
+    for (size_t i = 0; i < count; ++i) {
+        if (!hasShape(sections[i], err)) return nullptr;
+        TopoDS_Wire w;
+        // A face contributes its outer wire (holes are not lofted).
+        TopExp_Explorer fx(sections[i]->shape, TopAbs_FACE);
+        if (fx.More()) w = BRepTools::OuterWire(TopoDS::Face(fx.Current()));
+        else if (!asWire(sections[i]->shape, w)) {
+            setError(err, FK_ERR_INVALID_ARGUMENT, "loft profiles must be faces or wires");
+            return nullptr;
+        }
+        wires.push_back(w);
+        mk.AddWire(w);
+    }
+    mk.Build();
+    if (!mk.IsDone() || mk.Shape().IsNull()) {
+        setError(err, FK_ERR_CONSTRUCTION_FAILED, "loft failed (profiles twisted or incompatible?)");
+        return nullptr;
+    }
+    TopoDS_Shape s = singleSolid(mk.Shape());
+    Recorder rec(s);
+    if (rec.active()) {
+        // Side faces from the edges of each profile (operand = profile index); caps.
+        for (size_t i = 0; i < wires.size(); ++i) {
+            TopTools_IndexedMapOfShape in;
+            TopExp::MapShapes(wires[i], TopAbs_EDGE, in);
+            for (int k = 1; k <= in.Extent(); ++k) {
+                TopTools_ListOfShape faces;
+                TopoDS_Shape f = mk.GeneratedFace(in(k));
+                if (!f.IsNull()) faces.Append(f);
+                rec.add((int32_t)i, FK_HIST_EDGE, k - 1, faces, FK_HIST_GENERATED);
+            }
+        }
+        TopTools_ListOfShape first, last;
+        if (!mk.FirstShape().IsNull()) first.Append(mk.FirstShape());
+        if (!mk.LastShape().IsNull()) last.Append(mk.LastShape());
+        rec.add(0, FK_HIST_FIRST, 0, first, FK_HIST_SAME);
+        rec.add(0, FK_HIST_LAST, 0, last, FK_HIST_SAME);
+    }
+    return wrap(s);
+    FK_END(nullptr)
+}
+
+int32_t fk_solid_count(const FKShape *shape) {
+    if (!shape || shape->shape.IsNull()) return 0;
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(shape->shape, TopAbs_SOLID, solids);
+    return solids.Extent();
+}
+
+FKShape *fk_solid(const FKShape *shape, int32_t index, FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err)) return nullptr;
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(shape->shape, TopAbs_SOLID, solids);
+    if (index < 0 || index >= solids.Extent()) {
+        setError(err, FK_ERR_OUT_OF_RANGE, "solid index out of range");
+        return nullptr;
+    }
+    return wrap(solids(index + 1));
 }
 
 // ---- queries ---------------------------------------------------------------

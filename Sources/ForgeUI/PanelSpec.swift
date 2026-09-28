@@ -93,15 +93,15 @@ extension AppModel {
 
     // MARK: building blocks
 
-    private func field(_ id: String, _ label: String, unit: String = "", _ key: WritableKeyPath<OperationForm, String>) -> PanelControl {
+    func field(_ id: String, _ label: String, unit: String = "", _ key: WritableKeyPath<OperationForm, String>) -> PanelControl {
         PanelControl(id: id, kind: .field(label: label, unit: unit, get: { [unowned self] in form[keyPath: key] }, set: { [unowned self] in form[keyPath: key] = $0 }, submit: nil))
     }
 
-    private func check(_ id: String, _ label: String, _ key: WritableKeyPath<OperationForm, Bool>) -> PanelControl {
+    func check(_ id: String, _ label: String, _ key: WritableKeyPath<OperationForm, Bool>) -> PanelControl {
         PanelControl(id: id, kind: .check(label: label, get: { [unowned self] in form[keyPath: key] }, set: { [unowned self] in form[keyPath: key] = $0 }))
     }
 
-    private func choice(_ id: String, _ label: String, _ options: [(tag: String, title: String)], _ key: WritableKeyPath<OperationForm, String>) -> PanelControl {
+    func choice(_ id: String, _ label: String, _ options: [(tag: String, title: String)], _ key: WritableKeyPath<OperationForm, String>) -> PanelControl {
         PanelControl(id: id, kind: .choice(label: label, options: options, get: { [unowned self] in form[keyPath: key] }, set: { [unowned self] in form[keyPath: key] = $0 }))
     }
 
@@ -123,11 +123,11 @@ extension AppModel {
             set: { [unowned self] in if let v = Double($0), v > 0 { sketchState[keyPath: key] = v } }, submit: nil))
     }
 
-    private func note(_ id: String, _ text: String, warning: Bool = false) -> PanelControl {
+    func note(_ id: String, _ text: String, warning: Bool = false) -> PanelControl {
         PanelControl(id: id, kind: .note(text, warning: warning))
     }
 
-    private var sketchChoice: PanelControl {
+    var sketchChoice: PanelControl {
         PanelControl(id: "sketch", kind: .choice(
             label: "Sketch", options: sketches.map { (tag: $0.id, title: $0.name) },
             get: { [unowned self] in operationSketch ?? "" }, set: { [unowned self] in operationSketch = $0 }))
@@ -234,6 +234,8 @@ extension AppModel {
             if op == .revolve && !bodies.isEmpty && editingFeatureCreatesBody != true { d1.append(check("merge", "Merge result", \.merge)) }
             s.append(PanelSection("Direction 1", controls: d1))
             s.append(PanelSection("Selected Contours", controls: [sketchChoice]))
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib:
+            s += sweepLoftRibSections(op)
         case .hole:
             s.append(PanelSection("Hole Type", controls: [
                 choice("holeType", "Type", [("counterbore", "Counterbore"), ("countersink", "Countersink"), ("hole", "Hole"), ("tapped", "Straight Tap")], \.holeType),
@@ -377,7 +379,7 @@ extension AppModel {
 
     private func operationSubtitle(_ op: Operation) -> String {
         switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole: sketches.first { $0.id == operationSketch }?.name ?? "Choose a sketch"
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .rib: sketches.first { $0.id == operationSketch }?.name ?? "Choose a sketch"
         default: op.isSketchOperation ? "\(sketchSelection.count) selected" : ""
         }
     }
@@ -387,6 +389,7 @@ extension AppModel {
         switch op {
         case _ where [Operation.extrude, .cutExtrude, .revolve, .cutRevolve].contains(op) && sketches.isEmpty: "Create a sketch with a closed profile first."
         case .revolve where form.axis.isEmpty, .cutRevolve where form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib: sweepLoftRibMessage(op)
         case .plane: "Select a planar face or choose a plane as the first reference, then the offset."
         case .hole where sketches.isEmpty: "Sketch points on a face first: each point is a hole position."
         case .linearPattern, .circularPattern, .mirror:

@@ -22,49 +22,8 @@ extension Sketch {
                 entities: (report.openEnds + report.branchPoints).map { "\(id)/\($0)" },
                 suggestions: [SuggestedFix(description: "Inspect the profile", command: "sketch.check", params: ["sketch": .string(id)])])
         }
-        func P(_ pid: String) -> Vec3 {
-            let (u, v) = point(pid)
-            return plane.point(u, v)
-        }
         func segments(_ loop: ProfileLoop) -> [ProfileSegment] {
-            zip(loop.entities, loop.forward).map { (eid, fwd) -> ProfileSegment in
-                let e = entities[eid]!
-                switch e.kind {
-                case .line:
-                    let a = P(e.points[0]), b = P(e.points[1])
-                    return fwd ? .line(a, b) : .line(b, a)
-                case .arc:
-                    let (cx, cy) = point(e.points[0]), (sx, sy) = point(e.points[1]), (ex, ey) = point(e.points[2])
-                    let r = hypot(sx - cx, sy - cy)
-                    let a0 = atan2(sy - cy, sx - cx)
-                    var sweep = atan2(ey - cy, ex - cx) - a0
-                    while sweep <= 0 { sweep += 2 * .pi }
-                    let mid = plane.point(cx + r * cos(a0 + sweep / 2), cy + r * sin(a0 + sweep / 2))
-                    let a = P(e.points[1]), b = P(e.points[2])
-                    return fwd ? .arc(a, mid, b) : .arc(b, mid, a)
-                case .circle:
-                    return .circle(center: P(e.points[0]), normal: plane.normal, radius: params[e.params[0]])
-                case .ellipse:
-                    let rot = params[e.params[2]]
-                    let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
-                    return .ellipse(center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
-                                    majorRadius: params[e.params[0]], minorRadius: params[e.params[1]])
-                case .ellipseArc:
-                    // Same edge whichever way the loop runs (the wire builder orients it).
-                    let rot = params[e.params[2]]
-                    let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
-                    let (phi0, sweep) = ellipseArcSpan(eid)
-                    return .ellipseArc(
-                        center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
-                        majorRadius: params[e.params[0]], minorRadius: params[e.params[1]], from: phi0, to: phi0 + sweep)
-                case .spline:
-                    // Clamped uniform knots are symmetric, so reversing the poles reverses the curve.
-                    let poles = e.points.map(P)
-                    return .bspline(poles: fwd ? poles : poles.reversed(), degree: e.degree ?? 3)
-                case .point:
-                    preconditionFailure("points are not profile curves")
-                }
-            }
+            zip(loop.entities, loop.forward).map { profileSegment($0, forward: $1) }
         }
         // Region = an even-depth loop followed by its direct (odd-depth) children.
         var loops: [[ProfileSegment]] = [], regions: [Int] = [], ids: [String] = []
@@ -79,6 +38,50 @@ extension Sketch {
             }
         }
         return (loops, regions, ids)
+    }
+
+    /// A sketch curve as a kernel segment in model coordinates, run forward or backward.
+    func profileSegment(_ eid: String, forward fwd: Bool) -> ProfileSegment {
+        func P(_ pid: String) -> Vec3 {
+            let (u, v) = point(pid)
+            return plane.point(u, v)
+        }
+        let e = entities[eid]!
+        switch e.kind {
+        case .line:
+            let a = P(e.points[0]), b = P(e.points[1])
+            return fwd ? .line(a, b) : .line(b, a)
+        case .arc:
+            let (cx, cy) = point(e.points[0]), (sx, sy) = point(e.points[1]), (ex, ey) = point(e.points[2])
+            let r = hypot(sx - cx, sy - cy)
+            let a0 = atan2(sy - cy, sx - cx)
+            var sweep = atan2(ey - cy, ex - cx) - a0
+            while sweep <= 0 { sweep += 2 * .pi }
+            let mid = plane.point(cx + r * cos(a0 + sweep / 2), cy + r * sin(a0 + sweep / 2))
+            let a = P(e.points[1]), b = P(e.points[2])
+            return fwd ? .arc(a, mid, b) : .arc(b, mid, a)
+        case .circle:
+            return .circle(center: P(e.points[0]), normal: plane.normal, radius: params[e.params[0]])
+        case .ellipse:
+            let rot = params[e.params[2]]
+            let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
+            return .ellipse(center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
+                            majorRadius: params[e.params[0]], minorRadius: params[e.params[1]])
+        case .ellipseArc:
+            // Same edge whichever way the loop runs (the wire builder orients it).
+            let rot = params[e.params[2]]
+            let dir = plane.xAxis * cos(rot) + plane.yAxis * sin(rot)
+            let (phi0, sweep) = ellipseArcSpan(eid)
+            return .ellipseArc(
+                center: P(e.points[0]), normal: plane.normal, majorDirection: dir,
+                majorRadius: params[e.params[0]], minorRadius: params[e.params[1]], from: phi0, to: phi0 + sweep)
+        case .spline:
+            // Clamped uniform knots are symmetric, so reversing the poles reverses the curve.
+            let poles = e.points.map(P)
+            return .bspline(poles: fwd ? poles : poles.reversed(), degree: e.degree ?? 3)
+        case .point:
+            preconditionFailure("points are not profile curves")
+        }
     }
 }
 

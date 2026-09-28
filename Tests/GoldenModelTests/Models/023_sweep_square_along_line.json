@@ -1,0 +1,105 @@
+{
+  "forge_script": 1,
+  "name": "023_sweep_square_along_line",
+  "description": "4 x 4 square on the Right plane (x = 0) swept along a 30 mm line on +X: a 4 x 4 x 30 bar. Volume 480, centroid (15, 0, 0), 6 faces",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          30,
+          0
+        ]
+      }
+    },
+    {
+      "command": "sketch.exit",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "right"
+      }
+    },
+    {
+      "command": "sketch.add_rectangle",
+      "params": {
+        "points": [
+          [
+            -2,
+            -2
+          ],
+          [
+            2,
+            2
+          ]
+        ]
+      }
+    },
+    {
+      "command": "sketch.exit",
+      "params": {}
+    },
+    {
+      "command": "body.sweep",
+      "params": {
+        "profile": "sketch-2",
+        "path": "sketch-1"
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 480,
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            15,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            0,
+            -2,
+            -2
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            30,
+            2,
+            2
+          ],
+          "tol": 1e-06
+        },
+        "valid": true,
+        "closed": true,
+        "faces": 6
+      }
+    ]
+  }
+}

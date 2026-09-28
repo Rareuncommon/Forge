@@ -190,6 +190,19 @@ enum Naming {
         NamedShape(result, faces: try derive(result, operands: operands, feature: feature, roles: roles))
     }
 
+    /// Names for `part`, a piece of `whole` (the same faces, extracted without history):
+    /// each face takes the names of the face of `whole` with the same centroid and area.
+    static func transfer(from whole: NamedShape, to part: Shape) throws -> NamedShape {
+        let wn = try whole.shape.topology().faces
+        let wf = try (0..<wn).map { try whole.shape.face($0) }
+        let faces = try (0..<(try part.topology().faces)).map { i -> [String] in
+            let f = try part.face(i)
+            let match = wf.firstIndex { ($0.centroid - f.centroid).length < 1e-6 && abs($0.area - f.area) < 1e-6 * max(1, f.area) }
+            return match.flatMap { $0 < whole.faces.count ? whole.faces[$0] : nil } ?? ["face"]
+        }
+        return NamedShape(part, faces: faces)
+    }
+
     /// Names of a profile's edges: the sketch entity each was built from.
     static func profileEdges(_ face: Shape, segmentIDs: [String]) throws -> [String] {
         var names = [String](repeating: "curve", count: try face.topology().edges)

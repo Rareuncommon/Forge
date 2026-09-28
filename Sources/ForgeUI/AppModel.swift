@@ -18,6 +18,7 @@ package enum RibbonTab: String, CaseIterable, Identifiable {
 /// The operation whose options are shown in the PropertyManager (with OK / Cancel).
 package enum Operation: Hashable {
     case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, linearPattern, circularPattern, mirror, combine
+    case sweep, cutSweep, loft, cutLoft, rib
     case massProperties, measure, check
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
@@ -30,6 +31,11 @@ package enum Operation: Hashable {
         case .cutExtrude: "Cut-Extrude"
         case .revolve: "Revolve"
         case .cutRevolve: "Cut-Revolve"
+        case .sweep: "Sweep"
+        case .cutSweep: "Cut-Sweep"
+        case .loft: "Loft"
+        case .cutLoft: "Cut-Loft"
+        case .rib: "Rib"
         case .hole: "Hole Specification"
         case .linearPattern: "Linear Pattern"
         case .circularPattern: "Circular Pattern"
@@ -62,6 +68,9 @@ package enum Operation: Hashable {
         case .cutExtrude: .cutExtrude
         case .revolve: .revolve
         case .cutRevolve: .cutRevolve
+        case .sweep, .cutSweep: .sweep
+        case .loft, .cutLoft: .loft
+        case .rib: .rib
         case .hole: .hole
         case .linearPattern: .linearPattern
         case .circularPattern: .circularPattern
@@ -124,6 +133,9 @@ package struct FeatureRow: Identifiable, Equatable {
         case "sketch.create": .sketch
         case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
         case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
+        case "body.sweep": .sweep
+        case "body.loft": .loft
+        case "body.rib": .rib
         case "body.fillet_edges": .fillet
         case "body.chamfer_edges": .chamfer
         case "body.shell": .shell
@@ -148,6 +160,9 @@ package struct FeatureRow: Identifiable, Equatable {
         switch command {
         case "body.extrude": params["operation"]?.stringValue == "cut" ? .cutExtrude : .extrude
         case "body.revolve": params["operation"]?.stringValue == "cut" ? .cutRevolve : .revolve
+        case "body.sweep": params["operation"]?.stringValue == "cut" ? .cutSweep : .sweep
+        case "body.loft": params["operation"]?.stringValue == "cut" ? .cutLoft : .loft
+        case "body.rib": .rib
         case "plane.create": .plane
         case "body.hole": .hole
         case "pattern.linear": .linearPattern

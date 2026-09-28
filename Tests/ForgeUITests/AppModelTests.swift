@@ -167,3 +167,48 @@ struct FeatureEditTests {
         #expect(m.features.count == 2)
     }
 }
+
+@MainActor
+@Suite("Sweep, loft and rib pages")
+struct SweepLoftRibPageTests {
+    @Test func loftPageCommitsTheTickedProfiles() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("sketch.create", ["plane": "front"])
+        await m.run("sketch.add_rectangle", ["points": [[0, 0], [10, 10]]])
+        await m.run("sketch.exit")
+        await m.run("sketch.create", ["plane": "front", "offset": 10])
+        await m.run("sketch.add_rectangle", ["points": [[0, 0], [10, 10]]])
+        await m.run("sketch.exit")
+        m.begin(.loft)
+        #expect(m.form.loftProfiles == ["sketch-1", "sketch-2"])
+        let page = m.panelPage
+        #expect(page.sections.map(\.title) == ["Profiles", "Options"])
+        await m.updatePreview()
+        #expect(m.preview.items.count == 1)
+        await m.commitOperation()
+        #expect(m.features.last?.command == "body.loft")
+        let v = try await m.engine.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!
+        #expect(abs(v - 1000) < 1e-6)
+    }
+
+    @Test func sweepPageDefaultsToTheLastTwoSketches() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("sketch.create", ["plane": "front"])
+        await m.run("sketch.add_line", ["start": [0, 0], "end": [30, 0]])
+        await m.run("sketch.exit")
+        m.begin(.sweep)
+        // One sketch: the path, with a circular profile.
+        #expect(m.form.sweepPath == "sketch-1" && m.form.sweepCircular)
+        m.form.sweepDiameter = "2"
+        await m.commitOperation()
+        let v = try await m.engine.execute("query.mass_properties", ["body": "body-1"]).result["volume_mm3"]!.doubleValue!
+        #expect(abs(v - .pi * 30) < 1e-6)
+        // Editing it fills the page from the feature.
+        m.editFeature(try #require(m.features.last))
+        await m.editTask?.value
+        #expect(m.operation == .sweep && m.form.sweepDiameter == "2")
+        m.cancelOperation()
+    }
+}

@@ -1,0 +1,176 @@
+{
+  "forge_script": 1,
+  "name": "025_rib_l_bracket",
+  "description": "L section (40 x 5 foot, 5 x 35 upright) extruded 20; a 2 mm rib on the plane z = 10 from (5, 25) to (25, 5) fills the triangle to the inner corner (area 200). Volume 7500 + 400; centroid from the three parts; faces: 8 of the L + 3 of the rib",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          40,
+          0
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          40,
+          0
+        ],
+        "end": [
+          40,
+          5
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          40,
+          5
+        ],
+        "end": [
+          5,
+          5
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          5,
+          5
+        ],
+        "end": [
+          5,
+          40
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          5,
+          40
+        ],
+        "end": [
+          0,
+          40
+        ]
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          0,
+          40
+        ],
+        "end": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "command": "sketch.exit",
+      "params": {}
+    },
+    {
+      "command": "body.extrude",
+      "params": {
+        "sketch": "sketch-1",
+        "depth": 20
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front",
+        "offset": 10
+      }
+    },
+    {
+      "command": "sketch.add_line",
+      "params": {
+        "start": [
+          5,
+          25
+        ],
+        "end": [
+          25,
+          5
+        ]
+      }
+    },
+    {
+      "command": "sketch.exit",
+      "params": {}
+    },
+    {
+      "command": "body.rib",
+      "params": {
+        "sketch": "sketch-2",
+        "thickness": 2
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 7900,
+          "tol": 1e-06
+        },
+        "centroid": {
+          "value": [
+            11.824894514767934,
+            11.824894514767934,
+            10.0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            0,
+            0,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            40,
+            40,
+            20
+          ],
+          "tol": 1e-06
+        },
+        "valid": true,
+        "closed": true,
+        "faces": 11
+      }
+    ]
+  }
+}

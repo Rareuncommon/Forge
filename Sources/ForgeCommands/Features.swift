@@ -40,6 +40,10 @@ public struct Feature: Codable, Sendable, Hashable {
 
     public var isSketch: Bool { command == "sketch.create" }
     public var sketchID: String? { params["sketch"]?.stringValue }
+    /// Sketches the feature is built from (extrude "sketch", sweep "profile"/"path", loft "profiles").
+    public var usedSketches: [String] {
+        ["sketch", "profile", "path"].compactMap { params[$0]?.stringValue } + (params["profiles"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, command, params, suppressed, status
@@ -84,7 +88,7 @@ struct BodyState: Sendable {
 extension Document {
     /// Commands whose invocations become features.
     public static let featureCommands: Set<String> = [
-        "body.extrude", "body.revolve", "body.boolean", "body.transform", "body.fillet_edges", "body.chamfer_edges", "body.shell",
+        "body.extrude", "body.revolve", "body.sweep", "body.loft", "body.rib", "body.boolean", "body.transform", "body.fillet_edges", "body.chamfer_edges", "body.shell",
         "body.draft", "body.delete", "plane.create", "body.hole", "pattern.linear", "pattern.circular", "pattern.mirror",
         "body.create_box", "body.create_cylinder", "body.create_sphere", "body.create_cone", "body.create_torus",
     ]
@@ -103,6 +107,9 @@ extension Document {
         switch command {
         case "body.extrude": params["operation"]?.stringValue == "cut" ? "Cut-Extrude" : "Boss-Extrude"
         case "body.revolve": params["operation"]?.stringValue == "cut" ? "Cut-Revolve" : "Revolve"
+        case "body.sweep": params["operation"]?.stringValue == "cut" ? "Cut-Sweep" : "Sweep"
+        case "body.loft": params["operation"]?.stringValue == "cut" ? "Cut-Loft" : "Loft"
+        case "body.rib": "Rib"
         case "body.boolean": "Combine"
         case "body.transform": params["copy"]?.boolValue == true ? "Body-Move/Copy" : "Body-Move"
         case "body.fillet_edges": "Fillet"
@@ -167,7 +174,7 @@ extension Document {
 
     /// A sketch changed: regenerate from the first feature built from it.
     mutating func markDirty(usingSketch id: String) {
-        if let i = features.firstIndex(where: { !$0.isSketch && $0.params["sketch"]?.stringValue == id }) { markDirty(from: i) }
+        if let i = features.firstIndex(where: { !$0.isSketch && $0.usedSketches.contains(id) }) { markDirty(from: i) }
     }
 
     /// The model as it is just before feature `i` (regenerating when that is not cached).

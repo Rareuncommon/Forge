@@ -37,6 +37,7 @@ struct OperationPage: View {
         switch op {
         case _ where [Operation.extrude, .cutExtrude, .revolve, .cutRevolve].contains(op) && model.sketches.isEmpty: "Create a sketch with a closed profile first."
         case .revolve where model.form.axis.isEmpty, .cutRevolve where model.form.axis.isEmpty: "Select a centerline or line of the sketch as the axis of revolution."
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib: model.sweepLoftRibMessage(op)
         case .plane: "Select a planar face or choose a plane as the first reference, then the offset."
         case .hole where model.sketches.isEmpty: "Sketch points on a face first: each point is a hole position."
         case .linearPattern, .circularPattern, .mirror:
@@ -267,6 +268,72 @@ struct OperationPage: View {
                     ForEach(model.sketches) { Text($0.name).tag($0.id) }
                 }
             }
+        case .sweep, .cutSweep:
+            // Mirrors AppModel.sweepLoftRibSections (Sources/ForgeUI/SweepLoftRib.swift).
+            PMSection("Profile and Path") {
+                PMCheckbox(label: "Circular profile", isOn: $model.form.sweepCircular)
+                if model.form.sweepCircular {
+                    PMField(label: "Diameter", text: $model.form.sweepDiameter, unit: "mm", icon: .circle)
+                } else {
+                    PMPicker(label: "Profile", selection: $model.form.sweepProfile, icon: .sketch) {
+                        Text("Select a sketch").tag("")
+                        ForEach(model.sketches) { Text($0.name).tag($0.id) }
+                    }
+                }
+                PMPicker(label: "Path", selection: $model.form.sweepPath, icon: .sweep) {
+                    Text("Select a sketch").tag("")
+                    ForEach(model.sketches) { Text($0.name).tag($0.id) }
+                }
+            }
+            PMSection("Options") {
+                PMPicker(label: "Orientation", selection: $model.form.sweepOrientation) {
+                    Text("Follow Path").tag("follow_path")
+                    Text("Keep Normal Constant").tag("keep_normal_constant")
+                }
+                if op == .sweep && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
+                    PMCheckbox(label: "Merge result", isOn: $model.form.merge)
+                }
+            }
+        case .loft, .cutLoft:
+            PMSection("Profiles") {
+                PMSelectionBox(items: model.form.loftProfiles.map { id in (icon: ForgeIcon.sketch, text: model.sketches.first { $0.id == id }?.name ?? id) },
+                               placeholder: "Profiles (in order)", active: true)
+                ForEach(model.sketches) { s in
+                    PMCheckbox(label: s.name, isOn: Binding(
+                        get: { model.form.loftProfiles.contains(s.id) },
+                        set: { on in if on { model.form.loftProfiles.append(s.id) } else { model.form.loftProfiles.removeAll { $0 == s.id } } }))
+                }
+            }
+            PMSection("Options") {
+                PMCheckbox(label: "Ruled (straight between profiles)", isOn: $model.form.loftRuled)
+                if op == .loft && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
+                    PMCheckbox(label: "Merge result", isOn: $model.form.merge)
+                }
+            }
+        case .rib:
+            PMSection("Parameters") {
+                PMField(label: "Thickness", text: $model.form.ribThickness, unit: "mm", icon: .rib)
+                PMPicker(label: "Thickness side", selection: $model.form.ribSide) {
+                    Text("First Side").tag("first")
+                    Text("Both Sides").tag("both")
+                    Text("Second Side").tag("second")
+                }
+                PMPicker(label: "Extrusion direction", selection: $model.form.ribDirection) {
+                    Text("Parallel to Sketch").tag("parallel_to_sketch")
+                    Text("Normal to Sketch").tag("normal_to_sketch")
+                }
+                PMPicker(label: "Material side", selection: $model.form.ribGrow) {
+                    Text("Toward the body").tag("auto")
+                    Text("Side 1").tag("normal")
+                    Text("Side 2 (flipped)").tag("flipped")
+                }
+            }
+            PMSection("Selected Contours") {
+                PMPicker(label: "Sketch", selection: Binding(get: { model.operationSketch ?? "" }, set: { model.operationSketch = $0 }), icon: .sketch) {
+                    ForEach(model.sketches) { Text($0.name).tag($0.id) }
+                }
+                PMNote(text: "An open chain of lines; its ends extend until they meet the body.")
+            }
         case .fillet:
             PMSection("Fillet Type") {
                 PMTypeList(options: [(value: 0, icon: .fillet, title: "Constant Size Fillet")], selection: .constant(0))
@@ -466,7 +533,7 @@ struct OperationPage: View {
 
     private var subtitle: String {
         switch op {
-        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole: model.sketches.first { $0.id == model.operationSketch }?.name ?? "Choose a sketch"
+        case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .rib: model.sketches.first { $0.id == model.operationSketch }?.name ?? "Choose a sketch"
         default: op.isSketchOperation ? "\(model.sketchSelection.count) selected" : ""
         }
     }

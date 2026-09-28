@@ -45,6 +45,10 @@ private struct FeaturesTab: View {
                         help: "Extrude a closed sketch profile into a new body") { model.begin(.extrude) }
             RibbonLarge(.revolve, "Revolved\nBoss/Base", active: model.operation == .revolve, enabled: hasSketch,
                         help: "Revolve a sketch profile about a sketch line") { model.begin(.revolve) }
+            RibbonStack {
+                RibbonSmall(.sweep, "Swept Boss/Base", active: model.operation == .sweep, enabled: hasSketch) { model.begin(.sweep) }
+                RibbonSmall(.loft, "Lofted Boss/Base", active: model.operation == .loft, enabled: model.sketches.count >= 2) { model.begin(.loft) }
+            }
         }
         RibbonSeparator()
         RibbonGroup("Cut") {
@@ -54,6 +58,10 @@ private struct FeaturesTab: View {
                         help: "Revolve a sketch profile and remove it from a body") { model.begin(.cutRevolve) }
             RibbonLarge(.hole, "Hole\nWizard", active: model.operation == .hole, enabled: hasSketch && hasBody,
                         help: "Standard holes (ISO) at the points of a sketch") { model.begin(.hole) }
+            RibbonStack {
+                RibbonSmall(.sweep, "Swept Cut", active: model.operation == .cutSweep, enabled: hasSketch && hasBody) { model.begin(.cutSweep) }
+                RibbonSmall(.loft, "Lofted Cut", active: model.operation == .cutLoft, enabled: model.sketches.count >= 2 && hasBody) { model.begin(.cutLoft) }
+            }
         }
         RibbonSeparator()
         RibbonGroup("Modify") {
@@ -63,6 +71,7 @@ private struct FeaturesTab: View {
                 Button("Chamfer") { model.begin(.chamfer) }
             }
             RibbonStack {
+                RibbonSmall(.rib, "Rib", active: model.operation == .rib, enabled: hasSketch && hasBody) { model.begin(.rib) }
                 RibbonSmall(.draft, "Draft", active: model.operation == .draft, enabled: hasBody) { model.begin(.draft) }
                 RibbonSmall(.shell, "Shell", active: model.operation == .shell, enabled: hasBody) { model.begin(.shell) }
             }

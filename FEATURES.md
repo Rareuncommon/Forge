@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 998 rows — not started: 848 · in progress: 126 · done: 24 · verified: 0
+**Totals:** 998 rows — not started: 843 · in progress: 130 · done: 25 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -52,7 +52,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/scripting-python` | Python via forge-cli/socket (§5.3) | not started | — | — | — |  |
 | `P/macro-recorder` | Macro recorder with semantic references (§5.3) | not started | — | — | — |  |
 | `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeCommandsTests/FileTests.swift | execute:feature.* | recorded body commands replayed on change; rollback, suppress, delete, rename, edit, error isolation, stable body ids, file schema 2; reorder/freeze/folders pending; face/edge references by persistent name (ADR 0002); editing a feature rolls back to it |
-| `P/persistent-naming` | Persistent naming (§4.2) | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/NamingTests.swift, Tests/ForgeUITests/AppModelTests.swift | query_faces (persistent_id), execute:query.find_faces, execute:feature.repair_reference | faces named from OCCT history (booleans, fillet, chamfer, shell, draft, extrude, revolve, transform, patterns, holes); edges by adjacent faces; features store names; split → set or reference_lost; ranked repairs; torture tests: dimension change, upstream insert, split edge, suppressed upstream; vertex references and sweep/loft roles pending |
+| `P/persistent-naming` | Persistent naming (§4.2) | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/NamingTests.swift, Tests/ForgeUITests/AppModelTests.swift | query_faces (persistent_id), execute:query.find_faces, execute:feature.repair_reference | faces named from OCCT history (booleans, fillet, chamfer, shell, draft, extrude, revolve, transform, patterns, holes); edges by adjacent faces; features store names; split → set or reference_lost; ranked repairs; torture tests: dimension change, upstream insert, split edge, suppressed upstream; sweep/loft/rib faces named too; vertex references pending |
 | `P/semantic-refs` | Semantic references (§4.3) | not started | — | — | — |  |
 | `P/parameters` | Global variables, equations, linked dims, design tables, configurations (§4.4) | not started | — | — | — |  |
 | `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | in progress | ForgeData | Tests/ForgeCommandsTests/FileTests.swift, Tests/GoldenModelTests/GoldenModelTests.swift | execute:document.save, execute:document.open | v1 package (ADR 0004): manifest, model.json, BREP bodies, thumbnail; byte-identical save→open→save; migration table empty; Quick Look/Spotlight NOT IMPLEMENTED |
@@ -228,13 +228,13 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/boss-base-and-cut/extrude/direction-2` | ↳ direction-2 | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | blind, through all, up to vertex |
 | `7.2/boss-base-and-cut/extrude/contour-selection` | ↳ contour selection | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/revolve` | Boss/base & cut: revolve | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.revolve | about a sketch line, any angle; parametric feature in M2 |
-| `7.2/boss-base-and-cut/sweep` | Boss/base & cut: sweep | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/sweep/profile` | ↳ profile | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/sweep` | Boss/base & cut: sweep | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.sweep | Swept Boss/Base and Swept Cut: sketch profile or circular profile along a path chain (lines, arcs, splines); follow path / keep normal constant; merge, scope; feature + UI pages. Guide curves, twist, thin, solid-body sweep: not implemented |
+| `7.2/boss-base-and-cut/sweep/profile` | ↳ profile | done | ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.sweep | sketch profile (holes kept) or circular_diameter |
 | `7.2/boss-base-and-cut/sweep/solid-body-tool-sweep` | ↳ solid-body tool sweep | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/sweep/twist` | ↳ twist | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/sweep/guide-curves` | ↳ guide curves | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/sweep/path-alignment` | ↳ path alignment | not started | ForgeModel | — | — |  |
-| `7.2/boss-base-and-cut/loft` | Boss/base & cut: loft | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/sweep/path-alignment` | ↳ path alignment | in progress | ForgeKernel | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.sweep | orientation follow_path / keep_normal_constant; other alignment options not implemented |
+| `7.2/boss-base-and-cut/loft` | Boss/base & cut: loft | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.loft | Lofted Boss/Base and Lofted Cut through 2+ single-loop profile sketches, smooth or ruled; merge, scope; feature + UI pages. Guide curves, centerline, start/end constraints, point profiles: not implemented |
 | `7.2/boss-base-and-cut/loft/guide-curves` | ↳ guide curves | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/loft/centerline` | ↳ centerline | not started | ForgeModel | — | — |  |
 | `7.2/boss-base-and-cut/loft/start-end-constraints` | ↳ start/end constraints | not started | ForgeModel | — | — |  |
@@ -263,7 +263,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/applied/draft/draftxpert` | ↳ DraftXpert | not started | ForgeModel | — | — |  |
 | `7.2/applied/shell` | Applied: shell | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.shell | faces to remove or closed hollow; inward/outward |
 | `7.2/applied/shell/multi-thickness` | ↳ multi-thickness | not started | ForgeModel | — | — |  |
-| `7.2/applied/rib` | Applied: rib | not started | ForgeModel | — | — |  |
+| `7.2/applied/rib` | Applied: rib | in progress | ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.rib | open line-chain profile, thickness both/first/second side, parallel or normal to sketch (normal: one line), material side auto/flip, ends extended to the body; feature + UI pages. Arc/spline profiles, draft: not implemented |
 | `7.2/applied/hole-wizard` | Applied: hole wizard | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | ISO metric M2–M20 at sketch points; blind (drill point) or through all |
 | `7.2/applied/hole-wizard/counterbore` | ↳ counterbore | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | ISO 4762 |
 | `7.2/applied/hole-wizard/countersink` | ↳ countersink | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.hole | 90°, ISO 10642 |

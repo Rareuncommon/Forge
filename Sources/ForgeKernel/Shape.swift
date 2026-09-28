@@ -33,6 +33,15 @@ public final class Shape: @unchecked Sendable {
         }
     }
 
+    /// The solids of this shape (a boolean's compound may hold several).
+    public func solids() throws -> [Shape] {
+        try (0..<Int(fk_solid_count(handle))).map { i in
+            var err = FKError()
+            guard let h = fk_solid(handle, Int32(i), &err) else { throw Kernel.error(err) }
+            return Shape(owning: h)
+        }
+    }
+
     public struct Topology: Codable, Sendable, Hashable {
         public var solids, shells, faces, wires, edges, vertices: Int
     }

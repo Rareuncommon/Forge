@@ -74,6 +74,13 @@ package struct OperationForm {
     package var moveDX = "10", moveDY = "0", copy = false, keepRelations = true
     package var rotateAngle = "90", rotateCenter = "0, 0"
     package var scaleFactor = "2", scaleCenter = "0, 0"
+    /// Sweep: profile and path sketches, or a circular profile.
+    package var sweepProfile = "", sweepPath = "", sweepCircular = false, sweepDiameter = "5", sweepOrientation = "follow_path"
+    /// Loft: profile sketches in order.
+    package var loftProfiles: [String] = [], loftRuled = false
+    package var ribThickness = "2", ribDirection = "parallel_to_sketch", ribSide = "both"
+    /// Rib material side: "auto" (where it meets the body), "normal" or "flipped".
+    package var ribGrow = "auto"
     package var result: JSONValue?
 
 
@@ -113,6 +120,8 @@ extension AppModel {
             } else if op == .extrude {
                 form.reverse = false
             }
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib:
+            beginSweepLoftRib(op)
         case .combine where bodies.count >= 2:
             form.target = selectedBodies.first ?? bodies[0].id
             form.tool = selectedBodies.dropFirst().first ?? bodies.first { $0.id != form.target }?.id ?? ""
@@ -286,6 +295,8 @@ extension AppModel {
             form.draftFaces = p["faces"]?.arrayValue?.compactMap(\.stringValue) ?? []
             form.draftFeatureAngle = t(p["angle"]) ?? form.draftFeatureAngle
             form.draftReverse = p["reverse"]?.boolValue ?? false
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib:
+            fillSweepLoftRib(op, p)
         case .combine:
             form.combine = p["operation"]?.stringValue ?? "fuse"
             form.target = p["target"]?.stringValue ?? ""
@@ -320,7 +331,7 @@ extension AppModel {
         var params: JSONValue?
         switch op {
         case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .fillet, .chamfer, .shell, .draft, .linearPattern,
-             .circularPattern, .mirror, .combine:
+             .circularPattern, .mirror, .combine, .sweep, .cutSweep, .loft, .cutLoft, .rib:
             params = featureEditParams(id, op)
         default:
             params = nil
@@ -359,7 +370,8 @@ extension AppModel {
          .sketchOffset: "select the sketch entities to offset", .sketchMirror: "select the entities and a line to mirror about",
          .sketchLinearPattern: "select the sketch entities to pattern", .sketchCircularPattern: "select the sketch entities to pattern",
          .sketchMove: "select the sketch entities to move", .sketchRotate: "select the sketch entities to rotate",
-         .sketchScale: "select the sketch entities to scale"]
+         .sketchScale: "select the sketch entities to scale", .sweep: "choose the profile and path sketches", .cutSweep: "choose the profile and path sketches",
+         .loft: "choose two or more profile sketches", .cutLoft: "choose two or more profile sketches", .rib: "choose the rib's sketch"]
         return messages[op] ?? "choose a sketch"
     }
 
@@ -412,6 +424,8 @@ extension AppModel {
             }
             if !form.scope.isEmpty { p["scope"] = .array(form.scope.map { .string($0) }) }
             return [Invocation("body.extrude", .object(p))]
+        case .sweep, .cutSweep, .loft, .cutLoft, .rib:
+            return sweepLoftRibInvocation(op)
         case .revolve, .cutRevolve:
             guard let sk = operationSketch, !form.axis.isEmpty else { return nil }
             var p: [String: JSONValue] = ["sketch": .string(sk), "axis": .string(form.axis), "angle": angleQuantity(form.angle)]
@@ -582,7 +596,7 @@ extension AppModel {
             let modified = changes.modified.filter { $0.hasPrefix("body-") && doc.bodies[$0] != nil }
             let deleted = changes.deleted.filter { $0.hasPrefix("body-") }
             guard !(created.isEmpty && modified.isEmpty && deleted.isEmpty) else { return clearOperationPreview() }
-            let cut = op == .cutExtrude || op == .cutRevolve || op == .hole || (op == .combine && form.combine == "cut")
+            let cut = op == .cutExtrude || op == .cutRevolve || op == .cutSweep || op == .cutLoft || op == .hole || (op == .combine && form.combine == "cut")
             let tint = cut ? RGBA(0.90, 0.28, 0.22) : RGBA(0.96, 0.64, 0.14)
             let edge = cut ? RGBA(0.72, 0.16, 0.12) : RGBA(0.80, 0.47, 0.0)
             var out: [RenderItem] = []
@@ -669,7 +683,8 @@ extension AppModel {
                 String(f.planeFlip), f.combine, f.target, f.tool, f.offsetDistance, String(f.offsetReverse), String(f.offsetBoth), String(f.offsetCaps),
                 f.mirrorAxis, f.patternCount, f.patternSpacing, f.patternDirection, String(f.patternDirection2On), f.patternCount2, f.patternSpacing2,
                 f.patternDirection2, f.circularCount, f.circularAngle, f.circularCenter, f.moveDX, f.moveDY, String(f.copy), f.rotateAngle,
-                f.rotateCenter, f.scaleFactor, f.scaleCenter, editingFeature ?? "", selection.joined(separator: ","), String(sceneVersion)].joined(separator: "|")
+                f.rotateCenter, f.scaleFactor, f.scaleCenter, f.sweepProfile, f.sweepPath, String(f.sweepCircular), f.sweepDiameter, f.sweepOrientation,
+                f.loftProfiles.joined(separator: ","), String(f.loftRuled), f.ribThickness, f.ribDirection, f.ribSide, f.ribGrow, editingFeature ?? "", selection.joined(separator: ","), String(sceneVersion)].joined(separator: "|")
     }
 
     // MARK: commit
