@@ -145,6 +145,15 @@ struct AppModelTests {
         m.projection = ViewProjection(camera: cam, width: 1200, height: 800)
         for _ in 0..<5 { await Task.yield() }
         #expect(m.grid?.step == 1)
+        // Orbited to look down at 45° and panned off the plane: the grid is centred where the
+        // view's centre ray meets the plane — (0, -300) for a target 300 mm in front of it —
+        // not at the target's projection (0, 0).
+        cam.orthoHalfHeight = 50
+        cam.setBasis(back: Vec3(0, 1, 1).normalized, up: Vec3(0, 1, -1).normalized)
+        cam.target = Vec3(0, 0, 300)
+        m.projection = ViewProjection(camera: cam, width: 1200, height: 800)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(m.grid?.centerU == 0 && m.grid?.centerV == -300)
     }
 
     @Test func smartDimensionFollowsThePointerAndIsPlacedByAClick() async throws {

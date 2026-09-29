@@ -353,7 +353,15 @@ package final class AppModel {
         // Re-centred in blocks of ten cells, covering 1.5 views each way so panning within
         // the view does not rebuild it.
         let block = step * 10
-        let t = (cam?.target ?? sk.plane.origin) - sk.plane.origin
+        // Centred where the view's centre ray meets the sketch plane (after orbiting and
+        // panning the target can be off the plane); edge-on, the target's projection.
+        var centre = cam?.target ?? sk.plane.origin
+        if let cam {
+            let n = sk.plane.normal, dir = cam.back * -1
+            let den = dir.dot(n)
+            if abs(den) > 1e-3 { centre = centre + dir * ((sk.plane.origin - centre).dot(n) / den) }
+        }
+        let t = centre - sk.plane.origin
         let cu = (t.dot(sk.plane.xAxis) / block).rounded() * block, cv = (t.dot(sk.plane.yAxis) / block).rounded() * block
         let cells = Int((span * 1.5 / block).rounded(.up)) * 10
         return SketchGrid(step: step, centerU: cu, centerV: cv, halfCells: min(max(cells, 10), 400))
