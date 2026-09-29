@@ -177,7 +177,11 @@ public struct DocumentPackage: Sendable, Equatable {
             "manifest.json": try Self.json(manifest),
             "model.json": try Self.json(model),
         ]
+        var bodyIDs = Set<String>()
         for b in model.bodies {
+            guard bodyIDs.insert(b.id).inserted else { throw ForgeError(.ioError, "duplicate body id \(b.id)") }
+            try Self.validateBodyPath(b.brep)
+            guard out[b.brep] == nil else { throw ForgeError(.ioError, "duplicate package path \(b.brep)") }
             guard let data = breps[b.id] else { throw ForgeError(.internalError, "missing BREP for \(b.id)") }
             out[b.brep] = data
         }
@@ -231,11 +235,24 @@ public struct DocumentPackage: Sendable, Equatable {
         }
     }
 
+    /// Body payloads must stay inside their package on every supported platform.
+    static func validateBodyPath(_ path: String) throws {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.count >= 2, components.first == "bodies",
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+            !path.contains("\\"), !path.contains(":"), !path.contains("\0"), path.hasSuffix(".brep")
+        else { throw ForgeError(.ioError, "invalid body package path '\(path)'") }
+    }
+
     // MARK: reading
 
     public static func read(from url: URL) throws -> DocumentPackage {
         func load(_ rel: String) throws -> Data {
             let f = url.appendingPathComponent(rel)
+            let root = url.resolvingSymlinksInPath().standardizedFileURL.path
+            guard f.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root + "/") else {
+                throw ForgeError(.ioError, "package file escapes the document: \(rel)")
+            }
             do { return try Data(contentsOf: f) } catch {
                 throw ForgeError(.ioError, "\(url.lastPathComponent) is missing \(rel)", entities: [url.path])
             }
@@ -245,6 +262,7 @@ public struct DocumentPackage: Sendable, Equatable {
             throw ForgeError(.ioError, "\(url.path) is not a Forge document")
         }
         guard let schema = manifestJSON["schema"]?.intValue else { throw ForgeError(.ioError, "manifest has no schema version") }
+        guard schema >= 1 else { throw ForgeError(.ioError, "invalid document schema version \(schema)") }
         guard schema <= currentSchema else {
             throw ForgeError(
                 .unsupported, "\(url.lastPathComponent) was written by a newer Forge (schema \(schema); this build reads up to \(currentSchema))")
@@ -253,14 +271,21 @@ public struct DocumentPackage: Sendable, Equatable {
         // Forward migration, one schema step at a time (docs/adr/0004).
         var version = schema
         while version < currentSchema {
-            modelJSON = try Migrations.steps[version]!(modelJSON)
+            guard let migrate = Migrations.steps[version] else { throw ForgeError(.unsupported, "no migration for schema \(version)") }
+            modelJSON = try migrate(modelJSON)
             version += 1
         }
         let manifest = try JSONCoding.fromJSON(Manifest.self, manifestJSON)
         let model = try JSONCoding.fromJSON(Model.self, modelJSON)
         var breps: [String: Data] = [:]
-        for b in model.bodies { breps[b.id] = try load(b.brep) }
-        let thumb = try? Data(contentsOf: url.appendingPathComponent("thumbnails/thumbnail.png"))
+        var paths = Set<String>()
+        for b in model.bodies {
+            guard paths.insert(b.brep).inserted else { throw ForgeError(.ioError, "duplicate package path \(b.brep)") }
+            try validateBodyPath(b.brep)
+            guard breps[b.id] == nil else { throw ForgeError(.ioError, "duplicate body id \(b.id)") }
+            breps[b.id] = try load(b.brep)
+        }
+        let thumb = try? load("thumbnails/thumbnail.png")
         var m = manifest
         m.schema = currentSchema
         return DocumentPackage(manifest: m, model: model, breps: breps, thumbnailPNG: thumb)

@@ -33,6 +33,9 @@ public actor MCPServer {
             return Self.errorResponse(id: .null, code: -32700, message: "parse error")
         }
         if let batch = message.arrayValue {
+            guard !batch.isEmpty else {
+                return Self.errorResponse(id: .null, code: -32600, message: "invalid request: empty batch")
+            }
             // JSON-RPC batches (removed from MCP 2025-06-18 but harmless to accept).
             var responses: [JSONValue] = []
             for m in batch {
@@ -44,13 +47,22 @@ public actor MCPServer {
     }
 
     func handleMessage(_ m: JSONValue) async -> JSONValue? {
+        let id = m["id"]
+        if let id {
+            switch id {
+            case .string, .number, .null: break
+            default: return Self.error(id: .null, code: -32600, message: "invalid request id")
+            }
+        }
         guard m["jsonrpc"] == "2.0", let method = m["method"]?.stringValue else {
             // Responses to server-initiated requests are ignored (we send none that expect replies).
             if m["result"] != nil || m["error"] != nil { return nil }
             return Self.error(id: m["id"] ?? .null, code: -32600, message: "invalid request")
         }
-        let id = m["id"]
         let params = m["params"] ?? [:]
+        guard params.objectValue != nil else {
+            return id.map { Self.error(id: $0, code: -32602, message: "params must be an object") }
+        }
         guard let id else {
             await handleNotification(method, params)
             return nil
@@ -87,6 +99,9 @@ public actor MCPServer {
         case "resources/read": return try await readResource(params)
         case "resources/subscribe":
             guard let uri = params["uri"]?.stringValue else { throw RPCError(code: -32602, message: "missing uri") }
+            guard ResourceCatalog.resources.contains(where: { $0["uri"]?.stringValue == uri }) else {
+                throw RPCError(code: -32002, message: "resource not found", data: ["uri": .string(uri)])
+            }
             subscriptions.insert(uri)
             return [:]
         case "resources/unsubscribe":
@@ -141,6 +156,10 @@ public actor MCPServer {
         }
         let args = params["arguments"] ?? [:]
         do {
+            let problems = SchemaValidator.validate(args, against: tool.inputSchema)
+            guard problems.isEmpty else {
+                throw ForgeError(.invalidParams, problems.joined(separator: "; "))
+            }
             let output = try await tool.run(engine, args)
             if output.mutated { await notifyStateChanged() }
             return toolResult(output)
@@ -162,7 +181,7 @@ public actor MCPServer {
             content.append(["type": "image", "data": .string(png), "mimeType": "image/png"])
         }
         content.append(["type": "text", "text": .string(JSONCoding.string(output.json, pretty: true))])
-        var r: [String: JSONValue] = ["content": .array(content), "isError": false]
+        var r: [String: JSONValue] = ["content": .array(content), "isError": .bool(output.isError)]
         if supportsStructuredContent, case .object = output.json { r["structuredContent"] = output.json }
         return .object(r)
     }
@@ -184,6 +203,12 @@ public actor MCPServer {
         case ResourceCatalog.stateURI:
             do {
                 value = try await engine.execute("document.state").result
+            } catch {
+                value = ["error": (try? JSONCoding.toJSON(ForgeError.wrap(error))) ?? .null]
+            }
+        case ResourceCatalog.featureTreeURI:
+            do {
+                value = try await engine.execute("feature.list").result
             } catch {
                 value = ["error": (try? JSONCoding.toJSON(ForgeError.wrap(error))) ?? .null]
             }
@@ -212,6 +237,7 @@ enum ResourceCatalog {
     static let commandsURI = "forge://commands"
     static let stateURI = "forge://document/state"
     static let journalURI = "forge://document/journal"
+    static let featureTreeURI = "forge://document/features"
 
     static let resources: [JSONValue] = [
         ["uri": .string(commandsURI), "name": "commands", "title": "Command catalog",
@@ -220,5 +246,7 @@ enum ResourceCatalog {
          "description": "Bodies, selection, undo/redo stacks and open transaction of the active document (subscribable)", "mimeType": "application/json"],
         ["uri": .string(journalURI), "name": "journal", "title": "Command journal",
          "description": "Replayable script of every committed command in the active document (forge-cli run)", "mimeType": "application/json"],
+        ["uri": .string(featureTreeURI), "name": "feature-tree", "title": "Parametric feature tree",
+         "description": "Feature parameters, suppression, rollback and rebuild errors of the active document (subscribable)", "mimeType": "application/json"],
     ]
 }

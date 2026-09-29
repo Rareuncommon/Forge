@@ -133,3 +133,34 @@ struct GeometryTests {
         #expect((try? JSONDecoder().decode(Vec3.self, from: Data("[1,2,3]".utf8))) == Vec3(1, 2, 3))
     }
 }
+
+@Suite("Safe numeric conversion")
+struct NumericConversionTests {
+    @Test func integerConversionRejectsUnrepresentableValues() {
+        for value in [Double.infinity, -Double.infinity, Double.nan, 1e100, Double(Int.max), 1.5] {
+            #expect(JSONValue.number(value).intValue == nil)
+            #expect(!SchemaValidator.validate(.number(value), against: ["type": "integer"]).isEmpty)
+        }
+        #expect(JSONValue.number(Double(Int.min)).intValue == Int.min)
+        #expect(JSONValue.number(42).intValue == 42)
+    }
+    @Test func schemaRejectsNonfiniteNumbers() {
+        for value in [Double.infinity, -Double.infinity, Double.nan] {
+            #expect(!SchemaValidator.validate(.number(value), against: ["type": "number"]).isEmpty)
+        }
+    }
+}
+
+@Suite("Object schema validation")
+struct ObjectSchemaTests {
+    @Test func additionalPropertiesFollowSchema() {
+        let value: JSONValue = ["width": 3, "custom": "text"]
+        #expect(SchemaValidator.validate(value, against: ["type": "object"]).isEmpty)
+        #expect(SchemaValidator.validate(value, against: ["type": "object", "additionalProperties": true]).isEmpty)
+        #expect(!SchemaValidator.validate(value, against: ["type": "object", "additionalProperties": false]).isEmpty)
+        let typed: JSONValue = ["type": "object", "properties": ["width": ["type": "number"]],
+                                "additionalProperties": ["type": "string"]]
+        #expect(SchemaValidator.validate(value, against: typed).isEmpty)
+        #expect(SchemaValidator.validate(["width": 3, "custom": 2], against: typed) == ["params.custom: expected string"])
+    }
+}

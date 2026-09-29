@@ -1,5 +1,79 @@
 # Progress
 
+## Session 7 — 2026-09-28 — Coordinated correctness audit and MCP feature workflows
+
+This delivery is a tested improvement to the existing part modeler, not completion of
+SolidWorks parity. The baseline matrix contains 1,000 rows (843 not started, 131 in
+progress, 26 done). No parity status is advanced by this audit. The source-linked
+[workflow assessment](docs/research/solidworks-parity-audit.md) records acceptance
+criteria and outstanding assemblies, drawings/BOM, configurations, exchange and
+analysis work. Subagents reviewed engine/core/persistence, sketch/UI/rendering, and
+research/packaging; coverage was risk-based, not proof that every line is bug-free.
+
+### Changes
+
+- **Command boundaries:** finite and representable integer validation avoids traps;
+  schemas respect additionalProperties. Change sets include reference planes and
+  feature metadata, so metadata-only transactions preserve undo/redo. Atomic batches
+  preflight session boundaries and file writes; dry-run batches and previews reject
+  unsupported side effects before execution. Use separate document creation/save/export
+  calls, or non-atomic batches when those operations are intended.
+- **Persistence:** reject invalid schema versions, duplicate body payload records,
+  unsafe relative paths, and external payload symlinks; ignore external thumbnail
+  symlinks. Schema migration no longer force-unwraps a nonexistent migration.
+- **Desktop/sketch:** New/Open clears stale file and editing state; canceled async
+  previews cannot repopulate the viewport; UI filters accept persistent face/edge
+  names; scaling updates horizontal/vertical dimensions; large pattern counts cannot
+  overflow before validation.
+- **MCP:** validate generic tool flags and envelopes, expose failed batches via isError,
+  notify only committed batch changes, and mark file exports as writes. Seven direct
+  registry-backed feature tools expose inspection, editing, naming, suppression,
+  rollback, reference repair and rebuilding. A fourth resource,
+  `forge://document/features`, exposes a subscribable feature tree.
+- **Socket transport:** preserve existing files/live listeners, validate paths, check
+  owner-only permissions, suppress socket SIGPIPE, and clean up only the owned inode.
+  Nonblocking listener polling and a joined accept loop make restart safe without
+  relying on Linux-only listener shutdown behavior; stop shuts down client sockets.
+- **Packaging/CI:** validate OCCT downloads before caching; quote dependency paths;
+  repair Xcode fallback; make Windows screenshot failures fail the CI job. Add three
+  offline packaging regressions to CI.
+
+### Verification on CachyOS / Linux
+
+- Official Swift 6.4 toolchain: build with tests and **272 Swift tests pass** across
+  all eight targets; three packaging regressions pass.
+- **31/31 golden models** pass through forge-cli, including analytic expectations.
+- Linux desktop/CLI **release build passes**. Linux desktop screenshot self-test
+  produces a visible model, operation panel and feature tree (GTK emits allocation
+  warnings during the initial snapshot).
+- `FORGE_WIN_CHECK=1` builds the Windows frontend against the headless shell API.
+- Real MCP stdio process smoke test covers creation, feature editing, analytic volume,
+  failed-batch reporting and the feature-tree resource. Socket tests exercise file
+  preservation, disconnected writers, stop/restart and per-restart engine identity.
+- Feature matrix synchronization, shell syntax and diff whitespace checks pass.
+- The distribution `/usr/bin/swift` lacks TestingMacros; verification uses the existing
+  official toolchain at `~/.local/share/forge/swift-6.4.0/usr/bin/swift` with
+  `--scratch-path .build-official`.
+
+Native macOS CI initially exposed a Darwin disconnect race: `setsockopt(SO_NOSIGPIPE)`
+can fail after the peer disconnects, leaving a following write able to terminate the
+process. The writer now refuses writes when suppression cannot be configured; the
+regression covers both pre- and post-disconnect initialization. Native ForgeApp compiled
+successfully in that run. The next native run passed the disconnect regression and
+exposed executor starvation in the blocking socket test client; client reads now run
+on a dedicated Dispatch queue with a bounded timeout. Native CI is rerun for both fixes.
+
+### Remaining limitations
+
+Native macOS/Windows compilation and runtime behavior require their CI/platform checks;
+Linux cross-compilation does not prove those work. Solver oracle tests only run when
+an external planegcs oracle is supplied. Broader corrupt-model semantic validation
+(IDs, counters, rollback and references) remains incomplete. MCP resource notifications
+currently cover changes through the subscribing connection, not other clients/UI.
+In-flight commands are not canceled by socket stop. Full product functionality and
+exhaustive bug elimination remain outstanding; follow the workflow assessment and
+SPEC milestones instead of treating this PR as parity completion.
+
 ## Session 6 — 2026-09-28 — Native Linux app, CachyOS install
 
 The user runs CachyOS and asked for a dedicated full Linux build. The AUR `swift-bin` they

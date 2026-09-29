@@ -174,8 +174,9 @@ extension Sketch {
         _ ids: [String], direction: Double, spacing: Double, count: Int,
         direction2: Double? = nil, spacing2: Double? = nil, count2: Int = 1
     ) throws -> (created: [[String]], constraints: [String]) {
-        guard count >= 1, count2 >= 1, count * count2 >= 2 else { throw ForgeError(.invalidParams, "a pattern needs at least 2 instances") }
-        guard count * count2 <= 1000 else { throw ForgeError(.invalidParams, "at most 1000 instances") }
+        guard count >= 1, count2 >= 1 else { throw ForgeError(.invalidParams, "a pattern needs at least 2 instances") }
+        guard count <= 1000, count2 <= 1000, count <= 1000 / count2 else { throw ForgeError(.invalidParams, "at most 1000 instances") }
+        guard count * count2 >= 2 else { throw ForgeError(.invalidParams, "a pattern needs at least 2 instances") }
         let set = try copySet(ids)
         var s = self
         var created: [[String]] = [], added: [String] = []
@@ -282,6 +283,7 @@ extension Sketch {
                 } else if halfTurn, let i = s.constraints.firstIndex(where: { $0.id == c.id }) {
                     s.constraints[i].side = -s.constraints[i].side
                 }
+                if !rotates, map.k != 1, let v = c.value { s.setValue(c.id, v * map.k) }
             case .distance, .radius, .diameter, .offset:
                 if map.k != 1, let v = c.value { s.setValue(c.id, v * map.k) }
             default: break

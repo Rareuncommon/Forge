@@ -67,5 +67,15 @@ forge-cli mcp [--socket /tmp/forge.sock]         # MCP server (stdio + optional 
 
 MCP client configuration (e.g. Claude Code): `claude mcp add forge -- /path/to/forge-cli mcp`.
 
+MCP feature workflows are available directly through `get_feature_tree`, `edit_feature`,
+`rename_feature`, `suppress_feature`, `rollback_features`, `repair_reference`, and
+`rebuild`. Read or subscribe to `forge://document/features` for parameters and rebuild
+status. Create a document before an atomic batch; save/export and document switching
+must be separate calls (or explicitly non-atomic). Failed batches return `isError: true`
+and a structured `failed_index`; a non-atomic batch can retain earlier successful edits.
+
+The [workflow parity audit](docs/research/solidworks-parity-audit.md) describes remaining
+SolidWorks functionality and acceptance criteria. This remains an early part modeler.
+
 A script is JSON: `{"forge_script": 1, "commands": [{"command": "...", "params": {...}}],
 "expect": {"bodies": [{"body": "body-1", "volume_mm3": {"value": 1000, "tol": 1e-6}}]}}`.

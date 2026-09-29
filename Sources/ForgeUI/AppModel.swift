@@ -283,6 +283,7 @@ package final class AppModel {
     /// Live preview of the operation being set up (bodies it would create).
     package var preview = PreviewBox()
     package var previewVersion = 0
+    package var previewRequest = 0
     package var previewError: String?
     /// Context toolbar and shortcut bar (S key) positions in the viewport, when shown.
     package var contextToolbarAt: CGPoint?
@@ -307,6 +308,19 @@ package final class AppModel {
     package func run(_ command: String, _ params: JSONValue = [:]) async -> CommandOutcome? {
         do {
             let o = try await engine.execute(command, params)
+            if command == "document.new" || command == "document.open" {
+                documentPath = command == "document.open" ? params["path"]?.stringValue : nil
+                operation = nil
+                operationSketch = nil
+                editingFeature = nil
+                editReturnRollback = nil
+                sketchEditCount = 0
+                sketchState = SketchUIState()
+                dimensionEdit = nil
+                contextToolbarAt = nil
+                shortcutBarAt = nil
+                clearOperationPreview()
+            }
             log.append("\(command) ✓")
             lastError = nil
             if activeSketch != nil || command == "sketch.create" {
@@ -500,10 +514,10 @@ package final class AppModel {
         return out
     }
 
-    package var selectedEdges: [String] { selection.filter { $0.contains("/edge-") } }
+    package var selectedEdges: [String] { selection.filter { entityKind($0) == .edge } }
 
     /// Fillet / chamfer items: selected edges, and faces (all of a face's edges).
-    package var filletItems: [String] { selection.filter { $0.contains("/edge-") || $0.contains("/face-") } }
+    package var filletItems: [String] { selection.filter { entityKind($0) == .edge || entityKind($0) == .face } }
 
     /// One-line guidance for the status bar.
     package var hint: String {

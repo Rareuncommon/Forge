@@ -141,7 +141,7 @@ extension AppModel {
     private func planeOrFaceOptions(current: String) -> [(tag: String, title: String)] {
         var o = planeOptions
         if let f = selectedFace { o.append((f, "Selected face (\(shortName(f)))")) }
-        if current.contains("/face-") && current != selectedFace { o.append((current, shortName(current))) }
+        if entityKind(current) == .face && current != selectedFace { o.append((current, shortName(current))) }
         return o
     }
 

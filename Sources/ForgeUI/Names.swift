@@ -2,11 +2,16 @@ import ForgeCore
 import ForgeCommands
 import ForgeSketch
 
+/// Use the command bus parser so transient indices and persistent topology names behave alike.
+package func entityKind(_ ref: String) -> EntityRef.Kind? {
+    EntityRef(parsing: ref)?.kind
+}
+
 /// Icon of a selected reference (face, edge, vertex, sketch entity).
 package func entityIcon(_ ref: String) -> ForgeIcon {
-    if ref.contains("/face-") { return .plane }
-    if ref.contains("/edge-") { return .line }
-    if ref.contains("/vertex-") { return .point }
+    if entityKind(ref) == .face { return .plane }
+    if entityKind(ref) == .edge { return .line }
+    if entityKind(ref) == .vertex { return .point }
     let local = ref.split(separator: "/").last.map(String.init) ?? ref
     for (prefix, icon) in [("line", ForgeIcon.line), ("circle", .circle), ("arc", .arc), ("point", .point), ("spline", .spline), ("ellipse", .ellipse)]
     where local.hasPrefix(prefix) {

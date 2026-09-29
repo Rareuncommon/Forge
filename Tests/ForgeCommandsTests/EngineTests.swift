@@ -72,7 +72,7 @@ struct EngineTests {
         let e = try await engineWithDoc()
         let o = try await e.execute("body.create_box", ["width": "1 in", "height": 10, "depth": 10])
         #expect(abs(volume(o)! - 2540) < 1e-6)
-        #expect(o.changes.created == ["body-1"])
+        #expect(o.changes.created == ["body-1", "feature-1"])
         #expect(o.result["body"]?["topology"]?["faces"] == 6)
 
         let inch = Engine()
@@ -144,7 +144,7 @@ struct EngineTests {
         try await e.execute("body.create_box", ["width": 2, "height": 2, "depth": 2])
         await #expect(throws: ForgeError.self) { try await e.execute("edit.undo") }
         let c = try await e.execute("transaction.commit")
-        #expect(c.result["changes"]?["created"] == ["body-1", "body-2"])
+        #expect(c.result["changes"]?["created"] == ["body-1", "body-2", "feature-1", "feature-2"])
         let u = try await e.execute("edit.undo")
         #expect(u.result["undone"] == "two boxes")
         #expect(await e.activeDocument!.bodyOrder.isEmpty)
@@ -152,7 +152,7 @@ struct EngineTests {
         try await e.execute("transaction.begin")
         try await e.execute("body.create_box", ["width": 1, "height": 1, "depth": 1])
         let r = try await e.execute("transaction.rollback")
-        #expect(r.result["changes"]?["created"]?.arrayValue?.count == 1)
+        #expect(r.result["changes"]?["created"]?.arrayValue?.count == 2)
         #expect(await e.activeDocument!.bodyOrder.isEmpty)
         await #expect(throws: ForgeError.self) { try await e.execute("transaction.commit") }
     }
@@ -300,5 +300,68 @@ struct EngineTests {
         let stl = try await e.execute("export.stl", ["path": .string(dir.appendingPathComponent("a.stl").path), "body": "body-1"])
         #expect(stl.result["bytes"] == .number(84 + 12 * 50))  // binary STL: header + 12 triangles
         await #expect(throws: ForgeError.self) { try await e.execute("export.step", ["path": "/nonexistent-dir/x.step"]) }
+    }
+}
+
+@Suite("Metadata transaction history")
+struct MetadataTransactionTests {
+    @Test func referencePlaneAndFeatureRenameCanUndoAndRedo() async throws {
+        let e = Engine()
+        try await e.execute("document.new")
+        try await e.execute("transaction.begin")
+        let plane = try await e.execute("plane.create", ["reference": "front", "offset": 5])
+        #expect(plane.changes.created.contains("plane-1"))
+        try await e.execute("transaction.commit")
+        try await e.execute("edit.undo")
+        #expect(await e.activeDocument!.refPlanes.isEmpty)
+        try await e.execute("edit.redo")
+        #expect(await e.activeDocument!.refPlanes.count == 1)
+        try await e.execute("transaction.begin")
+        try await e.execute("feature.rename", ["feature": "feature-1", "name": "Datum"])
+        try await e.execute("transaction.commit")
+        try await e.execute("edit.undo")
+        #expect(await e.activeDocument!.features[0].name == "Plane1")
+        try await e.execute("edit.redo")
+        #expect(await e.activeDocument!.features[0].name == "Datum")
+    }
+}
+
+@Suite("Batch side effect isolation")
+struct BatchIsolationTests {
+    @Test func previewsAndDryRunsNeverWriteFiles() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("forge-batch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let engine = Engine()
+        try await engine.execute("document.new")
+        try await engine.execute("body.create_box", ["width": 1, "height": 1, "depth": 1])
+        for command in ["document.save", "export.step", "export.stl"] {
+            let path = dir.appendingPathComponent(command).path
+            let invocation = Invocation(command, ["path": .string(path), "body": "body-1"])
+            // Save and STEP have no body field.
+            let item = command == "export.stl" ? invocation : Invocation(command, ["path": .string(path)])
+            let batch = try await engine.executeBatch([item], atomic: false, dryRun: true)
+            #expect(batch.failedIndex == 0 && batch.error?.code == .unsupported)
+            await #expect(throws: ForgeError.self) { try await engine.preview([item]) }
+            #expect(!FileManager.default.fileExists(atPath: path))
+        }
+        #expect(await engine.activeDocument!.bodyOrder == ["body-1"])
+    }
+
+    @Test func atomicBatchRejectsSessionBoundariesBeforeExecuting() async throws {
+        let engine = Engine()
+        try await engine.execute("document.new")
+        for command in ["document.new", "document.close", "transaction.begin", "transaction.commit", "edit.undo"] {
+            let batch = try await engine.executeBatch([
+                Invocation("body.create_box", ["width": 1, "height": 1, "depth": 1]), Invocation(command)
+            ])
+            #expect(batch.failedIndex == 1 && batch.error?.code == .unsupported)
+            #expect(batch.outcomes.isEmpty && !batch.committed)
+            #expect(await engine.activeDocument!.bodyOrder.isEmpty)
+            #expect(await engine.activeTransaction == nil)
+        }
+        let batch = try await engine.executeBatch([Invocation("document.new")], atomic: false)
+        #expect(batch.committed)
+        #expect(await engine.activeDocument!.id == "doc-2")
     }
 }
