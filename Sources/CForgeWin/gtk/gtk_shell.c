@@ -271,6 +271,7 @@ static GMenuModel *appMenu(void) {
     GMenu *m = g_menu_new(), *file = g_menu_new(), *exp = g_menu_new(), *edit = g_menu_new(), *view = g_menu_new(), *help = g_menu_new();
     item(file, "New Part", FW_MENU_NEW);
     item(file, "Open…", FW_MENU_OPEN);
+    item(file, "Import STEP…", FW_MENU_IMPORT_STEP);
     item(file, "Save", FW_MENU_SAVE);
     item(file, "Save As…", FW_MENU_SAVE_AS);
     item(exp, "Export STEP…", FW_MENU_EXPORT_STEP);
@@ -1409,7 +1410,9 @@ void fw_message(fw_app *a, const char *title, const char *message, int error) {
 
 static void onFile(GObject *src, GAsyncResult *res, gpointer data) {
     DialogResult *r = data;
-    GFile *f = r->button == 1 ? gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(src), res, NULL) : gtk_file_dialog_save_finish(GTK_FILE_DIALOG(src), res, NULL);
+    GFile *f = r->button == 1 ? gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(src), res, NULL)
+        : r->button == 2 ? gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL)
+        : gtk_file_dialog_save_finish(GTK_FILE_DIALOG(src), res, NULL);
     if (f) {
         r->path = g_file_get_path(f);
         g_object_unref(f);
@@ -1441,6 +1444,24 @@ char *fw_open_dialog(fw_app *a) {
     gtk_file_dialog_set_title(d, "Open a Forge part (.forgepart folder)");
     DialogResult r = {0, 1, NULL};
     gtk_file_dialog_select_folder(d, GTK_WINDOW(a->window), NULL, onFile, &r);
+    wait(&r);
+    g_object_unref(d);
+    return mallocCopy(r.path);
+}
+
+char *fw_import_step_dialog(fw_app *a) {
+    GtkFileDialog *d = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(d, "Import STEP solids");
+    GtkFileFilter *filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(filter, "STEP files");
+    gtk_file_filter_add_pattern(filter, "*.step");
+    gtk_file_filter_add_pattern(filter, "*.stp");
+    gtk_file_filter_add_pattern(filter, "*.STEP");
+    gtk_file_filter_add_pattern(filter, "*.STP");
+    gtk_file_dialog_set_default_filter(d, filter);
+    g_object_unref(filter);
+    DialogResult r = {0, 2, NULL};
+    gtk_file_dialog_open(d, GTK_WINDOW(a->window), NULL, onFile, &r);
     wait(&r);
     g_object_unref(d);
     return mallocCopy(r.path);

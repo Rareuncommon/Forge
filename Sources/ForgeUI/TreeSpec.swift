@@ -126,6 +126,11 @@ extension AppModel {
         menu.append((f.suppressed ? "Unsuppress" : "Suppress", { [unowned self] in
             Task { await run("feature.suppress", ["feature": .string(f.id), "suppressed": .bool(!f.suppressed)]) }
         }))
+        menu.append(("Parent/Child…", { [unowned self] in Task { await showFeatureDependencies(f.id) } }))
+        if rollback == nil, let index = features.firstIndex(where: { $0.id == f.id }) {
+            if index > 0 { menu.append(("Move Up", { [unowned self] in Task { await moveFeature(f.id, by: -1) } })) }
+            if index + 1 < features.count { menu.append(("Move Down", { [unowned self] in Task { await moveFeature(f.id, by: 1) } })) }
+        }
         menu.append(("Rollback", { [unowned self] in Task { await run("feature.rollback", ["before": .string(f.id)]) } }))
         if let e = f.error { menu.append(("What's Wrong?", { [unowned self] in lastError = ForgeError(.referenceLost, "\(f.name): \(e)") })) }
         menu.append(("Delete", { [unowned self] in Task { await run("feature.delete", ["feature": .string(f.id)]) } }))

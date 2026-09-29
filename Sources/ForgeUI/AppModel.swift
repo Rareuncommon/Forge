@@ -19,7 +19,7 @@ package enum RibbonTab: String, CaseIterable, Identifiable {
 package enum Operation: Hashable {
     case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, linearPattern, circularPattern, mirror, combine
     case sweep, cutSweep, loft, cutLoft, rib
-    case massProperties, measure, check
+    case massProperties, measure, check, interference
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
     case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
@@ -49,6 +49,7 @@ package enum Operation: Hashable {
         case .massProperties: "Mass Properties"
         case .measure: "Measure"
         case .check: "Check"
+        case .interference: "Interference Detection"
         case .primitive(let p): p.title
         case .addRelation: "Add Relations"
         case .displayRelations: "Display/Delete Relations"
@@ -84,6 +85,7 @@ package enum Operation: Hashable {
         case .massProperties: .massProps
         case .measure: .measure
         case .check: .check
+        case .interference: .combine
         case .primitive(let p): p.icon
         case .addRelation: .addRelation
         case .displayRelations: .hideShow
@@ -98,7 +100,7 @@ package enum Operation: Hashable {
     }
 
     /// Results-only panels (nothing to commit).
-    package var isReport: Bool { self == .massProperties || self == .measure || self == .check || self == .displayRelations }
+    package var isReport: Bool { self == .massProperties || self == .measure || self == .check || self == .interference || self == .displayRelations }
 }
 
 package enum Primitive: String, CaseIterable, Identifiable {
@@ -284,6 +286,7 @@ package final class AppModel {
     package var preview = PreviewBox()
     package var previewVersion = 0
     package var previewRequest = 0
+    package var interferenceRequest = 0
     package var previewError: String?
     /// Context toolbar and shortcut bar (S key) positions in the viewport, when shown.
     package var contextToolbarAt: CGPoint?
@@ -308,6 +311,8 @@ package final class AppModel {
     package func run(_ command: String, _ params: JSONValue = [:]) async -> CommandOutcome? {
         do {
             let o = try await engine.execute(command, params)
+            interferenceRequest += 1
+            if operation == .interference && !command.hasPrefix("selection.") { form.result = nil }
             if command == "document.new" || command == "document.open" {
                 documentPath = command == "document.open" ? params["path"]?.stringValue : nil
                 operation = nil
@@ -449,7 +454,7 @@ package final class AppModel {
     /// already picked, removes from) the selection instead of replacing it, as in SolidWorks.
     package var collectsPicks: Bool {
         guard let op = operation else { return false }
-        return [Operation.fillet, .chamfer, .shell, .draft, .measure, .massProperties, .check, .combine].contains(op) || op.isSketchOperation
+        return [Operation.fillet, .chamfer, .shell, .draft, .measure, .massProperties, .check, .interference, .combine].contains(op) || op.isSketchOperation
     }
 
     /// A viewport or tree pick. `extend` (⇧, ⌘ or ⌃ held) toggles the item in the selection;

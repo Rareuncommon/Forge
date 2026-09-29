@@ -13,6 +13,7 @@ extension CommandRegistry {
         r.register(DocumentState.self)
         r.register(DocumentSave.self)
         r.register(DocumentOpen.self)
+        r.register(DocumentImportSTEP.self)
         r.register(EditUndo.self)
         r.register(EditRedo.self)
         r.register(TransactionBegin.self)
@@ -83,6 +84,9 @@ extension CommandRegistry {
         r.register(BodyRename.self)
         // feature tree
         r.register(FeatureList.self)
+        r.register(FeatureGet.self)
+        r.register(FeatureDependencies.self)
+        r.register(FeatureReorder.self)
         r.register(FeatureEdit.self)
         r.register(FeatureRepairReference.self)
         r.register(FeatureRename.self)
@@ -99,6 +103,7 @@ extension CommandRegistry {
         r.register(QueryMassProperties.self)
         r.register(QueryMeasure.self)
         r.register(QueryValidate.self)
+        r.register(QueryInterference.self)
         r.register(QueryCompareToSpec.self)
         // selection
         r.register(SelectionSet.self)

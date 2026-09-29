@@ -403,6 +403,7 @@ final class WinShell {
         switch id {
         case FW_MENU_NEW: Task { await model.run("document.new", ["name": "Part1"]) }
         case FW_MENU_OPEN: model.openDocument()
+        case FW_MENU_IMPORT_STEP: model.importSTEP()
         case FW_MENU_SAVE: model.saveDocument(as: false)
         case FW_MENU_SAVE_AS: model.saveDocument(as: true)
         case FW_MENU_EXPORT_STEP: model.export("step")
@@ -453,6 +454,14 @@ final class WinPlatform: PlatformServices {
 
     func chooseSavePath(suggestedName name: String) -> String? {
         guard let p = fw_save_dialog(app, name) else { return nil }
+        defer { fw_free(p) }
+        return String(cString: p)
+    }
+
+    func showMessage(_ title: String, _ message: String) { fw_message(app, title, message, 0) }
+
+    func chooseImportSTEPPath() -> String? {
+        guard let p = fw_import_step_dialog(app) else { return nil }
         defer { fw_free(p) }
         return String(cString: p)
     }

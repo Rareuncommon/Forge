@@ -327,6 +327,18 @@ extension AppModel {
             case .torus: c = [field("major", "Major radius", unit: "mm", \.torusMajor), field("minor", "Minor radius", unit: "mm", \.torusMinor)]
             }
             s.append(PanelSection("Parameters", controls: c))
+        case .interference:
+            var controls: [PanelControl] = [
+                note("scope", "Select at least two bodies, or clear selection to check all. Touching faces are not interference. Recalculate after changes."),
+                PanelControl(id: "calculate", kind: .buttons([(title: "Calculate", action: { [unowned self] in Task { await computeInterference() } })])),
+            ]
+            if let result = form.result {
+                controls.append(PanelControl(id: "count", kind: .value(label: "Interferences", value: String(result["interference_count"]?.intValue ?? 0))))
+                for (index, pair) in interferencePairs.enumerated() {
+                    controls.append(PanelControl(id: "pair-\(index)", kind: .buttons([(title: interferenceLabel(pair), action: { [unowned self] in Task { await selectInterference(pair) } })])))
+                }
+            }
+            s.append(PanelSection("Results", controls: controls))
         case .massProperties, .measure, .check:
             let rows = form.result.map(Self.keyValues) ?? []
             s.append(PanelSection(op == .measure ? "Measure" : "Results", controls: rows.isEmpty

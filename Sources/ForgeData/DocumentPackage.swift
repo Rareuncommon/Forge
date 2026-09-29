@@ -7,14 +7,14 @@ import Foundation
 ///     Name.forgepart/
 ///       manifest.json          format, schema version, kind, app/kernel versions, units
 ///       model.json             authoritative, human-diffable document content
-///       bodies/<id>.brep       canonical binary BREP of every body (base bodies, and the
-///                              regeneration result of the feature tree)
+///       bodies/<id>.brep       canonical binary BREP of regenerated output bodies
+///       bodies/base/<id>.brep  authoritative originals of imported/legacy base bodies
 ///       thumbnails/thumbnail.png
 ///
 /// JSON is written with sorted keys and 2-space indentation, and BREP is canonical, so saving
 /// an unchanged document reproduces identical bytes (git- and PDM-friendly).
 public struct DocumentPackage: Sendable, Equatable {
-    public static let currentSchema = 2
+    public static let currentSchema = 3
     public static let formatName = "forge-document"
 
     public var manifest: Manifest
@@ -22,12 +22,15 @@ public struct DocumentPackage: Sendable, Equatable {
     /// BREP bytes by body id.
     public var breps: [String: Data]
     public var thumbnailPNG: Data?
+    /// Original geometry of imported/base bodies, independent of regenerated output.
+    public var baseBreps: [String: Data]
 
-    public init(manifest: Manifest, model: Model, breps: [String: Data], thumbnailPNG: Data?) {
+    public init(manifest: Manifest, model: Model, breps: [String: Data], thumbnailPNG: Data?, baseBreps: [String: Data] = [:]) {
         self.manifest = manifest
         self.model = model
         self.breps = breps
         self.thumbnailPNG = thumbnailPNG
+        self.baseBreps = baseBreps
     }
 
     public struct Manifest: Codable, Sendable, Equatable {
@@ -122,6 +125,7 @@ public struct DocumentPackage: Sendable, Equatable {
         public var nextFeature: Int
         public var featureCounters: [String: Int]
         public var baseBodies: [String]
+        public var baseSources: [BodyRecord]?
         public var bodyNames: [String: String]
         /// Reference planes (outputs of Plane features), as JSON records.
         public var refPlanes: [JSONValue]?
@@ -130,7 +134,7 @@ public struct DocumentPackage: Sendable, Equatable {
         public init(
             name: String, units: UnitSystem, bodies: [BodyRecord], sketches: [Sketch], nextBody: Int, nextSketch: Int,
             features: [FeatureRecord] = [], rollback: Int? = nil, nextFeature: Int = 1, featureCounters: [String: Int] = [:],
-            baseBodies: [String] = [], bodyNames: [String: String] = [:], refPlanes: [JSONValue]? = nil, nextPlane: Int? = nil
+            baseBodies: [String] = [], bodyNames: [String: String] = [:], refPlanes: [JSONValue]? = nil, nextPlane: Int? = nil, baseSources: [BodyRecord]? = nil
         ) {
             self.name = name
             self.units = units
@@ -143,6 +147,7 @@ public struct DocumentPackage: Sendable, Equatable {
             self.nextFeature = nextFeature
             self.featureCounters = featureCounters
             self.baseBodies = baseBodies
+            self.baseSources = baseSources
             self.bodyNames = bodyNames
             self.refPlanes = refPlanes
             self.nextPlane = nextPlane
@@ -155,6 +160,7 @@ public struct DocumentPackage: Sendable, Equatable {
             case nextFeature = "next_feature"
             case featureCounters = "feature_counters"
             case baseBodies = "base_bodies"
+            case baseSources = "base_sources"
             case bodyNames = "body_names"
             case refPlanes = "ref_planes"
             case nextPlane = "next_plane"
@@ -177,12 +183,29 @@ public struct DocumentPackage: Sendable, Equatable {
             "manifest.json": try Self.json(manifest),
             "model.json": try Self.json(model),
         ]
+        guard model.baseBodies.isEmpty || model.baseSources != nil else {
+            throw ForgeError(.ioError, "base bodies require original BREP source records")
+        }
         var bodyIDs = Set<String>()
         for b in model.bodies {
             guard bodyIDs.insert(b.id).inserted else { throw ForgeError(.ioError, "duplicate body id \(b.id)") }
             try Self.validateBodyPath(b.brep)
             guard out[b.brep] == nil else { throw ForgeError(.ioError, "duplicate package path \(b.brep)") }
             guard let data = breps[b.id] else { throw ForgeError(.internalError, "missing BREP for \(b.id)") }
+            out[b.brep] = data
+        }
+        if let sources = model.baseSources {
+            guard Set(sources.map(\.id)) == Set(model.baseBodies), sources.count == model.baseBodies.count,
+                  Set(model.baseBodies).count == model.baseBodies.count else {
+                throw ForgeError(.ioError, "base body source records do not match base_bodies")
+            }
+        }
+        var sourceIDs = Set<String>()
+        for b in model.baseSources ?? [] {
+            guard sourceIDs.insert(b.id).inserted else { throw ForgeError(.ioError, "duplicate base body id \(b.id)") }
+            try Self.validateBodyPath(b.brep)
+            guard out[b.brep] == nil else { throw ForgeError(.ioError, "duplicate package path \(b.brep)") }
+            guard let data = baseBreps[b.id] else { throw ForgeError(.internalError, "missing base BREP for \(b.id)") }
             out[b.brep] = data
         }
         if let t = thumbnailPNG { out["thumbnails/thumbnail.png"] = t }
@@ -276,7 +299,10 @@ public struct DocumentPackage: Sendable, Equatable {
             version += 1
         }
         let manifest = try JSONCoding.fromJSON(Manifest.self, manifestJSON)
-        let model = try JSONCoding.fromJSON(Model.self, modelJSON)
+        var model = try JSONCoding.fromJSON(Model.self, modelJSON)
+        guard schema < 3 || model.baseBodies.isEmpty || model.baseSources != nil else {
+            throw ForgeError(.ioError, "base bodies require original BREP source records")
+        }
         var breps: [String: Data] = [:]
         var paths = Set<String>()
         for b in model.bodies {
@@ -285,10 +311,33 @@ public struct DocumentPackage: Sendable, Equatable {
             guard breps[b.id] == nil else { throw ForgeError(.ioError, "duplicate body id \(b.id)") }
             breps[b.id] = try load(b.brep)
         }
+        var baseBreps: [String: Data] = [:]
+        for b in model.baseSources ?? [] {
+            guard paths.insert(b.brep).inserted else { throw ForgeError(.ioError, "duplicate package path \(b.brep)") }
+            try validateBodyPath(b.brep)
+            guard baseBreps[b.id] == nil else { throw ForgeError(.ioError, "duplicate base body id \(b.id)") }
+            baseBreps[b.id] = try load(b.brep)
+        }
+        if schema < 3, model.baseSources == nil, !model.baseBodies.isEmpty {
+            model.baseSources = try model.baseBodies.map { id in
+                guard var record = model.bodies.first(where: { $0.id == id }), let data = breps[id] else {
+                    throw ForgeError(.ioError, "missing legacy base body \(id)")
+                }
+                record.brep = "bodies/base/\(id).brep"
+                try validateBodyPath(record.brep)
+                baseBreps[id] = data
+                return record
+            }
+        }
+        if let sources = model.baseSources {
+            guard Set(sources.map(\.id)) == Set(model.baseBodies), Set(model.baseBodies).count == model.baseBodies.count else {
+                throw ForgeError(.ioError, "base body source records do not match base_bodies")
+            }
+        }
         let thumb = try? load("thumbnails/thumbnail.png")
         var m = manifest
         m.schema = currentSchema
-        return DocumentPackage(manifest: m, model: model, breps: breps, thumbnailPNG: thumb)
+        return DocumentPackage(manifest: m, model: model, breps: breps, thumbnailPNG: thumb, baseBreps: baseBreps)
     }
 }
 
@@ -305,6 +354,9 @@ public enum Migrations {
             o["base_bodies"] = .array(ids.map { .string($0) })
             o["body_names"] = .object([:])
             return .object(o)
-        }
+        },
+        // 2 → 3: JSON fields are additive. read(from:) duplicates legacy base payloads
+        // into independent original records after loading the BREP bytes.
+        2: { model in model }
     ]
 }

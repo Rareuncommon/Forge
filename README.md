@@ -7,7 +7,7 @@ bus, reachable from the UI, scripts, `forge-cli` and MCP alike.
 - **Spec:** [SPEC.md](SPEC.md) · **Parity matrix:** [FEATURES.md](FEATURES.md) ·
   **Status:** [PROGRESS.md](PROGRESS.md) · **Decisions:** [docs/adr/](docs/adr/) ·
   **Licenses:** [docs/LICENSES.md](docs/LICENSES.md)
-- **Milestone:** M0 (foundations) done headless; M1 (sketcher) in progress. This is a multi-year project; see FEATURES.md for the
+- **Milestone:** M0 foundations are implemented; M1 sketching and M2 part modeling are in progress. This is a multi-year project; see FEATURES.md for the
   honest state of every SolidWorks capability.
 
 ![Headless render of a golden model](docs/images/m0-multiview.png)
@@ -67,12 +67,31 @@ forge-cli mcp [--socket /tmp/forge.sock]         # MCP server (stdio + optional 
 
 MCP client configuration (e.g. Claude Code): `claude mcp add forge -- /path/to/forge-cli mcp`.
 
-MCP feature workflows are available directly through `get_feature_tree`, `edit_feature`,
-`rename_feature`, `suppress_feature`, `rollback_features`, `repair_reference`, and
-`rebuild`. Read or subscribe to `forge://document/features` for parameters and rebuild
+MCP feature workflows are available directly through `get_feature_tree`, `get_feature`,
+`get_feature_dependencies`, `reorder_feature`, `edit_feature`, `rename_feature`,
+`suppress_feature`, `rollback_features`, `repair_reference`, and `rebuild`. Read or subscribe to `forge://document/features` for parameters and rebuild
 status. Create a document before an atomic batch; save/export and document switching
 must be separate calls (or explicitly non-atomic). Failed batches return `isError: true`
 and a structured `failed_index`; a non-atomic batch can retain earlier successful edits.
+
+Use **File → Import STEP** (or MCP `import_step` / command `document.import_step`)
+in a new part before creating sketches or features. Repeated imports can add more solid
+bodies before modeling starts. Original imported BREP is embedded in schema-3 documents,
+so later rebuilds do not need the source STEP file. Assembly structure, PMI, source
+names/colors, surface-only files and automatic healing are not imported.
+
+Feature context menus provide **Parent/Child**, **Move Up** and **Move Down**. The
+matching `feature.dependencies` and `feature.reorder` commands inspect direct/transitive
+relationships and validate proposed moves before committing. Reordering requires the
+rollback bar at the end, preserves dependencies and output ids, and refuses invalid
+rebuilds. Some geometrically possible moves are deliberately refused when implicit
+all-body scopes would change.
+
+**Interference Detection** checks all bodies, or a selected subset, and lists overlap
+volume in mm³; selecting a result highlights both bodies. MCP `check_interference` and
+command `query.interference` return exact BREP overlap volumes and bounding boxes.
+Touching alone is not interference. Calls support at most 100 bodies; this is a
+multibody part check, not assembly interference or collision during motion.
 
 The [workflow parity audit](docs/research/solidworks-parity-audit.md) describes remaining
 SolidWorks functionality and acceptance criteria. This remains an early part modeler.

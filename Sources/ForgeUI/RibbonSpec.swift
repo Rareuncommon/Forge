@@ -184,6 +184,7 @@ extension AppModel {
                 button("measure", .measure, "Measure", help: "Distance between two selected entities", active: operation == .measure, enabled: hasBody, op(.measure)),
                 button("massProps", .massProps, "Mass Properties", help: "Volume, surface area and centre of mass", active: operation == .massProperties, enabled: hasBody,
                        op(.massProperties)),
+                button("interference", .combine, "Interference Detection", help: "Find overlapping solid volume between selected bodies, or all bodies", active: operation == .interference, enabled: bodies.count >= 2, op(.interference)),
                 button("check", .check, "Check", help: "Validate body geometry and topology", active: operation == .check, enabled: hasBody, op(.check)),
             ]),
         ]

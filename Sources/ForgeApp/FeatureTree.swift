@@ -231,6 +231,11 @@ private struct FeatureNode: View {
         Button(feature.suppressed ? "Unsuppress" : "Suppress") {
             Task { await model.run("feature.suppress", ["feature": .string(feature.id), "suppressed": .bool(!feature.suppressed)]) }
         }
+        Button("Parent/Child…") { Task { await model.showFeatureDependencies(feature.id) } }
+        if model.rollback == nil, let index = model.features.firstIndex(where: { $0.id == feature.id }) {
+            if index > 0 { Button("Move Up") { Task { await model.moveFeature(feature.id, by: -1) } } }
+            if index + 1 < model.features.count { Button("Move Down") { Task { await model.moveFeature(feature.id, by: 1) } } }
+        }
         Button("Rollback") { Task { await model.run("feature.rollback", ["before": .string(feature.id)]) } }
         Button("Rename") {
             newName = feature.name

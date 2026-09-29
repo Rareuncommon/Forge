@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 1000 rows — not started: 843 · in progress: 131 · done: 26 · verified: 0
+**Totals:** 1000 rows — not started: 841 · in progress: 131 · done: 28 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -40,22 +40,22 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/mcp-open-save` | MCP tools: open, save (§5.2) | in progress | ForgeMCP | Tests/ForgeCommandsTests/FileTests.swift | open, save | bodies + sketches; no feature tree yet |
 | `P/mcp-export` | MCP tools: export (§5.2) | done | ForgeMCP | Tests/ForgeCommandsTests/EngineTests.swift | export_step, export_stl |  |
 | `P/mcp-mutate` | MCP tools: execute, execute_batch, undo, redo, transactions (§5.2) | done | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | execute, execute_batch, undo, redo, *_transaction | edit_feature/edit_dimension/set_parameter/delete need the feature tree (M2) |
-| `P/mcp-feature-tools` | MCP tools: get_feature_tree, get_feature, get_sketch, edit_feature, edit_dimension, set_parameter, get_parameters, get_errors, explain_error (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | get_sketch, edit_dimension | get_sketch and edit_dimension done; feature-tree tools need M2 Direct get_feature_tree, edit_feature, rename_feature, suppress_feature, rollback_features, repair_reference and rebuild aliases now available; get_feature, parameters and explain_error remain pending. |
+| `P/mcp-feature-tools` | MCP tools: get_feature_tree, get_feature, get_sketch, edit_feature, edit_dimension, set_parameter, get_parameters, get_errors, explain_error (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift, Tests/ForgeCommandsTests/FeatureHistoryTests.swift | get_feature_tree, get_feature, get_feature_dependencies, reorder_feature, edit_feature | Direct inspection/edit/rename/suppress/rollback/repair/rebuild tools; dependency inspection and validated reorder added. Parameters, set_parameter, get_errors and explain_error remain pending. |
 | `P/mcp-query-geometry` | MCP tool: query_geometry (semantic references, §4.3) | not started | — | — | — |  |
 | `P/mcp-vision` | MCP tools: render_view, render_multiview, pick (§5.2) | in progress | ForgeMCP / ForgeRender | Tests/ForgeMCPTests/MCPTests.swift, Tests/ForgeCommandsTests/EngineTests.swift | render_view, render_multiview, pick | section parameter pending |
 | `P/mcp-verification` | MCP tools: validate_model, compare_to_spec (§5.2) | in progress | ForgeMCP / ForgeCommands | Tests/ForgeMCPTests/MCPTests.swift, Tests/GoldenModelTests | validate_model, compare_to_spec | validate_model: validity + free edges; self-intersection/zero-thickness detail and explain_error pending |
-| `P/mcp-interference` | MCP tool: check_interference (§5.2) | not started | — | — | — |  |
+| `P/mcp-interference` | MCP tool: check_interference (§5.2) | done | ForgeMCP / ForgeCommands | Tests/ForgeCommandsTests/InterferenceTests.swift, Tests/IntegrationTests/test_mcp_stdio.py | check_interference | Read-only multibody part overlaps and bounding boxes in mm³; at most 100 bodies. Assembly components and motion collisions are not implemented. |
 | `P/mcp-resources` | MCP resources + update notifications (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | forge://commands, forge://document/state, forge://document/journal | feature tree & parameter resources pending (M2) Four resources including subscribable forge://document/features; notifications currently local to the connection performing mutations. |
 | `P/mcp-prompts` | MCP prompts (§5.2) | in progress | ForgeMCP | Tests/ForgeMCPTests/MCPTests.swift | model_from_description, verify_model | drawing/static-study prompts land with M5/M7 |
 | `P/plugins-swift` | Swift plugin bundles: commands, features, panels, translators (§5.3) | not started | — | — | — |  |
 | `P/scripting-js` | JavaScriptCore scripting (§5.3) | not started | — | — | — |  |
 | `P/scripting-python` | Python via forge-cli/socket (§5.3) | not started | — | — | — |  |
 | `P/macro-recorder` | Macro recorder with semantic references (§5.3) | not started | — | — | — |  |
-| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeCommandsTests/FileTests.swift | execute:feature.* | recorded body commands replayed on change; rollback, suppress, delete, rename, edit, error isolation, stable body ids, file schema 2; reorder/freeze/folders pending; face/edge references by persistent name (ADR 0002); editing a feature rolls back to it |
+| `P/feature-tree` | Feature tree: rollback, reorder, suppress, freeze, folders, errors (§4.1) | in progress | ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/FeatureHistoryTests.swift, Tests/ForgeUITests/ModelWorkflowTests.swift | get_feature, get_feature_dependencies, reorder_feature, execute:feature.* | Recorded commands replay with stable ids, rollback, suppress, delete, rename, edit and errors. Parent/child inspection and atomic validated reorder with desktop context menus. Refuses rollback, broken dependencies, scope changes and invalid rebuilds. Freeze/folders remain pending. |
 | `P/persistent-naming` | Persistent naming (§4.2) | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/NamingTests.swift, Tests/ForgeUITests/AppModelTests.swift | query_faces (persistent_id), execute:query.find_faces, execute:feature.repair_reference | faces named from OCCT history (booleans, fillet, chamfer, shell, draft, extrude, revolve, transform, patterns, holes); edges by adjacent faces; features store names; split → set or reference_lost; ranked repairs; torture tests: dimension change, upstream insert, split edge, suppressed upstream; sweep/loft/rib faces named too; vertex references pending |
 | `P/semantic-refs` | Semantic references (§4.3) | not started | — | — | — |  |
 | `P/parameters` | Global variables, equations, linked dims, design tables, configurations (§4.4) | not started | — | — | — |  |
-| `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | in progress | ForgeData | Tests/ForgeCommandsTests/FileTests.swift, Tests/GoldenModelTests/GoldenModelTests.swift | execute:document.save, execute:document.open | v1 package (ADR 0004): manifest, model.json, BREP bodies, thumbnail; byte-identical save→open→save; migration table empty; Quick Look/Spotlight NOT IMPLEMENTED Malformed schema versions, duplicate body payload records, path traversal and external payload symlinks rejected; broader semantic model validation remains pending. |
+| `P/file-format` | Package file format, schema migration, Quick Look/Spotlight (§4.5) | in progress | ForgeData / ForgeCommands | Tests/ForgeCommandsTests/FileTests.swift, Tests/ForgeCommandsTests/STEPImportTests.swift, Tests/ForgeCommandsTests/PackageValidationTests.swift | open, save, import_step | Schema 3 stores authoritative original base BREP separately from current outputs, including deleted outputs; schema 1/2 migration supported. Unsafe paths, duplicate/aliased payload records and missing base sources rejected. Quick Look/Spotlight and cache hashes remain pending. |
 | `P/background-regen` | Background regeneration with cancellation (§3) | in progress | ForgeCommands | — | — | Engine actor keeps work off the main thread; cancellation pending (M2) |
 | `P/metal-viewport` | Metal viewport: shaded+edges, orbit/pan/zoom, GPU picking (§2, M0) | in progress | ForgeRender | — | — | unverified: written, never compiled (Linux session). See PROGRESS.md |
 | `P/headless-render` | Headless software renderer + PNG (render_view backend) | done | ForgeRender | Tests/ForgeRenderTests/RenderTests.swift | render_view |  |
@@ -754,7 +754,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.12/deviation-analysis` | deviation analysis | not started | ForgeModel | — | — |  |
 | `7.12/parting-line-analysis` | parting line analysis | not started | ForgeModel | — | — |  |
 | `7.12/symmetry-check` | symmetry check | not started | ForgeModel | — | — |  |
-| `7.12/interference-check-between-bodies` | interference check between bodies | not started | ForgeModel | — | — |  |
+| `7.12/interference-check-between-bodies` | interference check between bodies | done | ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/InterferenceTests.swift, Tests/ForgeUITests/ModelWorkflowTests.swift | check_interference | Exact pairwise solid overlap volume and bounding box; touching excluded; finite nonnegative mm³ threshold; up to 100 bodies; read-only with desktop result selection. |
 | `7.12/dfmxpress` | DFMXpress | not started | ForgeModel | — | — |  |
 | `7.12/dfmxpress/manufacturability-rules` | ↳ manufacturability rules | not started | ForgeModel | — | — |  |
 | `7.12/costing` | Costing | not started | ForgeModel | — | — |  |
@@ -1059,7 +1059,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 |---|---|---|---|---|---|---|
 | `7.20/native/own-formats` | Native: own formats | not started | ForgeData | — | — |  |
 | `7.20/native/own-formats/section-4-5` | ↳ Section 4.5 | not started | ForgeData | — | — |  |
-| `7.20/neutral/step-ap203-214-242` | Neutral: STEP AP203/214/242 | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/ForgeCommandsTests/EngineTests.swift | export_step | AP214 export; kernel-level import (no command yet); no PMI |
+| `7.20/neutral/step-ap203-214-242` | Neutral: STEP AP203/214/242 | in progress | ForgeKernel / ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/STEPImportTests.swift | import_step, export_step | AP214 export and solid-only STEP import before feature history; independent embedded original BREP supports replay/save/open/undo/redo. No assembly hierarchy, metadata, PMI, surface-only import or automatic healing. |
 | `7.20/neutral/step-ap203-214-242/with-pmi` | ↳ with PMI | not started | ForgeData | — | — |  |
 | `7.20/neutral/iges` | Neutral: IGES | not started | ForgeData | — | — |  |
 | `7.20/neutral/parasolid-via-step-only` | Neutral: Parasolid via STEP only | not started | ForgeData | — | — |  |

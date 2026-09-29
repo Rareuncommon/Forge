@@ -66,3 +66,5 @@ int fw_pick_begin(fw_app *p0) { return 0; }
 int fw_pick_end(fw_app *p0, int x0, int y0, int w, int h, uint32_t *objects, uint32_t *elements) { return 0; }
 uint8_t *fw_capture(fw_app *p0, int *width, int *height) { return NULL; }
 void fw_app_quit(fw_app *p0) {  }
+
+char *fw_import_step_dialog(fw_app *a) { (void)a; return NULL; }
