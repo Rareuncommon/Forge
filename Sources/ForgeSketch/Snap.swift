@@ -137,7 +137,7 @@ extension Sketch {
     /// What to dimension for the picked entities (in pick order), measured now: one line →
     /// length; circle → diameter; arc → radius; two lines → angle (distance if parallel); two
     /// points, a point and a line, or curves' centres → distance. `mode` chooses horizontal or
-    /// vertical instead of aligned distance between two points.
+    /// vertical instead of aligned distance for a line or between two points.
     public func measure(_ ids: [String], mode: ConstraintKind = .distance) -> SketchMeasurement? {
         let es = ids.compactMap { entities[$0] }
         guard es.count == ids.count, !es.isEmpty else { return nil }
@@ -155,7 +155,11 @@ extension Sketch {
             switch e.kind {
             case .line:
                 let a = p(e.points[0]), b = p(e.points[1])
-                return SketchMeasurement(kind: .distance, value: hypot(b.u - a.u, b.v - a.v))
+                switch mode {
+                case .horizontalDistance: return SketchMeasurement(kind: .horizontalDistance, value: abs(b.u - a.u))
+                case .verticalDistance: return SketchMeasurement(kind: .verticalDistance, value: abs(b.v - a.v))
+                default: return SketchMeasurement(kind: .distance, value: hypot(b.u - a.u, b.v - a.v))
+                }
             case .circle:
                 return SketchMeasurement(kind: .diameter, value: 2 * params[e.params[0]])
             case .arc:

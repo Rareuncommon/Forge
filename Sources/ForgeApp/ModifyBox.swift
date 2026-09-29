@@ -10,7 +10,8 @@ struct ModifyBox: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        if let edit = model.dimensionEdit {
+        // Opens once the value is placed (or to ask for a second entity after a point).
+        if let edit = model.dimensionEdit, edit.placed || edit.measurement == nil {
             ZStack(alignment: .topLeading) {
                 Color.clear.allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 8) {
@@ -80,8 +81,10 @@ struct ModifyBox: View {
         }
     }
 
+    /// A line or two points: the dimension can be aligned, horizontal or vertical.
     private func isPointPair(_ e: DimensionEdit) -> Bool {
-        guard e.entities.count == 2, let sk = model.sketchState.sketch else { return false }
-        return e.entities.allSatisfy { id in [.point, .circle, .arc].contains(sk.entities[id]?.kind) }
+        guard let sk = model.sketchState.sketch else { return false }
+        let kinds = e.entities.map { sk.entities[$0]?.kind }
+        return kinds == [.line] || kinds == [.point, .point]
     }
 }

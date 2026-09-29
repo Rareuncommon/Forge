@@ -106,6 +106,10 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
     /// Internal rows of a split piece that its joins imply by construction: considered last in
     /// the rank analysis, so they (not the joins) are what is dropped as dependent.
     public var yields: Bool = false
+    /// Dimensions: where the value is drawn, [du, dv] mm from the dimension's reference point
+    /// (`Sketch.dimensionReference`: the middle of a distance, a circle's centre, an angle's
+    /// vertex); nil: the default position.
+    public var label: [Double]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, kind, entities, value, driven, side, at
@@ -115,6 +119,7 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
         case tangentEnds = "tangent_ends"
         case aux = "aux_params"
         case yields = "yields_to_relations"
+        case label = "label_offset"
     }
 
     public init(
@@ -146,6 +151,7 @@ public struct SketchConstraint: Codable, Sendable, Hashable {
         tangentEnds = try c.decodeIfPresent([String].self, forKey: .tangentEnds)
         aux = try c.decodeIfPresent([Int].self, forKey: .aux)
         yields = try c.decodeIfPresent(Bool.self, forKey: .yields) ?? false
+        label = try c.decodeIfPresent([Double].self, forKey: .label)
     }
 }
 

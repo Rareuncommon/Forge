@@ -140,11 +140,39 @@ package struct SketchAnnotation: Identifiable, Equatable {
     package var id: String
     package var kind: Kind
     package var text: String
+    /// Relations: where the glyph sits (offset by slot). Dimensions: the centre of the value.
     package var anchor: Vec3
     /// Glyphs sharing an anchor are laid side by side.
     package var slot: Int
     package var driven: Bool
     package var problem: Bool
+    /// Dimensions: extension lines, dimension line and arrows.
+    package var drawing: DimensionDrawing? = nil
+}
+
+/// A dimension's lines in model space (from `Sketch.dimensionLayout`), for the viewports.
+package struct DimensionDrawing: Equatable {
+    package struct Arrow: Equatable {
+        package var tip: Vec3
+        /// Unit direction the arrowhead points.
+        package var direction: Vec3
+    }
+    /// From the geometry to the dimension line; drawn a few pixels past their end.
+    package var extensions: [(Vec3, Vec3)]
+    package var segments: [(Vec3, Vec3)]
+    package var arrows: [Arrow]
+
+    package init(_ l: DimensionLayout, on plane: SketchPlane) {
+        func p(_ q: Point2) -> Vec3 { plane.point(q.u, q.v) }
+        extensions = l.extensions.map { (p($0.0), p($0.1)) }
+        segments = l.segments.map { (p($0.0), p($0.1)) }
+        arrows = l.arrows.map { Arrow(tip: p($0.tip), direction: plane.xAxis * $0.direction.u + plane.yAxis * $0.direction.v) }
+    }
+
+    package static func == (a: Self, b: Self) -> Bool {
+        func same(_ x: [(Vec3, Vec3)], _ y: [(Vec3, Vec3)]) -> Bool { x.count == y.count && zip(x, y).allSatisfy { $0.0 == $1.0 && $0.1 == $1.1 } }
+        return a.arrows == b.arrows && same(a.extensions, b.extensions) && same(a.segments, b.segments)
+    }
 }
 
 extension AppModel {
@@ -249,6 +277,11 @@ extension AppModel {
         guard let tool = sketchState.tool, let raw else {
             cursorSketchPoint = nil
             if sketchState.preview != nil { clearPreview() }
+            return
+        }
+        if tool == .dimension, dimensionEdit != nil {
+            cursorSketchPoint = raw
+            dimensionHover(raw)
             return
         }
         let snap = snapped(raw, tolerance: tolerance)
@@ -516,18 +549,18 @@ extension AppModel {
             let anchors = c.entities.compactMap { anchor(sk, $0) }
             guard !anchors.isEmpty else { continue }
             if c.kind.isDimension, let value = c.value {
-                let u = anchors.map(\.u).reduce(0, +) / Double(anchors.count)
-                let v = anchors.map(\.v).reduce(0, +) / Double(anchors.count)
-                var text: String
-                switch c.kind {
-                case .angle: text = String(format: "%.1f°", value * 180 / .pi)
-                case .radius: text = String(format: "R%.2f", value)
-                case .diameter: text = String(format: "⌀%.2f", value)
-                default: text = String(format: "%.2f", value)
-                }
+                var text = dimensionText(c.kind, value)
                 if c.driven { text = "(\(text))" }
-                out.append(SketchAnnotation(
-                    id: c.id, kind: .dimension, text: text, anchor: sk.plane.point(u, v), slot: 0, driven: c.driven, problem: problems.contains(c.id)))
+                var a = SketchAnnotation(id: c.id, kind: .dimension, text: text, anchor: .zero, slot: 0, driven: c.driven, problem: problems.contains(c.id))
+                if let l = sk.dimensionLayout(c) {
+                    a.anchor = sk.plane.point(l.text.u, l.text.v)
+                    a.drawing = DimensionDrawing(l, on: sk.plane)
+                } else {
+                    let u = anchors.map(\.u).reduce(0, +) / Double(anchors.count)
+                    let v = anchors.map(\.v).reduce(0, +) / Double(anchors.count)
+                    a.anchor = sk.plane.point(u, v)
+                }
+                out.append(a)
             } else if let glyph = glyph(c.kind), let first = c.entities.first, let a = anchor(sk, first) {
                 let slot = used[first, default: 0]
                 used[first] = slot + 1
@@ -536,6 +569,16 @@ extension AppModel {
             }
         }
         return out
+    }
+
+    /// A dimension's value as shown on it.
+    package static func dimensionText(_ kind: ConstraintKind, _ value: Double) -> String {
+        switch kind {
+        case .angle: String(format: "%.1f°", value * 180 / .pi)
+        case .radius: String(format: "R%.2f", value)
+        case .diameter: String(format: "⌀%.2f", value)
+        default: String(format: "%.2f", value)
+        }
     }
 
     package static func glyph(_ k: ConstraintKind) -> String? {
@@ -783,12 +826,7 @@ extension AppModel {
                 await run("sketch.extend", ["entity": .string(local), "near": pt(raw)])
             }
         case .dimension:
-            let pick = snap.kind == .point ? snap.target : local
-            guard let pick else {
-                lastError = ForgeError(.invalidParams, "click a line, circle, arc or point to dimension")
-                return
-            }
-            dimensionPick(pick, at: viewPoint)
+            await dimensionClick(snap.kind == .point ? snap.target : local, at: raw, viewPoint: viewPoint)
             return
         }
         await refreshSketchState()
@@ -873,7 +911,11 @@ extension AppModel {
         case .chamfer: return "Click a corner where two lines meet."
         case .trim: return st.trimMode == .power ? "Drag across the pieces to remove, or click them." : "Click the piece of a curve to remove."
         case .extend: return "Click a curve near the end to extend it to the next curve."
-        case .dimension: return "Click a line, circle or arc, or two entities. Type the value in the Modify box and press Return."
+        case .dimension:
+            if let e = dimensionEdit, !e.placed {
+                return e.measurement == nil ? "Click a second entity to dimension to." : "Move the pointer to where the dimension goes and click to place it (or click a second entity)."
+            }
+            return "Click a line, circle or arc, or two entities, then click where the dimension goes. Type the value and press Return."
         }
     }
 

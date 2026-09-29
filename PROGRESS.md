@@ -53,6 +53,29 @@ Light and dark follow the desktop (GTK prefer-dark or a "dark" theme name, e.g. 
 - **Viewport grid:** the grid colours are now the linear values of the design's greys. Every
   viewport renders to an sRGB target, so the old dark grid came out almost white.
 
+### Smart Dimension as in SolidWorks (user feedback)
+
+The user reported two problems. The dimension could not be pulled away and placed; it was only
+a value at the midpoint. And the first dimension left the sketch tiny in a big grid.
+- **Placing a dimension:** after the pick, the dimension follows the pointer and a click places
+  it, where the Modify box opens.
+  - A line or two points give an aligned dimension when pulled beside them, horizontal when
+    pulled above or below, and vertical when pulled left or right.
+  - A second pick still adds an entity.
+  - Dimensions are drawn with extension lines, a dimension line and filled arrows; radius and
+    diameter leaders; an arc for angles. The layout is `ForgeSketch/DimensionLayout.swift`,
+    drawn with fw_line2d on Windows/Linux and a SwiftUI Canvas on macOS.
+  - The value's position is stored on the constraint (`label_offset`, relative to the
+    dimension's reference point). It moves and scales with the geometry.
+  - New command `sketch.move_dimension`; `sketch.add_dimension` takes `label_at`.
+- **Scale on first dimension:** `sketch.add_dimension` takes `scale_sketch` (the UI always sends
+  it). The sketch's first length dimension scales everything about the origin, so the profile
+  keeps its shape. It is skipped when there are fixed entities or already a length dimension,
+  and it reports `scaled_by`. The view then refits.
+- **Framing:** Zoom to Fit frames the bodies, sketches and dimensions rather than the reference
+  grid and planes. The grid and planes are sized from the model, no longer at least 100 mm. The
+  grid sits just behind the sketch plane, so lines on grid lines stay visible.
+
 ### Not done / known gaps (Linux)
 
 - Command palette, "Ask Forge", context toolbar and shortcut bar; the tree's pane switcher

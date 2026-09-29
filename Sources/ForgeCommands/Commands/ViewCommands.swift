@@ -33,6 +33,9 @@ final class MeshCache: @unchecked Sendable {
 /// sketches (one item each; edge ids index the sketch's drawn curves).
 public struct DocumentScene: Sendable {
     public var scene: RenderScene
+    /// What Zoom to Fit frames: the model's bodies and sketches, set by front ends that add
+    /// reference geometry (planes, the sketch grid) to `scene`; nil: all of `scene`.
+    public var fitBounds: BoundingBox? = nil
     public var bodies: [String]
     public var sketches: [String]
     /// For each sketch item, the curve id per edge index.

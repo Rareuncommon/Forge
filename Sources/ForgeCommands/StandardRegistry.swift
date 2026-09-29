@@ -41,6 +41,7 @@ extension CommandRegistry {
         r.register(SketchAddRelation.self)
         r.register(SketchAddDimension.self)
         r.register(SketchSetDimension.self)
+        r.register(SketchMoveDimension.self)
         r.register(SketchDelete.self)
         r.register(SketchDrag.self)
         r.register(SketchSetConstruction.self)

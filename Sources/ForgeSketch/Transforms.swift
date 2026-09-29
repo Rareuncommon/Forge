@@ -288,6 +288,11 @@ extension Sketch {
             }
         }
         removed = s.removeConstraints(removed)
+        // Dimension values stay where they were relative to the geometry (rotated and scaled).
+        for i in s.constraints.indices where s.constraints[i].label?.count == 2 && s.constraints[i].entities.allSatisfy(moved.contains) {
+            let l = s.constraints[i].label!
+            s.constraints[i].label = [map.r00 * l[0] + map.r01 * l[1], map.r10 * l[0] + map.r11 * l[1]]
+        }
         // Move points, then scale radii / ellipse axes.
         for id in moved where s.entities[id]!.kind == .point {
             s.setPoint(id, map.apply(point(id)))

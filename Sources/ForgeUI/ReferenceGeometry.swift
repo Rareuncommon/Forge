@@ -28,11 +28,14 @@ package enum ReferenceGeometry {
             // Grid on the sketch plane, spacing 1–2–5 × 10ⁿ for ~20 cells across.
             let step = niceStep(s / 10)
             let n = Int((s / step).rounded(.up))
+            // Just behind the plane (as seen normal to the sketch), so sketch lines lying on a
+            // grid line are drawn over it, not hidden by it.
+            let back = sk.plane.normal * (-s * 1e-3)
             for i in -n...n {
                 let t = Double(i) * step
                 let c = i == 0 ? gridAxisColor(dark) : gridColor(dark)
-                lines.add([sk.plane.point(t, -Double(n) * step), sk.plane.point(t, Double(n) * step)], c)
-                lines.add([sk.plane.point(-Double(n) * step, t), sk.plane.point(Double(n) * step, t)], c)
+                lines.add([sk.plane.point(t, -Double(n) * step) + back, sk.plane.point(t, Double(n) * step) + back], c)
+                lines.add([sk.plane.point(-Double(n) * step, t) + back, sk.plane.point(Double(n) * step, t) + back], c)
             }
         } else if planes {
             // Front (XY), Top (XZ) and Right (YZ) plane outlines.

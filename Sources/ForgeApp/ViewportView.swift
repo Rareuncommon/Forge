@@ -136,7 +136,7 @@ final class ForgeMTKView: MTKView {
     private var scale: Double { Double(window?.backingScaleFactor ?? 2) }
 
     func fit() {
-        guard let r = renderer, let b = documentScene?.scene.bounds else { return }
+        guard let r = renderer, let b = documentScene?.fitBounds ?? documentScene?.scene.bounds else { return }
         remember()
         r.camera.fit(b, aspect: Double(bounds.width / max(bounds.height, 1)))
         cameraChanged()

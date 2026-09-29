@@ -141,12 +141,20 @@ public struct SketchConstraintView: Codable, Sendable, Hashable {
     public var unit: String?
     public var driven: Bool
     public var status: String
+    /// Dimensions: where the value is drawn, [u, v] in sketch coordinates.
+    public var labelAt: [Double]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, entities, value, unit, driven, status
+        case labelAt = "label_at"
+    }
 
     init(_ s: Sketch, _ c: SketchConstraint) {
         id = c.id
         type = c.kind
         entities = c.entities
         driven = c.driven
+        if c.kind.isDimension, let t = s.dimensionLayout(c)?.text { labelAt = [t.u, t.v] }
         if let v = c.value, c.kind.isDimension {
             value = c.kind.isAngular ? v * 180 / .pi : v
             unit = c.kind.isAngular ? "deg" : "mm"
@@ -186,6 +194,13 @@ public struct SketchEditResult: Codable, Sendable {
     public var created: [String]
     public var constraints: [String]
     public var inferred: [InferredRelation]
+    /// sketch.add_dimension with scale_sketch: the factor the whole sketch was scaled by.
+    public var scaledBy: Double? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case sketch, created, constraints, inferred
+        case scaledBy = "scaled_by"
+    }
 }
 
 extension CommandContext {
@@ -806,12 +821,25 @@ public enum SketchAddDimension: Command {
         public var entities: [String]
         public var value: Quantity?
         public var driven: Bool?
+        public var labelAt: Point2?
+        public var scaleSketch: Bool?
+        enum CodingKeys: String, CodingKey {
+            case sketch, type, entities, value, driven
+            case labelAt = "label_at"
+            case scaleSketch = "scale_sketch"
+        }
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": sketchParamDoc,
             "type": "distance (line length, point–point, point–line, line–line, centre–centre), horizontal_distance / vertical_distance (line or two points), radius, diameter, angle (two lines)",
             "entities": "Entity ids",
             "value": FieldDoc("Value (length or angle by type; units allowed)", default: "the current measured value"),
             "driven": FieldDoc("Reference dimension: measures without constraining", default: false),
+            "label_at": FieldDoc(
+                "Where the value is drawn, [u, v] in sketch coordinates (before any scale_sketch scaling): extension lines run from the geometry to a dimension line through it. Kept relative to the geometry",
+                default: "beside the geometry"),
+            "scale_sketch": FieldDoc(
+                "If this is the sketch's first length dimension, scale the whole sketch about its origin so the profile keeps its proportions (SolidWorks' 'scale sketch on first dimension'); ignored when the sketch has length dimensions or fixed geometry",
+                default: false),
         ]
     }
     public typealias Output = SketchEditResult
@@ -833,8 +861,45 @@ public enum SketchAddDimension: Command {
         let kind = p.type.kind
         let v = try p.value.map { kind.isAngular ? try $0.angle() : try $0.length() }
         if p.driven == true, v != nil { throw ForgeError(.invalidParams, "a driven dimension measures its value; omit 'value'") }
+        var scaled: Double?
+        if p.scaleSketch == true, p.driven != true, let v { scaled = try s.scaleForFirstDimension(kind, ids, value: v) }
         let c = try s.addConstraint(kind, ids, value: v, driven: p.driven ?? false)
-        return finish(&ctx, doc, &s, created: [], constraints: [c], infer: false)
+        // label_at was given for the unscaled sketch: it scales with the geometry.
+        if let at = p.labelAt { try s.setDimensionLabel(c, at: Point2(at.u * (scaled ?? 1), at.v * (scaled ?? 1))) }
+        var out = finish(&ctx, doc, &s, created: [], constraints: [c], infer: false)
+        out.scaledBy = scaled
+        return out
+    }
+}
+
+public enum SketchMoveDimension: Command {
+    public struct Params: Codable, Sendable, SchemaDocumented {
+        public var sketch: String?
+        public var constraint: String
+        public var labelAt: Point2?
+        enum CodingKeys: String, CodingKey {
+            case sketch, constraint
+            case labelAt = "label_at"
+        }
+        public static let fieldDocs: [String: FieldDoc] = [
+            "sketch": sketchParamDoc, "constraint": "Dimension id (\"constraint-7\")",
+            "label_at": FieldDoc("New position of the value, [u, v] in sketch coordinates", default: "the default position"),
+        ]
+    }
+    public typealias Output = SketchEditResult
+
+    public static let name = "sketch.move_dimension"
+    public static let summary = "Move where a dimension's value is drawn (its extension and dimension lines follow); the geometry does not change"
+    public static let category = CommandCategory.sketch
+    public static let undo = UndoBehavior.undoable
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams]
+    public static let examples: [JSONValue] = [["constraint": "constraint-12", "label_at": [20, 35]]]
+
+    public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        var (doc, s) = try ctx.sketchForEdit(p.sketch)
+        let id = try localID(p.constraint, in: s)
+        try s.setDimensionLabel(id, at: p.labelAt)
+        return finish(&ctx, doc, &s, created: [], constraints: [id], infer: false)
     }
 }
 

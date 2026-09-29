@@ -151,7 +151,7 @@ final class WinViewport {
     }
 
     private func fit() {
-        guard let b = documentScene?.scene.bounds else { return }
+        guard let b = documentScene?.fitBounds ?? documentScene?.scene.bounds else { return }
         remember()
         camera.fit(b, aspect: Double(width) / Double(max(height, 1)))
         cameraChanged()
@@ -177,7 +177,7 @@ final class WinViewport {
     // MARK: the Modify box
 
     private func editBox() {
-        if let edit = model.dimensionEdit {
+        if let edit = model.dimensionEdit, edit.placed || edit.measurement == nil {
             let label = edit.measurement == nil ? "Select a second entity" : "Modify (\(edit.measurement.map { "\($0.kind.rawValue.replacingOccurrences(of: "_", with: " "))" } ?? ""))"
             fw_edit_show(app, Int32(edit.position.x), Int32(edit.position.y), label, edit.text)
         } else if editingDimension == nil {
@@ -248,12 +248,18 @@ final class WinViewport {
         dimensionRects = []
         guard let proj = model.projection, model.activeSketch != nil else { return }
         let s = scale
-        for a in model.annotations {
+        let preview = model.dimensionPreview
+        for a in model.annotations + (preview.map { [$0] } ?? []) {
             guard let p = proj.point(a.anchor) else { continue }
             switch a.kind {
-            case .dimension where model.display.dimensions:
+            case .dimension where model.display.dimensions || a.id == preview?.id:
                 let color: UInt32 = a.problem ? 0xC62F_20FF : a.driven ? 0x5E5E_66FF : 0x1D1D_1FFF
-                let x = Float(p.x), y = Float(p.y) - 14 * s
+                let x = Float(p.x), y = Float(p.y) - (a.drawing == nil ? 14 * s : 0)
+                if let d = a.drawing {
+                    let ink: UInt32 = a.id == preview?.id ? (model.isDark ? 0x4C8D_FFFF : 0x1F5F_D6FF)
+                        : a.problem ? 0xC62F_20FF : model.isDark ? 0xB8B8_C0FF : 0x4A4A_52FF
+                    drawDimensionLines(d, proj, ink)
+                }
                 text(a.text, x, y, size: 12.5, rgba: color, centred: true, boxed: true)
                 let w = Float(a.text.count) * 8 * s + 14 * s
                 dimensionRects.append((a.id, (x - w / 2, y - 11 * s, w, 22 * s), a.text, a.driven))
@@ -262,6 +268,40 @@ final class WinViewport {
                 text(a.text, Float(p.x) + (14 + Float(a.slot) * 20) * s, Float(p.y) + 14 * s, size: 10.5, rgba: color, centred: true, boxed: true)
             default:
                 break
+            }
+        }
+    }
+
+    /// A dimension's extension lines (a few pixels past the dimension line), dimension line
+    /// and filled arrowheads.
+    private func drawDimensionLines(_ d: DimensionDrawing, _ proj: ViewProjection, _ ink: UInt32) {
+        let s = scale, w = 1.1 * s
+        func pt(_ v: Vec3) -> (Float, Float)? { proj.point(v).map { (Float($0.x), Float($0.y)) } }
+        for (a, b) in d.extensions {
+            guard let p = pt(a), let q = pt(b) else { continue }
+            let dx = q.0 - p.0, dy = q.1 - p.1, l = max(hypotf(dx, dy), 1e-3)
+            // A small gap at the geometry, a small overshoot past the dimension line.
+            let gap = min(3 * s, l / 2), over = 6 * s
+            fw_line2d(app, p.0 + dx / l * gap, p.1 + dy / l * gap, q.0 + dx / l * over, q.1 + dy / l * over, w, ink)
+        }
+        for (a, b) in d.segments {
+            guard let p = pt(a), let q = pt(b) else { continue }
+            fw_line2d(app, p.0, p.1, q.0, q.1, w, ink)
+        }
+        for arrow in d.arrows {
+            guard let tip = pt(arrow.tip) else { continue }
+            let dir = proj.axis(arrow.direction)
+            var dx = Float(dir.dx), dy = Float(dir.dy)
+            let l = hypotf(dx, dy)
+            guard l > 1e-6 else { continue }
+            dx /= l
+            dy /= l
+            // Filled: a fan of strokes from the tip across the base.
+            let len = 10 * s, half = 3.2 * s
+            let bx = tip.0 - dx * len, by = tip.1 - dy * len
+            for k in 0...6 {
+                let t = Float(k) / 6 * 2 - 1
+                fw_line2d(app, tip.0, tip.1, bx - dy * half * t, by + dx * half * t, 1.3 * s, ink)
             }
         }
     }

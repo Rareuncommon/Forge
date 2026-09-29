@@ -1,4 +1,6 @@
 import ForgeCore
+import ForgeSketch
+import Foundation
 import Testing
 @testable import ForgeUI
 
@@ -121,6 +123,39 @@ struct AppModelTests {
         #expect(get() == "40")
         m.chooseTool(nil)
         #expect(m.panelPage.cancel == nil)
+    }
+
+    @Test func smartDimensionFollowsThePointerAndIsPlacedByAClick() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.newSketch(on: .front)
+        await m.run("sketch.add_line", ["start": [0, 0], "end": [30, 40]])
+        let line = try #require(m.sketchState.sketch?.orderedEntities.first { $0.kind == .line }?.id)
+        m.chooseTool(.dimension)
+        await m.dimensionClick(line, at: Point2(15, 20), viewPoint: .zero)
+        // Picked, not placed: no Modify box yet; the dimension is drawn at the pointer.
+        #expect(m.dimensionEdit?.placed == false)
+        #expect(m.dimensionPreview?.drawing != nil)
+        // Pulled above the slanted line: horizontal (30); to its right: vertical (40); beside it: aligned (50).
+        m.dimensionHover(Point2(15, 60))
+        #expect(m.dimensionEdit?.measurement?.kind == .horizontalDistance && m.dimensionEdit?.measurement?.value == 30)
+        m.dimensionHover(Point2(60, 20))
+        #expect(m.dimensionEdit?.measurement?.kind == .verticalDistance)
+        m.dimensionHover(Point2(25, 5))
+        #expect(m.dimensionEdit?.measurement?.kind == .distance && m.dimensionEdit?.measurement?.value == 50)
+        // A click on empty space places it; the Modify box opens there.
+        await m.dimensionClick(nil, at: Point2(25, 5), viewPoint: CGPoint(x: 120, y: 80))
+        #expect(m.dimensionEdit?.placed == true && m.dimensionEdit?.position == CGPoint(x: 120, y: 80))
+        // The first dimension scales the sketch (50 → 25: the line's end halves) and refits the view.
+        m.dimensionEdit?.text = "25"
+        await m.commitDimension()
+        #expect(m.dimensionEdit == nil)
+        let sk = try #require(m.sketchState.sketch)
+        let end = try #require(sk.entities[line]?.points[1])
+        #expect(abs(sk.point(end).0 - 15) < 1e-9 && abs(sk.point(end).1 - 20) < 1e-9)
+        guard case .fit? = m.viewportCommands.log.last else { Issue.record("no fit after scaling"); return }
+        let label = try #require(m.annotations.first { $0.kind == .dimension })
+        #expect(label.drawing != nil && abs(label.anchor.x - 12.5) < 1e-9 && abs(label.anchor.y - 2.5) < 1e-9)
     }
 }
 

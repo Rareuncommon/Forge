@@ -327,8 +327,23 @@ package final class AppModel {
             return (sk.id, (lines.filter(\.construction) + lines.filter { !$0.construction }).map(\.id))
         })
         if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
-            let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)
+            // Planes, axes and the sketch grid follow the model's size (100 mm when empty), so a
+            // small part is not lost in a grid sized for a big one.
+            let extent = ds.scene.bounds?.diagonal ?? 0
+            let size = extent > 1e-6 ? max(extent * 1.2, 1) : 100
+            ds.fitBounds = ds.scene.bounds
             let editing = doc.activeSketch.flatMap { doc.sketches[$0] }
+            // The sketch being edited: its dimensions (values and lines) are part of what to frame.
+            if let sk = editing {
+                for c in sk.userConstraints {
+                    guard let l = sk.dimensionLayout(c) else { continue }
+                    for q in [l.text] + l.segments.flatMap({ [$0.0, $0.1] }) {
+                        let p = sk.plane.point(q.u, q.v)
+                        let b = BoundingBox(min: p, max: p)
+                        ds.fitBounds = ds.fitBounds.map { $0.union(b) } ?? b
+                    }
+                }
+            }
             if isDark { ds.scene.items = ds.scene.items.map(Self.darkened) }
             ds.scene.items += ReferenceGeometry.items(
                 size: size, sketch: editing, allSketches: doc.orderedSketches, planes: display.planes, refPlanes: doc.orderedRefPlanes, dark: isDark)

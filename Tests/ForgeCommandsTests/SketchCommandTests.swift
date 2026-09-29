@@ -71,6 +71,37 @@ struct SketchCommandTests {
         #expect(abs(try await entity(e, lines[0])["length_mm"]!.doubleValue! - 50.8) < 1e-9)
     }
 
+    @Test func firstDimensionScalesTheSketchAndPlacesItsValue() async throws {
+        let e = try await engine()
+        let r = try await e.execute("sketch.add_rectangle", ["points": [[0, 0], [40, 20]]]).result
+        let lines = r["created"]!.arrayValue!.compactMap(\.stringValue)
+        // 40 → 20: the whole rectangle halves, so the 20 mm side becomes 10.
+        let d = try await e.execute(
+            "sketch.add_dimension", ["type": "distance", "entities": [.string(lines[0])], "value": 20, "label_at": [20, -8], "scale_sketch": true]).result
+        #expect(d["scaled_by"]?.doubleValue == 0.5)
+        #expect(abs(try await entity(e, lines[1])["length_mm"]!.doubleValue! - 10) < 1e-9)
+        // The value was placed on the unscaled sketch: it scaled with it.
+        let cid = d["constraints"]![0]!
+        func labelAt() async throws -> [Double] {
+            let cs = try await e.execute("sketch.get").result["constraints"]!.arrayValue!
+            return cs.first { $0["id"] == cid }!["label_at"]!.arrayValue!.compactMap(\.doubleValue)
+        }
+        let at = try await labelAt()
+        #expect(abs(at[0] - 10) < 1e-9 && abs(at[1] + 4) < 1e-9)
+        // A second dimension only drives its own entity.
+        let d2 = try await e.execute(
+            "sketch.add_dimension", ["type": "distance", "entities": [.string(lines[1])], "value": 15, "scale_sketch": true]).result
+        #expect(d2["scaled_by"] == nil)
+        #expect(abs(try await entity(e, lines[0])["length_mm"]!.doubleValue! - 20) < 1e-9)
+        // Moving the value changes nothing else and undoes.
+        try await e.execute("sketch.move_dimension", ["constraint": cid, "label_at": [10, 30]])
+        #expect(try await labelAt() == [10, 30])
+        #expect(abs(try await entity(e, lines[0])["length_mm"]!.doubleValue! - 20) < 1e-9)
+        try await e.execute("edit.undo")
+        let back = try await labelAt()
+        #expect(abs(back[0] - 10) < 1e-9 && abs(back[1] + 4) < 1e-9)
+    }
+
     @Test func conflictsAreRejectedAndLeaveNoTrace() async throws {
         let e = try await engine()
         let l = try await e.execute("sketch.add_line", ["start": [0, 5], "end": [10, 5]]).result["created"]![0]!

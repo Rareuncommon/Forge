@@ -228,13 +228,24 @@ struct SketchAnnotationsLayer: View {
 
     var body: some View {
         if let proj = model.projection, model.activeSketch != nil {
+            let preview = model.dimensionPreview
+            let shown = model.annotations.filter(show) + (preview.map { [$0] } ?? [])
             ZStack(alignment: .topLeading) {
                 Color.clear.allowsHitTesting(false)
-                ForEach(model.annotations) { a in
-                    if let p = proj.point(a.anchor), show(a) {
+                // Extension lines, dimension lines and arrows under the values.
+                Canvas { ctx, _ in
+                    for a in shown {
+                        guard let d = a.drawing else { continue }
+                        let ink = a.id == preview?.id ? Theme.accent : a.problem ? Theme.overDefined : Theme.text2
+                        DimensionLines.draw(d, proj, ink, in: &ctx)
+                    }
+                }
+                .allowsHitTesting(false)
+                ForEach(shown) { a in
+                    if let p = proj.point(a.anchor) {
                         switch a.kind {
                         case .dimension:
-                            DimensionLabel(annotation: a).position(x: p.x, y: p.y - 14)
+                            DimensionLabel(annotation: a, editable: a.id != preview?.id).position(x: p.x, y: p.y - (a.drawing == nil ? 14 : 0))
                         case .relation:
                             RelationGlyph(annotation: a).position(x: p.x + 14 + CGFloat(a.slot) * 20, y: p.y + 14)
                         }
@@ -249,9 +260,44 @@ struct SketchAnnotationsLayer: View {
     }
 }
 
+/// A dimension's lines: extension lines (a small gap at the geometry, a small overshoot past
+/// the dimension line), the dimension line and filled arrowheads.
+private enum DimensionLines {
+    static func draw(_ d: DimensionDrawing, _ proj: ViewProjection, _ ink: Color, in ctx: inout GraphicsContext) {
+        var lines = Path(), heads = Path()
+        for (a, b) in d.extensions {
+            guard let p = proj.point(a), let q = proj.point(b) else { continue }
+            let dx = q.x - p.x, dy = q.y - p.y, l = max(hypot(dx, dy), 0.001)
+            let gap = min(3, l / 2)
+            lines.move(to: CGPoint(x: p.x + dx / l * gap, y: p.y + dy / l * gap))
+            lines.addLine(to: CGPoint(x: q.x + dx / l * 6, y: q.y + dy / l * 6))
+        }
+        for (a, b) in d.segments {
+            guard let p = proj.point(a), let q = proj.point(b) else { continue }
+            lines.move(to: p)
+            lines.addLine(to: q)
+        }
+        for arrow in d.arrows {
+            guard let tip = proj.point(arrow.tip) else { continue }
+            let dir = proj.axis(arrow.direction)
+            let l = hypot(dir.dx, dir.dy)
+            guard l > 1e-6 else { continue }
+            let (ux, uy) = (dir.dx / l, dir.dy / l)
+            let bx = tip.x - ux * 10, by = tip.y - uy * 10
+            heads.move(to: tip)
+            heads.addLine(to: CGPoint(x: bx - uy * 3.2, y: by + ux * 3.2))
+            heads.addLine(to: CGPoint(x: bx + uy * 3.2, y: by - ux * 3.2))
+            heads.closeSubpath()
+        }
+        ctx.stroke(lines, with: .color(ink), lineWidth: 1.1)
+        ctx.fill(heads, with: .color(ink))
+    }
+}
+
 private struct DimensionLabel: View {
     @Environment(AppModel.self) private var model
     let annotation: SketchAnnotation
+    var editable = true
     @State private var editing = false
     @State private var text = ""
 
@@ -265,7 +311,7 @@ private struct DimensionLabel: View {
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(annotation.problem ? Theme.overDefined : Theme.line))
             .fixedSize()
             .onTapGesture(count: 2) {
-                guard !annotation.driven else { return }
+                guard editable, !annotation.driven else { return }
                 text = annotation.text.trimmingCharacters(in: CharacterSet(charactersIn: "R⌀°()"))
                 editing = true
             }
