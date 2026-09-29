@@ -7,6 +7,7 @@ public struct ToolOutput: Sendable {
     public var json: JSONValue
     public var imagePNGBase64: String?
     public var mutated: Bool
+    public var isError: Bool = false
 }
 
 /// An MCP tool. Most tools are thin views over bus commands and reuse the command's
@@ -47,7 +48,9 @@ public enum ToolCatalog {
             let d = try? registry.descriptor(command)
             return Tool(
                 name: tool, title: title, description: (d?.summary ?? command) + (extra.isEmpty ? "" : ". " + extra) + " (command: \(command))",
-                inputSchema: schema(command), readOnly: d?.undo == UndoBehavior.none, destructive: false,
+                inputSchema: schema(command),
+                readOnly: d?.undo == UndoBehavior.none && d?.supportsDryRun == true,
+                destructive: command == "document.save" || command.hasPrefix("export."),
                 run: { engine, args in
                     let o = try await engine.execute(command, args)
                     return ToolOutput(json: o.result, imagePNGBase64: nil, mutated: d?.undo != UndoBehavior.none)
@@ -97,6 +100,14 @@ public enum ToolCatalog {
             alias("get_sketch", "Get sketch", "sketch.get"),
             alias("edit_dimension", "Edit dimension", "sketch.set_dimension"),
             alias("check_sketch", "Check sketch", "sketch.check"),
+            // ---- parametric history: the same commands used by the desktop feature tree
+            alias("get_feature_tree", "Get feature tree", "feature.list"),
+            alias("edit_feature", "Edit feature", "feature.edit"),
+            alias("rename_feature", "Rename feature", "feature.rename"),
+            alias("suppress_feature", "Suppress or restore feature", "feature.suppress"),
+            alias("rollback_features", "Move rollback bar", "feature.rollback"),
+            alias("repair_reference", "Repair feature reference", "feature.repair_reference"),
+            alias("rebuild", "Rebuild document", "document.regenerate"),
             // ---- query
             alias("list_bodies", "List bodies", "query.bodies"),
             alias("query_faces", "Query faces", "query.faces"),
@@ -129,7 +140,7 @@ public enum ToolCatalog {
                 }),
             Tool(
                 name: "execute_batch", title: "Execute batch",
-                description: "Execute a list of commands. atomic (default true): all-or-nothing, one undo step. dry_run: run, report, then restore. On failure returns failed_index and the structured error.",
+                description: "Execute commands on the active document. atomic (default true): all-or-nothing, one undo step; excludes document switching, transaction control and file writes. Create a document first. dry_run previews only commands that support dry-run, without committing. Failures set isError and return failed_index and the structured error. Non-atomic batches can retain earlier successful commands.",
                 inputSchema: [
                     "type": "object",
                     "properties": [
@@ -145,7 +156,8 @@ public enum ToolCatalog {
                     let items = try JSONCoding.fromJSON([Invocation].self, args["commands"] ?? [])
                     let dry = args["dry_run"]?.boolValue ?? false
                     let b = try await engine.executeBatch(items, atomic: args["atomic"]?.boolValue ?? true, dryRun: dry)
-                    return ToolOutput(json: try JSONCoding.toJSON(b), imagePNGBase64: nil, mutated: !dry)
+                    return ToolOutput(json: try JSONCoding.toJSON(b), imagePNGBase64: nil,
+                                      mutated: !dry && b.committed, isError: b.error != nil)
                 }),
             alias("undo", "Undo", "edit.undo"),
             alias("redo", "Redo", "edit.redo"),

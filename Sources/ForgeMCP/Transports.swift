@@ -1,6 +1,7 @@
 import ForgeCommands
 import ForgeCore
 import Foundation
+import Dispatch
 
 #if canImport(Glibc)
 import Glibc
@@ -13,9 +14,19 @@ import ucrt
 /// Serialised, newline-delimited writes to a file descriptor.
 final class LineWriter: @unchecked Sendable {
     private let fd: Int32
+    private let socketOutput: Bool
     private let lock = NSLock()
 
-    init(fd: Int32) { self.fd = fd }
+    init(fd: Int32, socketOutput: Bool = false) {
+        self.fd = fd
+        self.socketOutput = socketOutput
+        #if canImport(Darwin)
+        if socketOutput {
+            var enabled: Int32 = 1
+            _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
+        }
+        #endif
+    }
 
     func write(_ line: String) {
         lock.lock()
@@ -26,7 +37,9 @@ final class LineWriter: @unchecked Sendable {
         while offset < bytes.count {
             let n = bytes[offset...].withUnsafeBytes { raw in
                 #if canImport(Glibc)
-                Glibc.write(fd, raw.baseAddress, raw.count)
+                socketOutput
+                    ? Glibc.send(fd, raw.baseAddress, raw.count, Int32(MSG_NOSIGNAL))
+                    : Glibc.write(fd, raw.baseAddress, raw.count)
                 #elseif os(Windows)
                 Int(ucrt._write(fd, raw.baseAddress, UInt32(raw.count)))
                 #else
@@ -74,8 +87,8 @@ func lines(from fd: Int32) -> AsyncStream<String> {
 
 /// Serve one connection: each incoming line is handled in order; responses and
 /// notifications are written back on the same connection.
-public func serveConnection(engine: Engine, input: Int32, output: Int32) async {
-    let writer = LineWriter(fd: output)
+public func serveConnection(engine: Engine, input: Int32, output: Int32, socketOutput: Bool = false) async {
+    let writer = LineWriter(fd: output, socketOutput: socketOutput)
     let server = MCPServer(engine: engine, notify: { writer.write($0) })
     for await line in lines(from: input) {
         if let response = await server.handle(line) { writer.write(response) }
@@ -102,11 +115,22 @@ public enum StdioTransport {
 public final class UnixSocketTransport: @unchecked Sendable {
     public let path: String
     private var listenFD: Int32 = -1
+    private let lock = NSLock()
+    private var socketIdentity: (device: UInt64, inode: UInt64)?
+    private let acceptGroup = DispatchGroup()
+    private let clientLock = NSLock()
+    private var clients: Set<Int32> = []
+    private var stopping = false
 
     public init(path: String) { self.path = path }
 
     public func start(engine: Engine) throws {
-        unlink(path)
+        lock.lock()
+        defer { lock.unlock() }
+        guard listenFD < 0 else { throw ForgeError(.ioError, "socket transport is already running") }
+        guard !path.isEmpty, !path.utf8.contains(0) else {
+            throw ForgeError(.invalidParams, "socket path must be nonempty and contain no NUL bytes")
+        }
         #if canImport(Glibc)
         let streamType = Int32(SOCK_STREAM.rawValue)
         #else
@@ -131,22 +155,60 @@ public final class UnixSocketTransport: @unchecked Sendable {
             close(fd)
             throw ForgeError(.ioError, "bind(\(path)) failed: errno \(errno)")
         }
-        chmod(path, 0o600)  // owner-only: the socket grants full control of the session
+        // Never unlink an existing path on startup: it may be a file or another live server.
+        var metadata = stat()
+        guard lstat(path, &metadata) == 0 else {
+            close(fd)
+            throw ForgeError(.ioError, "cannot inspect bound socket")
+        }
+        socketIdentity = (UInt64(metadata.st_dev), UInt64(metadata.st_ino))
+        guard chmod(path, 0o600) == 0 else {
+            close(fd)
+            removeOwnedSocket()
+            throw ForgeError(.ioError, "cannot restrict socket permissions")
+        }
         guard listen(fd, 16) == 0 else {
             close(fd)
+            removeOwnedSocket()
             throw ForgeError(.ioError, "listen failed: errno \(errno)")
         }
+        guard fcntl(fd, F_SETFL, O_NONBLOCK) == 0 else {
+            close(fd)
+            removeOwnedSocket()
+            throw ForgeError(.ioError, "cannot make listener nonblocking")
+        }
         listenFD = fd
+        clientLock.lock()
+        stopping = false
+        clientLock.unlock()
+        acceptGroup.enter()
         let thread = Thread {
-            while true {
-                let client = accept(fd, nil, nil)
-                if client < 0 {
+            defer { self.acceptGroup.leave() }
+            while !self.shouldStop {
+                // Darwin cannot shutdown an unconnected listener to wake accept. Polling
+                // a nonblocking descriptor bounds stop latency on both Darwin and Linux.
+                var ready = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                let count = poll(&ready, 1, 100)
+                if count == 0 { continue }
+                if count < 0 {
                     if errno == EINTR { continue }
                     break
                 }
-                Task {
-                    await serveConnection(engine: engine, input: client, output: client)
+                if self.shouldStop { break }
+                let client = accept(fd, nil, nil)
+                if client < 0 {
+                    if errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK { continue }
+                    break
+                }
+                // Darwin may inherit the listener's flags; connection readers are blocking.
+                guard fcntl(client, F_SETFL, 0) == 0 else {
                     close(client)
+                    continue
+                }
+                self.registerClient(client)
+                Task {
+                    await serveConnection(engine: engine, input: client, output: client, socketOutput: true)
+                    self.closeClient(client)
                 }
             }
         }
@@ -154,12 +216,50 @@ public final class UnixSocketTransport: @unchecked Sendable {
     }
 
     public func stop() {
+        lock.lock()
+        defer { lock.unlock() }
         if listenFD >= 0 {
-            shutdown(listenFD, Int32(SHUT_RDWR))
+            clientLock.lock()
+            stopping = true
+            clientLock.unlock()
+            // The accept loop must exit before the descriptor can be reused by a restart.
+            acceptGroup.wait()
             close(listenFD)
             listenFD = -1
         }
-        unlink(path)
+        clientLock.lock()
+        for client in clients { shutdown(client, Int32(SHUT_RDWR)) }
+        clientLock.unlock()
+        removeOwnedSocket()
+    }
+
+    private var shouldStop: Bool {
+        clientLock.lock()
+        defer { clientLock.unlock() }
+        return stopping
+    }
+
+    private func registerClient(_ fd: Int32) {
+        clientLock.lock()
+        defer { clientLock.unlock() }
+        clients.insert(fd)
+    }
+
+    private func closeClient(_ fd: Int32) {
+        clientLock.lock()
+        defer { clientLock.unlock() }
+        clients.remove(fd)
+        close(fd)
+    }
+
+    private func removeOwnedSocket() {
+        guard let identity = socketIdentity else { return }
+        var metadata = stat()
+        if lstat(path, &metadata) == 0,
+            UInt64(metadata.st_dev) == identity.device, UInt64(metadata.st_ino) == identity.inode {
+            unlink(path)
+        }
+        socketIdentity = nil
     }
 }
 #else
