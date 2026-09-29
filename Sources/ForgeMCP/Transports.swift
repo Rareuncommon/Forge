@@ -15,6 +15,7 @@ import ucrt
 final class LineWriter: @unchecked Sendable {
     private let fd: Int32
     private let socketOutput: Bool
+    private let safeToWrite: Bool
     private let lock = NSLock()
 
     init(fd: Int32, socketOutput: Bool = false) {
@@ -23,12 +24,19 @@ final class LineWriter: @unchecked Sendable {
         #if canImport(Darwin)
         if socketOutput {
             var enabled: Int32 = 1
-            _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
+            // Darwin refuses setsockopt after the peer has already disconnected. Never
+            // write unless SIGPIPE suppression succeeded, including that accept race.
+            safeToWrite = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size)) == 0
+        } else {
+            safeToWrite = true
         }
+        #else
+        safeToWrite = true
         #endif
     }
 
     func write(_ line: String) {
+        guard safeToWrite else { return }
         lock.lock()
         defer { lock.unlock() }
         var bytes = Array(line.utf8)

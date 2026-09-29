@@ -304,16 +304,19 @@ struct SocketTests {
     }
 
     @Test func disconnectedSocketDoesNotTerminateTheProcess() throws {
-        var fds = [Int32](repeating: -1, count: 2)
-        #if canImport(Glibc)
-        let type = Int32(SOCK_STREAM.rawValue)
-        #else
-        let type = SOCK_STREAM
-        #endif
-        try #require(socketpair(AF_UNIX, type, 0, &fds) == 0)
-        defer { close(fds[0]) }
-        close(fds[1])
-        LineWriter(fd: fds[0], socketOutput: true).write("disconnected")
+        for configureBeforeDisconnect in [true, false] {
+            var fds = [Int32](repeating: -1, count: 2)
+            #if canImport(Glibc)
+            let type = Int32(SOCK_STREAM.rawValue)
+            #else
+            let type = SOCK_STREAM
+            #endif
+            try #require(socketpair(AF_UNIX, type, 0, &fds) == 0)
+            defer { close(fds[0]) }
+            let writer = configureBeforeDisconnect ? LineWriter(fd: fds[0], socketOutput: true) : nil
+            close(fds[1])
+            (writer ?? LineWriter(fd: fds[0], socketOutput: true)).write("disconnected")
+        }
     }
 
     @Test func transportCanRestartAndStopDisconnectsClients() async throws {

@@ -55,6 +55,12 @@ research/packaging; coverage was risk-based, not proof that every line is bug-fr
   official toolchain at `~/.local/share/forge/swift-6.4.0/usr/bin/swift` with
   `--scratch-path .build-official`.
 
+Native macOS CI initially exposed a Darwin disconnect race: `setsockopt(SO_NOSIGPIPE)`
+can fail after the peer disconnects, leaving a following write able to terminate the
+process. The writer now refuses writes when suppression cannot be configured; the
+regression covers both pre- and post-disconnect initialization. Native ForgeApp compiled
+successfully in that run; full CI is rerun for the fix.
+
 ### Remaining limitations
 
 Native macOS/Windows compilation and runtime behavior require their CI/platform checks;
