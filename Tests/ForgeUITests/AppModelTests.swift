@@ -1,4 +1,5 @@
 import ForgeCore
+import ForgeRender
 import ForgeSketch
 import Foundation
 import Testing
@@ -123,6 +124,27 @@ struct AppModelTests {
         #expect(get() == "40")
         m.chooseTool(nil)
         #expect(m.panelPage.cancel == nil)
+    }
+
+    @Test func sketchGridFollowsTheViewNotTheGeometry() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.newSketch(on: .front)
+        // A view 100 mm high: about a dozen cells → 10 mm spacing.
+        var cam = Camera()
+        cam.orthoHalfHeight = 50
+        m.projection = ViewProjection(camera: cam, width: 1200, height: 800)
+        await Task.yield()
+        let before = try #require(m.grid)
+        #expect(before.step == 10)
+        // Drawing a small line does not rescale the grid (it used to follow the geometry).
+        await m.run("sketch.add_line", ["start": [0, 0], "end": [12, 0]])
+        #expect(m.grid == before)
+        // Zooming in 10× refines it to 1 mm.
+        cam.orthoHalfHeight = 5
+        m.projection = ViewProjection(camera: cam, width: 1200, height: 800)
+        for _ in 0..<5 { await Task.yield() }
+        #expect(m.grid?.step == 1)
     }
 
     @Test func smartDimensionFollowsThePointerAndIsPlacedByAClick() async throws {

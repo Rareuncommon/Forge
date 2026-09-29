@@ -77,8 +77,15 @@ a value at the midpoint. And the first dimension left the sketch tiny in a big g
   dimension was added at its measured value, which did not scale. The box is now filled only
   when the dimension being edited changes.
 - **Framing:** Zoom to Fit frames the bodies, sketches and dimensions rather than the reference
-  grid and planes. The grid and planes are sized from the model, no longer at least 100 mm. The
-  grid sits just behind the sketch plane, so lines on grid lines stay visible.
+  grid and planes (100 mm around the origin when there is nothing yet). The grid sits just
+  behind the sketch plane, so lines on grid lines stay visible.
+- **Sketch grid follows the view:** sizing the grid from the geometry made it jump as soon as
+  a line was drawn (the user saw the sketch "randomly scale"). Now, as in SolidWorks:
+  - the grid has about a dozen cells across the view's height, spaced 1–2–5 × 10ⁿ, centred
+    near the view;
+  - it is rebuilt only when zoom or pan changes its step or block (`AppModel.gridForView`);
+  - the origin axes and point markers in a sketch are sized with it;
+  - planes outside a sketch keep the model size (at least 100 mm).
 
 ### Not done / known gaps (Linux)
 

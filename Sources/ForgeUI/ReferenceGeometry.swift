@@ -9,6 +9,15 @@ import ForgeKernel
 import ForgeRender
 import ForgeSketch
 
+/// The sketch grid: `step` apart, centred at (centerU, centerV) on the sketch plane,
+/// `halfCells` cells each way.
+package struct SketchGrid: Equatable {
+    package var step: Double
+    package var centerU: Double
+    package var centerV: Double
+    package var halfCells: Int
+}
+
 package enum ReferenceGeometry {
     package static let firstObjectID: UInt32 = 1_000_000
 
@@ -20,22 +29,29 @@ package enum ReferenceGeometry {
 
     /// Items for the current state. `size` is the model's extent (mm) used to scale planes,
     /// axes and the grid; `sketch` is the sketch being edited, if any.
-    package static func items(size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, refPlanes: [RefPlane] = [], dark: Bool = false) -> [RenderItem] {
+    /// `grid`: the sketch grid for the view (nil: sized from `size`, ~20 cells across).
+    package static func items(
+        size: Double, sketch: Sketch?, allSketches: [Sketch], planes: Bool = true, refPlanes: [RefPlane] = [], dark: Bool = false, grid: SketchGrid? = nil
+    ) -> [RenderItem] {
         var out: [RenderItem] = []
         var lines = LineBuilder()
         let s = size
+        // In a sketch the origin axes and point markers are sized with the grid (the view).
+        var axisLength = s * 0.25, marker = s * 0.006
         if let sk = sketch {
-            // Grid on the sketch plane, spacing 1–2–5 × 10ⁿ for ~20 cells across.
-            let step = niceStep(s / 10)
-            let n = Int((s / step).rounded(.up))
+            let g = grid ?? SketchGrid(step: niceStep(s / 10), centerU: 0, centerV: 0, halfCells: Int((s / niceStep(s / 10)).rounded(.up)))
+            let step = g.step, n = g.halfCells
+            axisLength = step * 2.5
+            marker = step * 0.06
             // Just behind the plane (as seen normal to the sketch), so sketch lines lying on a
             // grid line are drawn over it, not hidden by it.
-            let back = sk.plane.normal * (-s * 1e-3)
+            let back = sk.plane.normal * (-step * 1e-2)
+            let (u0, u1) = (g.centerU - Double(n) * step, g.centerU + Double(n) * step)
+            let (v0, v1) = (g.centerV - Double(n) * step, g.centerV + Double(n) * step)
             for i in -n...n {
-                let t = Double(i) * step
-                let c = i == 0 ? gridAxisColor(dark) : gridColor(dark)
-                lines.add([sk.plane.point(t, -Double(n) * step) + back, sk.plane.point(t, Double(n) * step) + back], c)
-                lines.add([sk.plane.point(-Double(n) * step, t) + back, sk.plane.point(Double(n) * step, t) + back], c)
+                let u = g.centerU + Double(i) * step, v = g.centerV + Double(i) * step
+                lines.add([sk.plane.point(u, v0) + back, sk.plane.point(u, v1) + back], abs(u) < step * 1e-6 ? gridAxisColor(dark) : gridColor(dark))
+                lines.add([sk.plane.point(u0, v) + back, sk.plane.point(u1, v) + back], abs(v) < step * 1e-6 ? gridAxisColor(dark) : gridColor(dark))
             }
         } else if planes {
             // Front (XY), Top (XZ) and Right (YZ) plane outlines.
@@ -53,12 +69,12 @@ package enum ReferenceGeometry {
             }
         }
         // Origin axes: X red, Y green, Z blue.
-        let a = s * 0.25
+        let a = axisLength
         lines.add([.zero, Vec3(a, 0, 0)], RGBA(0.85, 0.20, 0.20))
         lines.add([.zero, Vec3(0, a, 0)], RGBA(0.20, 0.65, 0.25))
         lines.add([.zero, Vec3(0, 0, a)], RGBA(0.20, 0.35, 0.90))
         // Sketch points (endpoints, centres, free points) as small crosses in their plane.
-        let m = s * 0.006
+        let m = marker
         for sk in allSketches {
             for e in sk.orderedEntities where e.kind == .point && e.id != Sketch.originID {
                 let (u, v) = sk.point(e.id)
