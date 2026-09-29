@@ -40,6 +40,26 @@ public struct ChangeSet: Codable, Sendable, Hashable {
             }
         }
         for id in before?.sketchOrder ?? [] where asx[id] == nil { c.deleted.append(id) }
+        let bp = before?.refPlanes ?? [:], ap = after?.refPlanes ?? [:]
+        for id in after?.refPlaneOrder ?? [] {
+            if let old = bp[id] {
+                if old != ap[id] { c.modified.append(id) }
+            } else { c.created.append(id) }
+        }
+        for id in before?.refPlaneOrder ?? [] where ap[id] == nil { c.deleted.append(id) }
+        let bf = before?.features ?? [], af = after?.features ?? []
+        for feature in af {
+            if let old = bf.first(where: { $0.id == feature.id }) {
+                if old != feature { c.modified.append(feature.id) }
+            } else { c.created.append(feature.id) }
+        }
+        for feature in bf where !af.contains(where: { $0.id == feature.id }) { c.deleted.append(feature.id) }
+        // Reordering and rollback can change the history without changing any shape.
+        if let before, let after,
+            before.name != after.name || before.units != after.units || before.rollback != after.rollback
+                || (Set(bf.map(\.id)) == Set(af.map(\.id)) && bf.map(\.id) != af.map(\.id)) {
+            c.modified.append(after.id)
+        }
         return c
     }
 }
@@ -246,6 +266,11 @@ public actor Engine {
     /// no undo entry, no journal line. Used for live previews (the extrude the user is
     /// setting up, drawn before OK).
     public func preview(_ items: [Invocation]) throws -> (document: Document?, changes: ChangeSet) {
+        for item in items {
+            guard try registry.descriptor(item.command).supportsDryRun else {
+                throw ForgeError(.unsupported, "'\(item.command)' cannot run in a preview")
+            }
+        }
         let saved = state
         defer { state = saved }
         var changes = ChangeSet()
@@ -261,6 +286,21 @@ public actor Engine {
     /// Execute a list of commands. With `atomic` (default) the batch is one transaction:
     /// if any command fails, everything is rolled back and one undo step results on success.
     public func executeBatch(_ items: [Invocation], atomic: Bool = true, dryRun: Bool = false) throws -> BatchOutcome {
+        // Validate the entire batch before any filesystem or session side effects.
+        for (index, item) in items.enumerated() where atomic || dryRun {
+            do {
+                let descriptor = try registry.descriptor(item.command)
+                if dryRun && !descriptor.supportsDryRun {
+                    throw ForgeError(.unsupported, "'\(item.command)' cannot run in a dry-run batch")
+                }
+                let localSessionCommands: Set<String> = ["selection.set", "selection.clear", "sketch.edit", "sketch.exit"]
+                if atomic && !descriptor.supportsDryRun && !localSessionCommands.contains(item.command) {
+                    throw ForgeError(.unsupported, "'\(item.command)' cannot run in an atomic batch; execute it separately or use atomic: false")
+                }
+            } catch {
+                return BatchOutcome(outcomes: [], failedIndex: index, error: ForgeError.wrap(error), committed: false)
+            }
+        }
         let saved = state
         var outcomes: [CommandOutcome] = []
         // A dry-run batch really executes (so later steps can reference entities created by

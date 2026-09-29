@@ -359,8 +359,12 @@ public enum SchemaValidator {
         case ("object", .object(let o)):
             let props = schema["properties"]?.objectValue ?? [:]
             for key in o.keys.sorted() where props[key] == nil {
-                let hint = closest(key, in: Array(props.keys)).map { " (did you mean '\($0)'?)" } ?? ""
-                problems.append("\(path): unknown parameter '\(key)'\(hint)")
+                if schema["additionalProperties"] == false {
+                    let hint = closest(key, in: Array(props.keys)).map { " (did you mean '\($0)'?)" } ?? ""
+                    problems.append("\(path): unknown parameter '\(key)'\(hint)")
+                } else if let additional = schema["additionalProperties"], additional.objectValue != nil {
+                    problems += validate(o[key]!, against: additional, path: "\(path).\(key)")
+                }
             }
             for req in schema["required"]?.arrayValue?.compactMap(\.stringValue) ?? [] where o[req] == nil {
                 problems.append("\(path): missing required parameter '\(req)'")
@@ -382,10 +386,12 @@ public enum SchemaValidator {
             if let allowed = schema["enum"]?.arrayValue?.compactMap(\.stringValue), !allowed.contains(s) {
                 problems.append("\(path): '\(s)' is not one of \(allowed.joined(separator: ", "))")
             }
-        case ("number", .number), ("boolean", .bool):
+        case ("number", .number(let d)):
+            if !d.isFinite { problems.append("\(path): expected a finite number") }
+        case ("boolean", .bool):
             break
         case ("integer", .number(let d)):
-            if d.rounded() != d { problems.append("\(path): expected an integer") }
+            if Int(exactly: d) == nil { problems.append("\(path): expected a representable integer") }
         default:
             problems.append("\(path): expected \(type)")
         }

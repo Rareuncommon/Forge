@@ -79,7 +79,7 @@ extension JSONValue {
     public var stringValue: String? { if case .string(let s) = self { return s } else { return nil } }
     public var doubleValue: Double? { if case .number(let d) = self { return d } else { return nil } }
     public var intValue: Int? {
-        if case .number(let d) = self, d.rounded() == d { return Int(d) }
+        if case .number(let d) = self { return Int(exactly: d) }
         return nil
     }
     public var boolValue: Bool? { if case .bool(let b) = self { return b } else { return nil } }
