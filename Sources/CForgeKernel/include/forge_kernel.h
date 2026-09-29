@@ -142,6 +142,8 @@ FKShape *fk_make_torus(const double origin[3], const double axis[3], double majo
 
 /* ---- operations -------------------------------------------------------- */
 FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError *err);
+/* Non-destructive solid intersection for queries. NULL with FK_OK means no shared solid. */
+FKShape *fk_intersection(const FKShape *a, const FKShape *b, FKError *err);
 /* m is a row-major 3x4 affine matrix [R | t]; must be a rigid motion or uniform scale. */
 FKShape *fk_transform(const FKShape *shape, const double m[12], FKError *err);
 FKShape *fk_fillet_edges(const FKShape *shape, const int32_t *edgeIndices, size_t count, double radius, FKError *err);

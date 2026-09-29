@@ -35,6 +35,8 @@ jobs:
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"describe_command","arguments":{"name":"body.create_box"}}}' \
             | .build/debug/forge-cli mcp | python3 -c 'import sys,json; r=[json.loads(l) for l in sys.stdin]; assert r[1]["result"]["isError"] is False, r; print("mcp ok")'
+      - name: MCP modeling workflows over stdio
+        run: python3 -m unittest discover -s Tests/IntegrationTests -v
       - name: Packaging script regressions
         run: python3 -m unittest discover -s Tests/PackagingTests -v
       - name: FEATURES.md is in sync with SPEC.md
@@ -49,6 +51,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb xauth libgl1-mesa-dri
           xvfb-run -a -s "-screen 0 1600x1000x24" env GDK_BACKEND=x11 .build/debug/forge --screenshot forge-linux.png
           test -s forge-linux.png
+      - name: Validate native GTK menu actions
+        run: scripts/test-gtk-actions.sh
       - uses: actions/upload-artifact@v5
         with:
           name: forge-linux-screenshot
@@ -134,6 +138,8 @@ jobs:
         run: FORGE_NO_APP=1 swift test
       - name: Golden models through forge-cli
         run: .build/debug/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
+      - name: MCP modeling workflows over stdio
+        run: python3 -m unittest discover -s Tests/IntegrationTests -v
       - name: Build app (Metal + SwiftUI)
         if: always()
         run: swift build --product ForgeApp
@@ -175,6 +181,11 @@ jobs:
           . Vendor/occt/windows-x64/forge-env.sh
           BIN="$(swift build --show-bin-path)"
           "$BIN/forge-cli.exe" run Tests/GoldenModelTests/Models/*.json --quiet 2>&1 | tee golden.log
+      - name: MCP modeling workflows over stdio
+        run: |
+          . Vendor/occt/windows-x64/forge-env.sh
+          BIN="$(swift build --show-bin-path)"
+          FORGE_CLI="$BIN/forge-cli.exe" python -m unittest discover -s Tests/IntegrationTests -v
       - name: Build the Windows app (Win32 + Direct3D 11)
         if: always()
         run: |

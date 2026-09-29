@@ -994,6 +994,7 @@ static void buildMenu(fw_app *a) {
           display = CreatePopupMenu();
     AppendMenuW(file, MF_STRING, FW_MENU_NEW, L"&New Part\tCtrl+N");
     AppendMenuW(file, MF_STRING, FW_MENU_OPEN, L"&Open…\tCtrl+O");
+    AppendMenuW(file, MF_STRING, FW_MENU_IMPORT_STEP, L"Import STEP…");
     AppendMenuW(file, MF_STRING, FW_MENU_SAVE, L"&Save\tCtrl+S");
     AppendMenuW(file, MF_STRING, FW_MENU_SAVE_AS, L"Save &As…\tCtrl+Shift+S");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
@@ -1597,6 +1598,19 @@ extern "C" char *fw_open_dialog(fw_app *a) {
     }
     dlg->Release();
     return out;
+}
+
+extern "C" char *fw_import_step_dialog(fw_app *a) {
+    wchar_t file[32768] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = a->hwnd;
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 32768;
+    ofn.lpstrTitle = L"Import STEP solids";
+    ofn.lpstrFilter = L"STEP files\0*.step;*.stp\0All files\0*.*\0";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    return GetOpenFileNameW(&ofn) ? dup(file) : nullptr;
 }
 
 extern "C" void fw_message(fw_app *a, const char *title, const char *message, int error) {

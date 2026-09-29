@@ -437,6 +437,18 @@ struct OperationPage: View {
                     PMField(label: "Minor radius", text: $model.form.torusMinor, unit: "mm")
                 }
             }
+        case .interference:
+            PMSection("Results") {
+                Text("Select at least two bodies, or clear selection to check all. Touching faces are not interference. Recalculate after changes.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.text2)
+                Button("Calculate") { Task { await model.computeInterference() } }
+                if let result = model.form.result {
+                    Text("Interferences: \(result["interference_count"]?.intValue ?? 0)")
+                    ForEach(Array(model.interferencePairs.enumerated()), id: \.offset) { _, pair in
+                        Button(model.interferenceLabel(pair)) { Task { await model.selectInterference(pair) } }
+                    }
+                }
+            }
         case .massProperties, .measure, .check:
             PMSection(op == .measure ? "Measure" : "Results") {
                 if let r = model.form.result {

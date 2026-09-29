@@ -94,6 +94,7 @@ public enum ToolCatalog {
             alias("activate_document", "Activate document", "document.activate"),
             alias("get_document_state", "Document state", "document.state"),
             alias("open", "Open document", "document.open"),
+            alias("import_step", "Import STEP solids", "document.import_step"),
             alias("save", "Save document", "document.save"),
             // ---- sketch
             alias("create_sketch", "Create sketch", "sketch.create"),
@@ -102,6 +103,9 @@ public enum ToolCatalog {
             alias("check_sketch", "Check sketch", "sketch.check"),
             // ---- parametric history: the same commands used by the desktop feature tree
             alias("get_feature_tree", "Get feature tree", "feature.list"),
+            alias("get_feature", "Get feature", "feature.get"),
+            alias("get_feature_dependencies", "Get feature dependencies", "feature.dependencies"),
+            alias("reorder_feature", "Reorder feature", "feature.reorder"),
             alias("edit_feature", "Edit feature", "feature.edit"),
             alias("rename_feature", "Rename feature", "feature.rename"),
             alias("suppress_feature", "Suppress or restore feature", "feature.suppress"),
@@ -171,6 +175,7 @@ public enum ToolCatalog {
             alias("pick", "Pick", "view.pick", extra: "Pass the same 'view' used for render_view"),
             // ---- verification & export
             alias("validate_model", "Validate model", "query.validate"),
+            alias("check_interference", "Check body interference", "query.interference"),
             alias("compare_to_spec", "Compare to spec", "query.compare_to_spec"),
             alias("export_step", "Export STEP", "export.step"),
             alias("export_stl", "Export STL", "export.stl"),

@@ -43,6 +43,8 @@
 #include <GProp_PrincipalProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_Static.hxx>
+#include <Message.hxx>
+#include <Message_PrinterOStream.hxx>
 #include <Message_ProgressRange.hxx>
 #include <Poly_Triangulation.hxx>
 #include <STEPControl_Reader.hxx>
@@ -121,6 +123,21 @@ namespace {
 std::mutex &dataExchangeMutex() {
     static std::mutex m;
     return m;
+}
+
+// OCCT defaults to cout, which corrupts the CLI's MCP JSON-RPC transport. Configure
+// its supported messenger once, before any kernel operation can emit diagnostics.
+// Do not redirect process file descriptors: Swift's protocol writer owns stdout.
+void initializeDiagnostics() {
+    static std::once_flag initialized;
+    std::call_once(initialized, [] {
+        std::lock_guard<std::mutex> lock(dataExchangeMutex());
+        Handle(Message_PrinterOStream) printer = new Message_PrinterOStream("cerr", Standard_True, Message_Trace);
+        printer->SetToColorize(Standard_False);
+        const Handle(Message_Messenger) &messenger = Message::DefaultMessenger();
+        messenger->ChangePrinters().Clear();
+        messenger->AddPrinter(printer);
+    });
 }
 
 void setError(FKError *err, int32_t code, const char *message) {
@@ -368,7 +385,7 @@ std::string failureDescription(const Standard_Failure &e) {
 
 } // namespace
 
-#define FK_BEGIN try {
+#define FK_BEGIN try { initializeDiagnostics();
 #define FK_END(ret)                                                                                \
     }                                                                                              \
     catch (const Standard_Failure &e) {                                                            \
@@ -520,6 +537,36 @@ FKShape *fk_boolean(const FKShape *a, const FKShape *b, FKBooleanOp op, FKError 
     Recorder rec(result, {modifiedByHistory(unified)});
     rec.sameFaces(0, a->shape, modifiedBy(*alg));
     rec.sameFaces(1, b->shape, modifiedBy(*alg));
+    return wrap(result);
+    FK_END(nullptr)
+}
+
+FKShape *fk_intersection(const FKShape *a, const FKShape *b, FKError *err) {
+    clearError(err);
+    if (!hasShape(a, err) || !hasShape(b, err)) return nullptr;
+    FK_BEGIN
+    TopTools_ListOfShape args, tools;
+    args.Append(a->shape);
+    tools.Append(b->shape);
+    BRepAlgoAPI_Common alg;
+    alg.SetArguments(args);
+    alg.SetTools(tools);
+    alg.SetNonDestructive(Standard_True);
+    alg.SetRunParallel(Standard_False);
+    alg.Build();
+    if (!alg.IsDone() || alg.HasErrors()) {
+        setError(err, FK_ERR_BOOLEAN_FAILED, "solid intersection failed");
+        return nullptr;
+    }
+    // Only solids contribute interference volume. Exclude any coincident faces/edges.
+    TopTools_IndexedMapOfShape solids;
+    TopExp::MapShapes(alg.Shape(), TopAbs_SOLID, solids);
+    if (solids.IsEmpty()) return nullptr;
+    if (solids.Extent() == 1) return wrap(solids(1));
+    TopoDS_Compound result;
+    BRep_Builder builder;
+    builder.MakeCompound(result);
+    for (int i = 1; i <= solids.Extent(); ++i) builder.Add(result, solids(i));
     return wrap(result);
     FK_END(nullptr)
 }

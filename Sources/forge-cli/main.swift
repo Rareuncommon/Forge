@@ -75,7 +75,7 @@ do {
     case "exec":
         guard let command = args.first else { usageError("exec needs a command name") }
         let params = args.count > 1 ? try JSONCoding.parse(args[1]) : [:]
-        if !command.hasPrefix("document.") && !command.hasPrefix("help.") { try await engine.execute("document.new") }
+        if command == "document.import_step" || (!command.hasPrefix("document.") && !command.hasPrefix("help.")) { try await engine.execute("document.new") }
         printJSON(try JSONCoding.toJSON(try await engine.execute(command, params)))
 
     case "run":

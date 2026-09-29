@@ -1,4 +1,5 @@
 import ForgeCore
+import ForgeData
 import Foundation
 import Testing
 
@@ -61,7 +62,7 @@ struct FileTests {
         let p = dir.appendingPathComponent("New.forgepart")
         try await e.execute("document.save", ["path": .string(p.path)])
         let m = p.appendingPathComponent("manifest.json")
-        let text = try String(contentsOf: m, encoding: .utf8).replacingOccurrences(of: "\"schema\" : 2", with: "\"schema\" : 99")
+        let text = try String(contentsOf: m, encoding: .utf8).replacingOccurrences(of: "\"schema\" : \(DocumentPackage.currentSchema)", with: "\"schema\" : 99")
         try text.write(to: m, atomically: true, encoding: .utf8)
         do {
             try await e.execute("document.open", ["path": .string(p.path)])
@@ -116,7 +117,7 @@ struct FileTests {
         try await e.execute("document.save", ["path": .string(p.path)])
         // Rewrite as schema 1: no feature tree.
         let m = p.appendingPathComponent("manifest.json")
-        try String(contentsOf: m, encoding: .utf8).replacingOccurrences(of: "\"schema\" : 2", with: "\"schema\" : 1").write(to: m, atomically: true, encoding: .utf8)
+        try String(contentsOf: m, encoding: .utf8).replacingOccurrences(of: "\"schema\" : \(DocumentPackage.currentSchema)", with: "\"schema\" : 1").write(to: m, atomically: true, encoding: .utf8)
         let model = p.appendingPathComponent("model.json")
         guard case .object(var o) = try JSONCoding.parse(try Data(contentsOf: model)) else { Issue.record("model"); return }
         for k in ["features", "rollback", "next_feature", "feature_counters", "base_bodies", "body_names"] { o.removeValue(forKey: k) }

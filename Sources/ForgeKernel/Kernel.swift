@@ -54,6 +54,16 @@ public enum Kernel {
         try call { err in fk_boolean(a.handle, b.handle, op.c, err) }
     }
 
+    /// Non-destructive solid common for analysis. Touching or separated shapes return nil.
+    public static func intersection(_ a: Shape, _ b: Shape) throws -> Shape? {
+        var err = FKError()
+        if let handle = fk_intersection(a.handle, b.handle, &err) {
+            return Shape(owning: handle)
+        }
+        if err.code != 0 { throw error(err) }
+        return nil
+    }
+
     public static func transform(_ shape: Shape, _ t: Transform3) throws -> Shape {
         try call { err in t.m.withUnsafeBufferPointer { fk_transform(shape.handle, $0.baseAddress, err) } }
     }

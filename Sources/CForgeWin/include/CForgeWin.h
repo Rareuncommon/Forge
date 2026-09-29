@@ -59,7 +59,7 @@ enum { FW_MOD_SHIFT = 1, FW_MOD_CTRL = 2, FW_MOD_ALT = 4 };
 
 /// Menu commands (FW_EV_MENU).
 enum {
-    FW_MENU_NEW = 100, FW_MENU_OPEN, FW_MENU_SAVE, FW_MENU_SAVE_AS, FW_MENU_EXPORT_STEP, FW_MENU_EXPORT_STL, FW_MENU_EXIT,
+    FW_MENU_NEW = 100, FW_MENU_OPEN, FW_MENU_SAVE, FW_MENU_SAVE_AS, FW_MENU_EXPORT_STEP, FW_MENU_EXPORT_STL, FW_MENU_EXIT, FW_MENU_IMPORT_STEP,
     FW_MENU_UNDO = 200, FW_MENU_REDO,
     FW_MENU_FRONT = 300, FW_MENU_BACK, FW_MENU_LEFT, FW_MENU_RIGHT, FW_MENU_TOP, FW_MENU_BOTTOM, FW_MENU_ISOMETRIC,
     FW_MENU_DIMETRIC, FW_MENU_TRIMETRIC, FW_MENU_NORMAL_TO, FW_MENU_FIT, FW_MENU_PREVIOUS,
@@ -164,6 +164,7 @@ int fw_confirm(fw_app *, const char *title, const char *message, const char *yes
 char *fw_save_dialog(fw_app *, const char *suggested_name);
 /// A .forgepart document (a folder).
 char *fw_open_dialog(fw_app *);
+char *fw_import_step_dialog(fw_app *);
 void fw_message(fw_app *, const char *title, const char *message, int error);
 void fw_free(void *);
 /// Capture the main window's client area as RGBA8 rows (top row first); free with fw_free.

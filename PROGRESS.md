@@ -1,5 +1,73 @@
 # Progress
 
+## Session 9 — 2026-09-29 — PR #3 review fixes
+
+- Imported faces now receive distinct persistent base names at intake. Kernel history
+  preserves those identities through transforms instead of reassigning centroid-based
+  suffixes across unrelated faces. A regression reproduces the original failure, then
+  verifies all six face references through a 180-degree rotation and a downstream
+  fillet through transform editing, undo, save/reopen and source-file removal.
+- GTK explicitly registers the STEP import menu action. Native regression coverage
+  checks menu action registration and Import STEP event dispatch.
+- Validation: build with tests and all **297 Swift tests** pass; **31 golden models**
+  and both MCP subprocess tests pass. The native GTK test validates 49 menu entries
+  and Import STEP dispatch; removing the fix makes that test fail. The new imported
+  reference regression also failed before its fix and passes afterward. Feature matrix
+  synchronization, shell syntax and whitespace checks pass.
+
+## Session 8 — 2026-09-29 — STEP intake, feature relationships and part interference
+
+This increment extends the part modeler toward SolidWorks workflows. It does not add
+assemblies, drawings, simulation or full SolidWorks parity. The matrix now contains
+1,000 rows: 841 not started, 131 in progress, 28 done. Only the implemented multibody
+interference query and its MCP entry advance to done; broader STEP and history rows
+remain in progress.
+
+### Changes
+
+- **STEP intake:** `document.import_step` / MCP `import_step` imports independent closed
+  solids in STEP units through OCCT. Use a new part before creating any sketches or
+  features; repeated imports are allowed until modeling starts. Invalid/open solids,
+  surface-only and mixed loose geometry are rejected atomically. STEP assembly
+  hierarchy, source names/colors, PMI, feature recognition and automatic healing remain
+  unimplemented. Kernel STEP console diagnostics are redirected away from MCP stdout.
+- **Persistent originals:** schema 3 writes authoritative original base BREP separately
+  from current body outputs. Modified or deleted imported bodies rebuild from their
+  original inputs after save/open, even after the STEP file is removed. Schema 1/2
+  packages migrate using the geometry those older packages retained. Source-record
+  consistency, duplicate/aliased payloads and missing originals are validated.
+- **History:** `feature.get`, `feature.dependencies` and `feature.reorder` expose single
+  feature inspection, direct/transitive parents/children and validated history moves.
+  Reorder uses a scratch rebuild, preserves dependencies and surviving output ids, and
+  refuses invalid moves without adding an undo entry. Rollback must be at the end.
+  Implicit body scopes are conservative; explicit empty scopes remain empty. Freeze
+  bars, folders and unrestricted feature reordering are not included.
+- **Interference:** `query.interference` / MCP `check_interference` calculates pairwise
+  solid overlap volume and bounds without changing the model. Touching is excluded;
+  the filter threshold is finite, nonnegative and expressed in mm³. Up to 100 distinct
+  bodies per call. This covers multibody parts, not assembly components or motion.
+- **Desktop/MCP:** STEP file pickers, feature Parent/Child and Move Up/Down menus, and
+  an Interference Detection panel with selectable body pairs share the command layer.
+  New direct MCP aliases expose import, feature inspection, dependencies, reorder and
+  interference. Shared UI tests cover result clearing and stale async-result rejection.
+
+### Verification
+
+- Focused history tests: **5 pass**, including independent reorder/save-open/undo-redo,
+  invalid dependency moves, all-body scope protection and explicit empty scope.
+- **31 golden models** and **3 packaging regressions** pass.
+- **2 MCP stdio integration tests** pass: complete import/edit/reorder/interference
+  workflow and invalid-STEP diagnostics without protocol corruption.
+- **296 Swift tests pass** across all eight targets with official Swift 6.4.
+- Windows UI cross-platform type-check and optimized Linux desktop/CLI builds pass.
+  The Linux screenshot self-test renders the model and editing controls successfully.
+- `scripts/features.py --check` passes. macOS/Windows runtime UX remains a CI/manual
+  verification target; no runtime parity claim is made from Linux type-checking.
+
+Reference semantics: [SolidWorks Parent and Child Relations](https://help.solidworks.com/2024/english/SolidWorks/sldworks/c_Parent_and_Child_Relations_features.htm)
+prohibit reordering a child before its parent. Forge additionally guards implicit scopes
+and rebuild validity; see ADR 0004 for the implemented schema-3 storage contract.
+
 ## Session 7 — 2026-09-28 — Coordinated correctness audit and MCP feature workflows
 
 This delivery is a tested improvement to the existing part modeler, not completion of

@@ -250,6 +250,8 @@ private struct EvaluateTab: View {
                         help: "Distance between two selected entities") { model.begin(.measure) }
             RibbonLarge(.massProps, "Mass\nProperties", active: model.operation == .massProperties, enabled: hasBody,
                         help: "Volume, surface area and centre of mass") { model.begin(.massProperties) }
+            RibbonLarge(.combine, "Interference", active: model.operation == .interference, enabled: model.bodies.count >= 2,
+                        help: "Find overlapping volume between solid bodies") { model.begin(.interference) }
             RibbonLarge(.check, "Check", active: model.operation == .check, enabled: hasBody,
                         help: "Validate body geometry and topology") { model.begin(.check) }
         }

@@ -15,6 +15,12 @@ enum DocumentFiles {
             records.append(DocumentPackage.BodyRecord(
                 id: b.id, name: b.name, producedBy: b.producedBy, brep: "bodies/\(b.id).brep", faceNames: b.naming?.faceBases))
         }
+        var baseBreps: [String: Data] = [:]
+        let sources = try doc.baseBodies.map { b in
+            baseBreps[b.id] = try b.shape.brepData()
+            return DocumentPackage.BodyRecord(id: b.id, name: b.name, producedBy: b.producedBy,
+                brep: "bodies/base/\(b.id).brep", faceNames: b.naming?.faceBases)
+        }
         let features = try doc.features.map {
             DocumentPackage.FeatureRecord(
                 id: $0.id, name: $0.name, command: $0.command, params: $0.params, suppressed: $0.suppressed, createdBodies: $0.createdBodies,
@@ -27,10 +33,10 @@ enum DocumentFiles {
             nextFeature: doc.nextFeatureNumber, featureCounters: doc.featureNameCounters, baseBodies: doc.baseBodies.map(\.id),
             bodyNames: doc.bodyNames,
             refPlanes: doc.refPlaneOrder.isEmpty ? nil : try doc.orderedRefPlanes.map { try JSONCoding.toJSON($0) },
-            nextPlane: doc.nextPlaneNumber == 1 ? nil : doc.nextPlaneNumber)
+            nextPlane: doc.nextPlaneNumber == 1 ? nil : doc.nextPlaneNumber, baseSources: sources.isEmpty ? nil : sources)
         return DocumentPackage(
             manifest: DocumentPackage.Manifest(app: appVersion, kernel: Kernel.version), model: model, breps: breps,
-            thumbnailPNG: try thumbnail(doc))
+            thumbnailPNG: try thumbnail(doc), baseBreps: baseBreps)
     }
 
     /// 256 px isometric thumbnail for Finder / Quick Look (deterministic).
@@ -46,14 +52,15 @@ enum DocumentFiles {
     }
 
     static func document(from pkg: DocumentPackage, id: String) throws -> Document {
-        let bodies = try pkg.model.bodies.map { r -> Body in
-            guard let data = pkg.breps[r.id] else { throw ForgeError(.ioError, "missing BREP for \(r.id)") }
+        func restore(_ r: DocumentPackage.BodyRecord, from payloads: [String: Data]) throws -> Body {
+            guard let data = payloads[r.id] else { throw ForgeError(.ioError, "missing BREP for \(r.id)") }
             let shape = try Shape.fromBREP(data)
             // Bodies saved without names (older files) are named by position.
             let n = try shape.topology().faces
             let bases = r.faceNames?.count == n ? r.faceNames! : Array(repeating: ["\(r.id):face"], count: n)
             return Body(id: r.id, name: r.name, shape: shape, producedBy: r.producedBy, naming: try? TopoNames.make(bases: bases, shape: shape))
         }
+        let bodies = try pkg.model.bodies.map { try restore($0, from: pkg.breps) }
         var doc = Document.restore(
             id: id, name: pkg.model.name, units: pkg.model.units, bodies: bodies, sketches: pkg.model.sketches,
             nextBody: pkg.model.nextBody, nextSketch: pkg.model.nextSketch)
@@ -68,7 +75,22 @@ enum DocumentFiles {
         doc.rollback = m.rollback
         doc.nextFeatureNumber = m.nextFeature
         doc.featureNameCounters = m.featureCounters
-        doc.baseBodies = bodies.filter { m.baseBodies.contains($0.id) }
+        if let sources = m.baseSources {
+            guard Set(sources.map(\.id)) == Set(m.baseBodies), sources.count == m.baseBodies.count, Set(m.baseBodies).count == m.baseBodies.count else {
+                throw ForgeError(.ioError, "base body source records do not match base_bodies")
+            }
+            let sourceMap = Dictionary(uniqueKeysWithValues: try sources.map { ( $0.id, try restore($0, from: pkg.baseBreps)) })
+            doc.baseBodies = try m.baseBodies.map { id in
+                guard let body = sourceMap[id] else { throw ForgeError(.ioError, "missing base body \(id)") }
+                return body
+            }
+        } else {
+            guard Set(m.baseBodies).count == m.baseBodies.count else { throw ForgeError(.ioError, "duplicate legacy base body id") }
+            doc.baseBodies = try m.baseBodies.map { id in
+                guard let body = bodies.first(where: { $0.id == id }) else { throw ForgeError(.ioError, "missing legacy base body \(id)") }
+                return body
+            }
+        }
         doc.bodyNames = m.bodyNames
         for r in try (m.refPlanes ?? []).map({ try JSONCoding.fromJSON(RefPlane.self, $0) }) {
             doc.refPlanes[r.id] = r

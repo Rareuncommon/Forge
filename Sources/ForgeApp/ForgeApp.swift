@@ -44,6 +44,7 @@ struct ForgeApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Part") { Task { await model.run("document.new", ["name": "Part1"]) } }.keyboardShortcut("n")
                 Button("Open…") { model.openDocument() }.keyboardShortcut("o")
+                Button("Import STEP…") { model.importSTEP() }
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Save") { model.saveDocument(as: false) }.keyboardShortcut("s")
@@ -374,6 +375,23 @@ final class MacPlatform: PlatformServices {
     func chooseSavePath(suggestedName name: String) -> String? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
+        return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+
+    func showMessage(_ title: String, _ message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Close")
+        alert.runModal()
+    }
+
+    func chooseImportSTEPPath() -> String? {
+        let panel = NSOpenPanel()
+        panel.title = "Import STEP solids"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
         return panel.runModal() == .OK ? panel.url?.path : nil
     }
 

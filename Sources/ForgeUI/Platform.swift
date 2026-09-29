@@ -7,6 +7,8 @@ package protocol PlatformServices: AnyObject {
     func chooseSavePath(suggestedName name: String) -> String?
     /// A document to open (nil: cancelled).
     func chooseOpenPath() -> String?
+    func chooseImportSTEPPath() -> String?
+    func showMessage(_ title: String, _ message: String)
 }
 
 /// No UI (tests, headless): confirms everything, never picks a file.
@@ -16,4 +18,10 @@ package final class HeadlessPlatform: PlatformServices {
     package func confirm(_ title: String, _ message: String, confirm: String, cancel: String) -> Bool { true }
     package func chooseSavePath(suggestedName name: String) -> String? { nil }
     package func chooseOpenPath() -> String? { nil }
+}
+
+// Existing headless/platform implementations can opt into these optional dialogs.
+extension PlatformServices {
+    package func chooseImportSTEPPath() -> String? { nil }
+    package func showMessage(_ title: String, _ message: String) {}
 }

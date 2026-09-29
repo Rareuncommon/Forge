@@ -152,6 +152,7 @@ extension AppModel {
         case .massProperties: Task { await computeMassProperties() }
         case .measure: Task { await computeMeasure() }
         case .check: Task { await computeCheck() }
+        case .interference: Task { await computeInterference() }
         default: break
         }
     }

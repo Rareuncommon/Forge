@@ -52,7 +52,7 @@ public struct Document: Sendable {
     public internal(set) var rollback: Int?
     var nextFeatureNumber = 1
     var featureNameCounters: [String: Int] = [:]
-    /// Bodies that exist without a feature (from v1 files): the start of every regeneration.
+    /// Immutable originals imported from STEP or legacy files: the start of every regeneration.
     public internal(set) var baseBodies: [Body] = []
     /// Display names given with body.rename, applied after regeneration.
     var bodyNames: [String: String] = [:]
