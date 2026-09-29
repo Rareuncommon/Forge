@@ -1,6 +1,7 @@
 import ForgeCommands
 import ForgeCore
 import Foundation
+import Dispatch
 import Testing
 
 @testable import ForgeMCP
@@ -262,6 +263,31 @@ struct MCPServerTests {
 #if !os(Windows)
 @Suite("MCP Unix socket transport")
 struct SocketTests {
+    // Blocking socket reads must not occupy Swift's cooperative executor while the
+    // server's Task needs that same executor to produce the response.
+    func responseLine(from fd: Int32) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                var timeout = timeval(tv_sec: 30, tv_usec: 0)
+                guard setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0 else {
+                    continuation.resume(throwing: ForgeError(.ioError, "cannot set test socket timeout"))
+                    return
+                }
+                var bytes = [UInt8]()
+                var chunk = [UInt8](repeating: 0, count: 4096)
+                while !bytes.contains(10) {
+                    let count = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+                    if count < 0 && errno == EINTR { continue }
+                    guard count > 0 else {
+                        continuation.resume(throwing: ForgeError(.ioError, "socket response ended or timed out: \(errno)"))
+                        return
+                    }
+                    bytes.append(contentsOf: chunk[..<count])
+                }
+                continuation.resume(returning: String(decoding: bytes, as: UTF8.self))
+            }
+        }
+    }
     @Test func socketStartupAndStopPreserveUnownedFiles() throws {
         let path = "/tmp/forge-file-\(UUID().uuidString).sock"
         let original = Data("valuable document".utf8)
@@ -334,8 +360,6 @@ struct SocketTests {
             #endif
             try #require(fd >= 0)
             defer { close(fd) }
-            var timeout = timeval(tv_sec: 3, tv_usec: 0)
-            try #require(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0)
             var addr = sockaddr_un()
             addr.sun_family = sa_family_t(AF_UNIX)
             withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: Array(path.utf8) + [0]) }
@@ -344,16 +368,14 @@ struct SocketTests {
             }
             try #require(rc == 0)
             LineWriter(fd: fd, socketOutput: true).write(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_document_state"}}"#)
-            var bytes = [UInt8]()
-            var chunk = [UInt8](repeating: 0, count: 4096)
-            while !bytes.contains(10) {
-                let count = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
-                try #require(count > 0)
-                bytes.append(contentsOf: chunk[..<count])
-            }
-            #expect(String(decoding: bytes, as: UTF8.self).contains("Session\(iteration)"))
+            #expect(try await responseLine(from: fd).contains("Session\(iteration)"))
             transport.stop()
-            let count = chunk.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+            let count: Int = await withCheckedContinuation { continuation in
+                DispatchQueue.global().async {
+                    var byte: UInt8 = 0
+                    continuation.resume(returning: read(fd, &byte, 1))
+                }
+            }
             #expect(count == 0)
         }
     }
@@ -380,14 +402,7 @@ struct SocketTests {
         #expect(rc == 0)
         let msg = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"# + "\n"
         _ = msg.withCString { write(fd, $0, strlen($0)) }
-        var buf = [UInt8](repeating: 0, count: 65536)
-        var received = [UInt8]()
-        while !received.contains(0x0A) {
-            let n = buf.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
-            if n <= 0 { break }
-            received += buf[0..<n]
-        }
-        let response = try JSONCoding.parse(String(decoding: received, as: UTF8.self))
+        let response = try JSONCoding.parse(await responseLine(from: fd))
         #expect(response["result"]?["protocolVersion"] == "2025-06-18")
     }
 }

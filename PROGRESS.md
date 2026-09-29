@@ -59,7 +59,9 @@ Native macOS CI initially exposed a Darwin disconnect race: `setsockopt(SO_NOSIG
 can fail after the peer disconnects, leaving a following write able to terminate the
 process. The writer now refuses writes when suppression cannot be configured; the
 regression covers both pre- and post-disconnect initialization. Native ForgeApp compiled
-successfully in that run; full CI is rerun for the fix.
+successfully in that run. The next native run passed the disconnect regression and
+exposed executor starvation in the blocking socket test client; client reads now run
+on a dedicated Dispatch queue with a bounded timeout. Native CI is rerun for both fixes.
 
 ### Remaining limitations
 
