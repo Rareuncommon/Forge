@@ -47,6 +47,56 @@ struct STEPImportTests {
         #expect(abs(try shape.massProperties().volume - (6000 + 40 * Double.pi)) < 1e-6)
     }
 
+    @Test func importedReferencesFollowRotationAndDownstreamFilletAfterReopen() async throws {
+        let dir = try directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = try fixture(dir)
+        let engine = Engine()
+        try await engine.execute("document.new")
+        try await engine.execute("document.import_step", ["path": .string(source.path)])
+        let original = try #require(await engine.activeDocument?.body("body-1"))
+        let names = try #require(original.naming)
+        #expect(Set(names.faceBases.flatMap { $0 }).count == 6)
+        let centroids = try names.faces.indices.map { try original.shape.face($0).centroid }
+        try await engine.execute("body.transform", ["body": "body-1", "translate": [0, 0, 0]])
+        try await engine.execute("feature.edit", ["feature": "feature-1", "params": [
+            "rotate": ["axis": [0, 0, 1], "angle": "180 deg"],
+        ]])
+        let rotated = try #require(await engine.activeDocument?.body("body-1"))
+        for (name, center) in zip(names.faces, centroids) {
+            let indices = try #require(rotated.naming).resolveFace(name)
+            let index = try #require(indices.first)
+            #expect(indices.count == 1)
+            let actual = try rotated.shape.face(index).centroid
+            #expect((actual - Vec3(-center.x, -center.y, center.z)).length < 1e-6)
+        }
+        try await engine.execute("edit.undo")
+        let edges = try await engine.execute("query.edges", ["body": "body-1"]).result["edges"]!.arrayValue!
+        let edge = try #require(edges.first { edge in
+            let point = edge["midpoint"]!.arrayValue!.map { $0.doubleValue! }
+            return abs(point[0] - 10) < 1e-6 && abs(point[1]) < 1e-6 && abs(point[2] - 15) < 1e-6
+        }?["persistent_id"]?.stringValue)
+        try await engine.execute("body.fillet_edges", ["edges": [.string(edge)], "radius": 1])
+        try await engine.execute("feature.edit", ["feature": "feature-1", "params": [
+            "rotate": ["axis": [0, 0, 1], "angle": "180 deg"],
+        ]])
+        let saved = dir.appendingPathComponent("Rotated.forgepart")
+        try await engine.execute("document.save", ["path": .string(saved.path)])
+        try FileManager.default.removeItem(at: source)
+        let reopened = Engine()
+        try await reopened.execute("document.open", ["path": .string(saved.path)])
+        try await reopened.execute("document.regenerate")
+        let document = try #require(await reopened.activeDocument)
+        #expect(document.features.allSatisfy { $0.status.state == .ok })
+        let faces = try await reopened.execute("query.faces", ["body": "body-1"]).result["faces"]!.arrayValue!
+        let blends = faces.filter { $0["surface_type"]?.stringValue == "cylinder" }
+        #expect(blends.count == 1)
+        let blend = try #require(blends.first?["centroid"]?.arrayValue).map { $0.doubleValue! }
+        // Rotation carries the original x=10,y=0 edge to x=-10,y=0.
+        #expect(blend[0] < -9 && blend[1] > -1 && blend[1] < 0)
+        #expect(abs(try document.body("body-1").shape.massProperties().volume - (6000 - (1 - Double.pi / 4) * 30)) < 1e-5)
+    }
+
     @Test func dryRunUndoRedoAndSourceRemoval() async throws {
         let dir = try directory()
         defer { try? FileManager.default.removeItem(at: dir) }

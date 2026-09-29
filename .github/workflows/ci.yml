@@ -51,6 +51,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb xauth libgl1-mesa-dri
           xvfb-run -a -s "-screen 0 1600x1000x24" env GDK_BACKEND=x11 .build/debug/forge --screenshot forge-linux.png
           test -s forge-linux.png
+      - name: Validate native GTK menu actions
+        run: scripts/test-gtk-actions.sh
       - uses: actions/upload-artifact@v5
         with:
           name: forge-linux-screenshot

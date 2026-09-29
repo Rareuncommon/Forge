@@ -72,7 +72,9 @@ public enum DocumentImportSTEP: Command {
         for (index, solid) in solids.enumerated() {
             // Base-body names are keyed by their own stable id, never by the next feature.
             let id = "body-\(doc.nextBodyNumber)"
-            let bases = Array(repeating: ["\(id):imported"], count: try solid.topology().faces)
+            // Seed a distinct identity once from the immutable imported topology. Kernel
+            // history carries it through edits; centroid sorting is only for split pieces.
+            let bases = (0..<(try solid.topology().faces)).map { ["\(id):imported(\($0 + 1))"] }
             let body = doc.addBody(name: solids.count == 1 ? stem : "\(stem) \(index + 1)",
                                    shape: solid, producedBy: name, faces: bases)
             doc.baseBodies.append(body)

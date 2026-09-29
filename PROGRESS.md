@@ -1,5 +1,20 @@
 # Progress
 
+## Session 9 — 2026-09-29 — PR #3 review fixes
+
+- Imported faces now receive distinct persistent base names at intake. Kernel history
+  preserves those identities through transforms instead of reassigning centroid-based
+  suffixes across unrelated faces. A regression reproduces the original failure, then
+  verifies all six face references through a 180-degree rotation and a downstream
+  fillet through transform editing, undo, save/reopen and source-file removal.
+- GTK explicitly registers the STEP import menu action. Native regression coverage
+  checks menu action registration and Import STEP event dispatch.
+- Validation: build with tests and all **297 Swift tests** pass; **31 golden models**
+  and both MCP subprocess tests pass. The native GTK test validates 49 menu entries
+  and Import STEP dispatch; removing the fix makes that test fail. The new imported
+  reference regression also failed before its fix and passes afterward. Feature matrix
+  synchronization, shell syntax and whitespace checks pass.
+
 ## Session 8 — 2026-09-29 — STEP intake, feature relationships and part interference
 
 This increment extends the part modeler toward SolidWorks workflows. It does not add

@@ -300,6 +300,7 @@ static GMenuModel *appMenu(void) {
 static void buildActions(fw_app *a) {
     a->actions = g_simple_action_group_new();
     for (int id = FW_MENU_NEW; id <= FW_MENU_EXIT; ++id) addAction(a, id, 0);
+    addAction(a, FW_MENU_IMPORT_STEP, 0);
     addAction(a, FW_MENU_UNDO, 0);
     addAction(a, FW_MENU_REDO, 0);
     for (int id = FW_MENU_FRONT; id <= FW_MENU_PREVIOUS; ++id) addAction(a, id, 0);
