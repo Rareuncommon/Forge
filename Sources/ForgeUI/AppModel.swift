@@ -236,6 +236,12 @@ package final class AppModel {
     /// Bumped whenever the scene must be re-uploaded to the GPU.
     package var sceneVersion = 0
     package var scene = DocumentSceneBox()
+    /// The document's scene before reference geometry (planes, axes, the sketch grid).
+    @ObservationIgnored private var baseScene: DocumentScene?
+    @ObservationIgnored private var referenceInputs: ReferenceInputs?
+    /// The sketch grid shown (it follows the view: see `gridForView`).
+    @ObservationIgnored package private(set) var grid: SketchGrid?
+    @ObservationIgnored private var gridPending = false
     package var viewportCommands = ViewportCommandQueue()
     /// The sketch being edited (mirrors document.state's active_sketch).
     package var activeSketch: String?
@@ -249,7 +255,19 @@ package final class AppModel {
     /// Bumped when the sketch preview changes (re-upload of the viewport overlay).
     package var overlayVersion = 0
     /// Camera and viewport size, published by the viewport so overlays can place labels.
-    package var projection: ViewProjection?
+    package var projection: ViewProjection? {
+        didSet {
+            // Zooming or panning far enough re-spaces or re-centres the sketch grid. Deferred:
+            // viewports publish the projection while they update.
+            guard activeSketch != nil, !gridPending, gridForView() != grid else { return }
+            gridPending = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                gridPending = false
+                if gridForView() != grid { composeScene() }
+            }
+        }
+    }
     /// Dimensions and relation glyphs of the sketch being edited, anchored in world space.
     package var annotations: [SketchAnnotation] = []
     package var display = DisplayOptions()
@@ -305,6 +323,50 @@ package final class AppModel {
         }
     }
 
+    struct ReferenceInputs {
+        var size: Double
+        var editing: Sketch?
+        var sketches: [Sketch]
+        var refPlanes: [RefPlane]
+    }
+
+    /// The scene: the document's items plus reference geometry for the current view.
+    private func composeScene() {
+        guard var ds = baseScene, let r = referenceInputs else { return }
+        grid = gridForView()
+        ds.scene.items += ReferenceGeometry.items(
+            size: r.size, sketch: r.editing, allSketches: r.sketches, planes: display.planes, refPlanes: r.refPlanes, dark: isDark, grid: grid)
+        scene = DocumentSceneBox(value: ds)
+        sceneVersion += 1
+    }
+
+    /// The sketch grid for the current view, as SolidWorks does it: about a dozen cells across
+    /// the view's height, spaced 1–2–5 × 10ⁿ, centred near the view. It depends only on the
+    /// camera, so drawing never rescales it; zooming refines or coarsens it.
+    package func gridForView() -> SketchGrid? {
+        guard let sk = referenceInputs?.editing else { return nil }
+        let cam = projection?.camera
+        let height = cam.map { $0.projection == .orthographic ? 2 * $0.orthoHalfHeight : 2 * $0.distance * tan($0.fovY / 2) } ?? 100
+        let aspect = projection.map { $0.width / max($0.height, 1) } ?? 1.5
+        let step = ReferenceGeometry.niceStep(height / 12)
+        let span = height * max(aspect, 1)
+        // Re-centred in blocks of ten cells, covering 1.5 views each way so panning within
+        // the view does not rebuild it.
+        let block = step * 10
+        // Centred where the view's centre ray meets the sketch plane (after orbiting and
+        // panning the target can be off the plane); edge-on, the target's projection.
+        var centre = cam?.target ?? sk.plane.origin
+        if let cam {
+            let n = sk.plane.normal, dir = cam.back * -1
+            let den = dir.dot(n)
+            if abs(den) > 1e-3 { centre = centre + dir * ((sk.plane.origin - centre).dot(n) / den) }
+        }
+        let t = centre - sk.plane.origin
+        let cu = (t.dot(sk.plane.xAxis) / block).rounded() * block, cv = (t.dot(sk.plane.yAxis) / block).rounded() * block
+        let cells = Int((span * 1.5 / block).rounded(.up)) * 10
+        return SketchGrid(step: step, centerU: cu, centerV: cv, halfCells: min(max(cells, 10), 400))
+    }
+
     package func refresh() async {
         guard let doc = await engine.activeDocument else { return }
         documentName = doc.name
@@ -327,10 +389,8 @@ package final class AppModel {
             return (sk.id, (lines.filter(\.construction) + lines.filter { !$0.construction }).map(\.id))
         })
         if var ds = try? DocumentScene(document: doc, highlight: doc.selection) {
-            // Planes, axes and the sketch grid follow the model's size (100 mm when empty), so a
-            // small part is not lost in a grid sized for a big one.
-            let extent = ds.scene.bounds?.diagonal ?? 0
-            let size = extent > 1e-6 ? max(extent * 1.2, 1) : 100
+            // Planes and origin axes follow the model's size; the sketch grid follows the view.
+            let size = max(100, (ds.scene.bounds?.diagonal ?? 0) * 1.2)
             ds.fitBounds = ds.scene.bounds
             let editing = doc.activeSketch.flatMap { doc.sketches[$0] }
             // The sketch being edited: its dimensions (values and lines) are part of what to frame.
@@ -344,11 +404,13 @@ package final class AppModel {
                     }
                 }
             }
+            // Nothing to frame yet: Zoom to Fit shows 100 mm around the origin (not the grid,
+            // which follows the view and would zoom out on every fit).
+            if ds.fitBounds == nil { ds.fitBounds = BoundingBox(min: Vec3(-50, -50, -50), max: Vec3(50, 50, 50)) }
             if isDark { ds.scene.items = ds.scene.items.map(Self.darkened) }
-            ds.scene.items += ReferenceGeometry.items(
-                size: size, sketch: editing, allSketches: doc.orderedSketches, planes: display.planes, refPlanes: doc.orderedRefPlanes, dark: isDark)
-            scene = DocumentSceneBox(value: ds)
-            sceneVersion += 1
+            baseScene = ds
+            referenceInputs = ReferenceInputs(size: size, editing: editing, sketches: doc.orderedSketches, refPlanes: doc.orderedRefPlanes)
+            composeScene()
         }
         await refreshSketchState()
         if let first = selection.first, !first.hasPrefix("sketch-"), let o = try? await engine.execute("query.entity", ["ref": .string(first)]) {
