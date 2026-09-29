@@ -72,6 +72,10 @@ a value at the midpoint. And the first dimension left the sketch tiny in a big g
   it). The sketch's first length dimension scales everything about the origin, so the profile
   keeps its shape. It is skipped when there are fixed entities or already a length dimension,
   and it reports `scaled_by`. The view then refits.
+- **Fixed after user testing:** the Windows/Linux front end re-sent the Modify box its value
+  on every redraw. Moving the pointer while typing therefore reset the typed number, and the
+  dimension was added at its measured value, which did not scale. The box is now filled only
+  when the dimension being edited changes.
 - **Framing:** Zoom to Fit frames the bodies, sketches and dimensions rather than the reference
   grid and planes. The grid and planes are sized from the model, no longer at least 100 mm. The
   grid sits just behind the sketch plane, so lines on grid lines stay visible.

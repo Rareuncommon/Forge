@@ -176,11 +176,20 @@ final class WinViewport {
 
     // MARK: the Modify box
 
+    /// What the Modify box was last opened with. The box owns its text while it is open (typing
+    /// is not sent to the model), so it is re-sent only when the dimension being edited
+    /// changes, never on other redraws; otherwise moving the pointer would reset what is typed.
+    private var shownEdit: String?
+
     private func editBox() {
         if let edit = model.dimensionEdit, edit.placed || edit.measurement == nil {
             let label = edit.measurement == nil ? "Select a second entity" : "Modify (\(edit.measurement.map { "\($0.kind.rawValue.replacingOccurrences(of: "_", with: " "))" } ?? ""))"
+            let key = "\(label)|\(Int(edit.position.x)),\(Int(edit.position.y))|\(edit.text)|\(edit.entities)|\(edit.focusToken)"
+            guard key != shownEdit else { return }
+            shownEdit = key
             fw_edit_show(app, Int32(edit.position.x), Int32(edit.position.y), label, edit.text)
         } else if editingDimension == nil {
+            shownEdit = nil
             fw_edit_hide(app)
         }
     }
@@ -195,11 +204,13 @@ final class WinViewport {
             Task { await model.setDimension(id, to: value) }
         } else {
             model.dimensionEdit?.text = text
+            shownEdit = nil  // a rejected value re-opens the box with what was typed
             Task { await model.commitDimension() }
         }
     }
 
     func cancelEdit() {
+        shownEdit = nil
         editingDimension = nil
         model.dimensionEdit = nil
         fw_edit_hide(app)
