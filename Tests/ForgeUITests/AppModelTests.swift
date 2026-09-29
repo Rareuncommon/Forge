@@ -312,3 +312,63 @@ struct IconGeometryTests {
         #expect(ForgeIcon.fillet.geometry.hasPrefix("s M 5 20 L 20 20 L 20 5|"))
     }
 }
+
+@MainActor
+@Suite("Document and persistent selection regressions")
+struct DocumentSelectionRegressionTests {
+    @Test func newDocumentClearsSaveDestinationAndPendingOperation() async {
+        let m = AppModel()
+        await m.bootstrap()
+        m.documentPath = "/tmp/previous-part.forgepart"
+        m.begin(.primitive(.box))
+        await m.updatePreview()
+        #expect(!m.preview.items.isEmpty)
+        await m.run("document.new", ["name": "Part2"])
+        #expect(m.documentPath == nil)
+        #expect(m.operation == nil && m.preview.items.isEmpty)
+        #expect(m.documentName == "Part2")
+    }
+
+    @Test func persistentPicksWorkInFeaturePagesAndSketchPlacement() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("body.create_box", ["width": 20, "height": 20, "depth": 20])
+        let doc = try #require(await m.engine.activeDocument)
+        let naming = try #require(doc.bodies["body-1"]?.naming)
+        let face = "body-1/face@\(try #require(naming.faces.first))"
+        let edge = "body-1/edge@\(try #require(naming.edges.first))"
+        await m.select(edge, extend: false)
+        #expect(m.lastError == nil)
+        #expect(m.selectedEdges.count == 1)
+        // The command bus currently normalizes picks to transient indices. Exercise the UI
+        // with stable references directly as well, as supplied by persistent viewport picks.
+        m.selection = [edge]
+        #expect(m.selectedEdges == [edge])
+        m.begin(.fillet)
+        await m.select(face, extend: false)
+        #expect(m.lastError == nil)
+        m.selection = [edge, face]
+        #expect(m.filletItems == [edge, face])
+        #expect(m.selectedFace == face)
+        #expect(entityIcon(face) == .plane && entityIcon(edge) == .line)
+        m.begin(.shell)
+        #expect(m.form.shellFaces == [face])
+        m.cancelOperation()
+        await m.newSketch(onPlaneOrFace: face)
+        #expect(m.activeSketch != nil)
+        #expect(m.lastError == nil)
+    }
+
+    @Test func cancelledPreviewCannotReappear() async {
+        let m = AppModel()
+        await m.bootstrap()
+        m.begin(.primitive(.box))
+        let pending = Task { await m.updatePreview() }
+        await Task.yield()
+        m.cancelOperation()
+        await pending.value
+        #expect(m.operation == nil)
+        #expect(m.preview.items.isEmpty && m.preview.hidden.isEmpty)
+        #expect(m.previewError == nil)
+    }
+}

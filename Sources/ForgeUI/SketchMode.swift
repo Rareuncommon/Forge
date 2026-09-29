@@ -182,7 +182,7 @@ extension AppModel {
 
     /// Sketch on a reference plane (id) or a planar face ("body-1/face-3").
     package func newSketch(onPlaneOrFace ref: String) async {
-        await newSketch(placement: ref.contains("/face-") ? ["face": .string(ref)] : ["plane": .string(ref)])
+        await newSketch(placement: entityKind(ref) == .face ? ["face": .string(ref)] : ["plane": .string(ref)])
     }
 
     private func newSketch(placement: JSONValue) async {
@@ -196,7 +196,7 @@ extension AppModel {
     }
 
     /// The planar face in the selection, if any (for Sketch / Plane on a face).
-    package var selectedFace: String? { selection.last { $0.contains("/face-") } }
+    package var selectedFace: String? { selection.last { entityKind($0) == .face } }
 
     package func editSketch(_ id: String) async {
         operation = nil

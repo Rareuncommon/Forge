@@ -543,6 +543,15 @@ struct MirrorPatternTests {
         #expect(throws: ForgeError.self) { try s.addConstraint(.symmetric, [l1, c1, axis]) }
     }
 
+    @Test func oversizedPatternRejectsWithoutOverflow() throws {
+        var s = newSketch()
+        let c = s.addCircle(center: (0, 0), radius: 2)
+        #expect(throws: ForgeError.self) {
+            try s.linearPattern([c], direction: 0, spacing: 10, count: Int.max, count2: 2)
+        }
+        #expect(s.entityOrder.count == 3) // origin, circle centre, circle
+    }
+
     @Test func linearPatternOfACircle() throws {
         var s = newSketch()
         let c = s.addCircle(center: (0, 0), radius: 2)
@@ -835,6 +844,18 @@ struct MoveRotateScaleTests {
         #expect(near(s.point(p), (10, 0)) && near(s.point(q), (0, -3)))
         #expect(s.resolve().conflicting.isEmpty)
         #expect(s.constraints.count == 1)
+    }
+
+    @Test func scaleScalesHorizontalAndVerticalDimensions() throws {
+        var s = newSketch()
+        let p = s.addPoint(2, 3), q = s.addPoint(12, 8)
+        let dx = try s.addConstraint(.horizontalDistance, [p, q], value: 10)
+        let dy = try s.addConstraint(.verticalDistance, [p, q], value: 5)
+        _ = try s.scale([p, q], about: (0, 0), by: 2)
+        #expect(near(s.point(p), (4, 6)) && near(s.point(q), (24, 16)))
+        #expect(s.constraints.first { $0.id == dx }?.value == 20)
+        #expect(s.constraints.first { $0.id == dy }?.value == 10)
+        #expect(s.resolve().conflicting.isEmpty)
     }
 
     @Test func scaleScalesRadiiAndDimensions() throws {

@@ -217,7 +217,7 @@ struct OperationPage: View {
                     Text("Right Plane").tag("right")
                     ForEach(model.refPlanes, id: \.id) { Text($0.name).tag($0.id) }
                     if let f = model.selectedFace { Text("Selected face (\(shortName(f)))").tag(f) }
-                    if model.form.mirrorPlane.contains("/face-") && model.form.mirrorPlane != model.selectedFace {
+                    if entityKind(model.form.mirrorPlane) == .face && model.form.mirrorPlane != model.selectedFace {
                         Text(shortName(model.form.mirrorPlane)).tag(model.form.mirrorPlane)
                     }
                 }
@@ -231,7 +231,7 @@ struct OperationPage: View {
                     Text("Right Plane").tag("right")
                     ForEach(model.refPlanes, id: \.id) { Text($0.name).tag($0.id) }
                     if let f = model.selectedFace { Text("Selected face (\(shortName(f)))").tag(f) }
-                    if model.form.planeReference.contains("/face-") && model.form.planeReference != model.selectedFace {
+                    if entityKind(model.form.planeReference) == .face && model.form.planeReference != model.selectedFace {
                         Text(shortName(model.form.planeReference)).tag(model.form.planeReference)
                     }
                 }
@@ -339,7 +339,7 @@ struct OperationPage: View {
                 PMTypeList(options: [(value: 0, icon: .fillet, title: "Constant Size Fillet")], selection: .constant(0))
             }
             PMSection("Items To Fillet") {
-                PMSelectionBox(items: model.filletItems.map { (icon: $0.contains("/face-") ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
+                PMSelectionBox(items: model.filletItems.map { (icon: entityKind($0) == .face ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
             }
             PMSection("Fillet Parameters") {
                 PMPicker(label: "", selection: .constant(0)) { Text("Symmetric").tag(0) }
@@ -353,7 +353,7 @@ struct OperationPage: View {
                                      (value: "equal_distance", icon: .chamfer, title: "Equal Distance")], selection: $model.form.chamferType)
             }
             PMSection("Items To Chamfer") {
-                PMSelectionBox(items: model.filletItems.map { (icon: $0.contains("/face-") ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
+                PMSelectionBox(items: model.filletItems.map { (icon: entityKind($0) == .face ? ForgeIcon.plane : ForgeIcon.line, text: shortName($0)) }, placeholder: "Edges and faces", active: true)
             }
             PMSection("Chamfer Parameters") {
                 PMField(label: "Distance", text: $model.form.chamferDistance, unit: "mm", icon: .smartDimension)
@@ -370,7 +370,7 @@ struct OperationPage: View {
                 PMSelectionBox(items: model.form.shellFaces.map { (icon: ForgeIcon.plane, text: shortName($0)) }, placeholder: "Faces to Remove (none: hollow closed body)")
                 PMCheckbox(label: "Shell outward", isOn: $model.form.shellOutward)
             }
-            .onChange(of: model.selection) { _, sel in model.form.shellFaces = sel.filter { $0.contains("/face-") } }
+            .onChange(of: model.selection) { _, sel in model.form.shellFaces = sel.filter { entityKind($0) == .face } }
         case .draft:
             PMSection("Type of Draft") {
                 PMTypeList(options: [(value: 0, icon: .draft, title: "Neutral Plane")], selection: .constant(0))
@@ -390,7 +390,7 @@ struct OperationPage: View {
                     .onTapGesture { model.form.activeBox = "faces" }
             }
             .onChange(of: model.selection) { _, sel in
-                let faces = sel.filter { $0.contains("/face-") }
+                let faces = sel.filter { entityKind($0) == .face }
                 if model.form.activeBox == "neutral" {
                     if let f = faces.last { model.form.draftNeutral = f; model.form.activeBox = "faces" }
                 } else {

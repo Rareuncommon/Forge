@@ -126,9 +126,9 @@ extension AppModel {
             form.target = selectedBodies.first ?? bodies[0].id
             form.tool = selectedBodies.dropFirst().first ?? bodies.first { $0.id != form.target }?.id ?? ""
         case .shell:
-            form.shellFaces = selection.filter { $0.contains("/face-") }
+            form.shellFaces = selection.filter { entityKind($0) == .face }
         case .draft:
-            let faces = selection.filter { $0.contains("/face-") }
+            let faces = selection.filter { entityKind($0) == .face }
             form.draftNeutral = faces.first ?? ""
             form.draftFaces = Array(faces.dropFirst())
             form.activeBox = faces.isEmpty ? "neutral" : "faces"
@@ -569,6 +569,9 @@ extension AppModel {
     /// new bodies translucent (amber, red for cuts), changed bodies opaque and tinted in place of
     /// the originals, sketch operations as preview curves in the sketch.
     package func updatePreview() async {
+        previewRequest += 1
+        let request = previewRequest
+        let key = previewKey
         guard let op = operation, !op.isReport, op != .addRelation, var items = invocations(for: op) else {
             clearOperationPreview()
             return
@@ -586,6 +589,7 @@ extension AppModel {
         }
         do {
             let (doc, changes) = try await engine.preview(items)
+            guard request == previewRequest, key == previewKey else { return }
             guard let doc else { return clearOperationPreview() }
             previewError = nil
             if op.isSketchOperation {
@@ -622,6 +626,7 @@ extension AppModel {
             preview = PreviewBox(items: out, hidden: modified + deleted)
             previewVersion += 1
         } catch {
+            guard request == previewRequest, key == previewKey else { return }
             previewError = ForgeError.wrap(error).message
             if !preview.items.isEmpty || !preview.hidden.isEmpty || !sketchState.opPreview.isEmpty {
                 preview = PreviewBox()
@@ -658,6 +663,7 @@ extension AppModel {
     }
 
     package func clearOperationPreview() {
+        previewRequest += 1
         previewError = nil
         if !sketchState.opPreview.isEmpty {
             sketchState.opPreview = []
