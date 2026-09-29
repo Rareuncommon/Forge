@@ -35,6 +35,8 @@ jobs:
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"describe_command","arguments":{"name":"body.create_box"}}}' \
             | .build/debug/forge-cli mcp | python3 -c 'import sys,json; r=[json.loads(l) for l in sys.stdin]; assert r[1]["result"]["isError"] is False, r; print("mcp ok")'
+      - name: Packaging script regressions
+        run: python3 -m unittest discover -s Tests/PackagingTests -v
       - name: FEATURES.md is in sync with SPEC.md
         run: python3 scripts/features.py --check
       - name: Type-check the Windows front end (headless shell API)
@@ -102,8 +104,9 @@ jobs:
       - name: Select Xcode (27 preferred, else newest installed)
         run: |
           ls -d /Applications/Xcode*.app || true
-          XC="$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)"
-          [ -n "$XC" ] || XC="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          XC="$(find /Applications -maxdepth 1 -name 'Xcode_27*.app' | sort -V | tail -1)"
+          [ -n "$XC" ] || XC="$(find /Applications -maxdepth 1 -name 'Xcode*.app' | sort -V | tail -1)"
+          [ -n "$XC" ] || { echo "No Xcode installation found" >&2; exit 1; }
           echo "Using $XC"
           sudo xcode-select -s "$XC"
           swift --version
@@ -179,16 +182,17 @@ jobs:
           swift build --product ForgeWin 2>&1 | tee app-build.log
       - name: Run the Windows app (screenshot self-test)
         if: always()
-        continue-on-error: true
         run: |
           . Vendor/occt/windows-x64/forge-env.sh
           BIN="$(swift build --show-bin-path)"
           { echo "bin: $BIN"; ls "$BIN" | grep -i -E "forgewin|forge-cli" ; } > app-run.log 2>&1
           EXE="$(find "$BIN" .build -maxdepth 4 -name ForgeWin.exe 2>/dev/null | head -1)"
           echo "exe: $EXE" >> app-run.log
-          set +e
-          timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1
-          echo "exit $?" >> app-run.log
+          test -n "$EXE" && test -f "$EXE"
+          rm -f forgewin.png
+          status=0
+          timeout 180 "$EXE" --screenshot forgewin.png >> app-run.log 2>&1 || status=$?
+          echo "exit $status" >> app-run.log
           ls -la forgewin.png >> app-run.log 2>&1 || true
           {
             echo "--- PATH (occt / 3rdparty)"; echo "$PATH" | tr ':' '\n' | grep -i -E "occt|3rdparty" || true
@@ -199,6 +203,8 @@ jobs:
             python -m pip install --quiet pefile
             python scripts/windows-dll-check.py "$(cygpath -w "$(dirname "$EXE")/forge-cli.exe")" "$(cygpath -w "$EXE")"
           } >> app-run.log 2>&1
+          test "$status" -eq 0
+          test -s forgewin.png
       - uses: actions/upload-artifact@v5
         if: always()
         with:
