@@ -77,8 +77,12 @@ struct FeatureTreeView: View {
             }
         }
         ForEach(StandardPlane.allCases.filter { matches($0.rawValue + " plane") }, id: \.self) { p in
-            TreeRow(icon: .plane, title: "\(p.rawValue.capitalized) Plane", depth: 1, iconTint: Theme.text3,
-                    doubleAction: { Task { await model.newSketch(on: p) } }) {}
+            TreeRow(icon: .plane, title: "\(p.rawValue.capitalized) Plane", depth: 1,
+                    selected: model.selection.contains("plane-" + p.rawValue), iconTint: Theme.text3,
+                    doubleAction: { Task { await model.newSketch(on: p) } }) {
+                let extend = !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty
+                Task { await model.select("plane-" + p.rawValue, extend: extend) }
+            }
                 .contextMenu {
                     Button("Sketch on \(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
                 }
@@ -187,8 +191,8 @@ private struct FeatureNode: View {
         }
         if feature.isSketch, let s = feature.sketchID {
             Task { await model.select(s, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
-        } else if !feature.createdBodies.isEmpty && feature.command != "plane.create" {
-            Task { await model.select(feature.createdBodies) }
+        } else {
+            model.treeSelect(feature, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty)
         }
     }
 

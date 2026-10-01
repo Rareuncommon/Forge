@@ -227,6 +227,8 @@ public struct Document: Sendable {
     /// Whether a reference string names something that currently exists: "body-1",
     /// "body-1/face-3", "sketch-2", "sketch-2/line-5".
     public func referenceExists(_ ref: String) -> Bool {
+        if ref.hasPrefix("plane-"), StandardPlane(rawValue: String(ref.dropFirst(6))) != nil { return true }
+        if refPlanes[ref] != nil { return true }
         let parts = ref.split(separator: "/", maxSplits: 1).map(String.init)
         guard let head = parts.first else { return false }
         if let sk = sketches[head] {

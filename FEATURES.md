@@ -148,7 +148,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/3d-sketch` | Tools: 3D sketch | not started | ForgeSketch | — | — |  |
 | `7.1/tools/3d-sketch/with-plane-switching` | ↳ with plane switching | not started | ForgeSketch | — | — |  |
 | `7.1/tools/3d-sketch/3d-sketch-on-plane` | ↳ 3D sketch on plane | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketch-on-face-surface` | Tools: sketch on face/surface | in progress | ForgeCommands / ForgeUI | Tests/ForgeUITests/SketchPlacementWorkflowTests.swift, Tests/ForgeCommandsTests/ReferencePlaneTests.swift | execute:sketch.create, repair_reference | Planar faces with persistent attachment, guided desktop entry and camera alignment; supports upstream regeneration and attachment repair. Missing support blocks dependent features; curved-face and 3D surface sketches remain pending. |
+| `7.1/tools/sketch-on-face-surface` | Tools: sketch on face/surface | in progress | ForgeCommands / ForgeUI | Tests/ForgeUITests/SketchPlacementWorkflowTests.swift, Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:sketch.create, repair_reference | Planar faces with persistent attachment, guided desktop entry and camera alignment; supports upstream regeneration and attachment repair. Missing support blocks dependent features; curved-face and 3D surface sketches remain pending. |
 | `7.1/tools/spline-tools` | Tools: spline tools | not started | ForgeSketch | — | — |  |
 | `7.1/tools/spline-tools/tangency-curvature-handles` | ↳ tangency/curvature handles | not started | ForgeSketch | — | — |  |
 | `7.1/tools/spline-tools/simplify` | ↳ simplify | not started | ForgeSketch | — | — |  |

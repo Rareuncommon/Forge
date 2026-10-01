@@ -15,6 +15,9 @@
   editing, preserving stored custom axes. Exposed Up To Vertex in both extrusion
   directions so an inspector roundtrip cannot change the end condition to Blind.
 - Added Normal To selected faces and standard/reference planes, and plane selection.
+  Review fixes wire both desktop trees into selection, retain valid plane references
+  through rebuilds, prune suppressed planes, and make primary Sketch use the clicked
+  standard/reference plane. Four additional engine/UI regressions cover these paths.
 - Added shared Unicode Rename dialogs and body/feature/sketch tree actions.
 - Fixed sketch attachment repair and rejection of dependent modeling from lost,
   suppressed or rolled-back sketch supports, preventing stale geometry regeneration.
@@ -22,7 +25,7 @@
   partial and absent workflows. Assemblies, drawings and hundreds of other declared
   capabilities still remain. See docs/research/modeling-workflow-gaps.md.
 
-Validation: official Swift 6.4 build with tests and all **320 Swift tests** pass.
+Validation: official Swift 6.4 build with tests and all **324 Swift tests** pass.
 All **31 golden models**, **3 MCP subprocess workflows** (debug and optimized CLI),
 three packaging regressions and native GTK menu/name-dialog regressions pass.
 Windows frontend cross-platform build and optimized Linux desktop/CLI builds pass.

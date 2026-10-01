@@ -1,7 +1,12 @@
 import ForgeCore
+import ForgeCommands
 
 extension AppModel {
-    package var sketchStartTitle: String { selectedFace == nil ? "Sketch" : "Sketch on Face" }
+    package var sketchStartTitle: String {
+        if selectedFace != nil { return "Sketch on Face" }
+        if selection.contains(where: { $0.hasPrefix("plane-") }) { return "Sketch on Plane" }
+        return "Sketch"
+    }
 
     /// A generic Sketch action respects the picked face. An unsuitable model selection must
     /// never silently create a sketch on the origin's Front plane.
@@ -9,8 +14,14 @@ extension AppModel {
         guard activeSketch == nil else { return }
         if let face = selectedFace {
             await newSketch(onPlaneOrFace: face)
-        } else if !selectedBodies.isEmpty {
-            lastError = ForgeError(.invalidParams, "Select a planar face to start a sketch, or choose a plane from the Sketch menu.", entities: selection)
+        } else if let plane = selection.last(where: { $0.hasPrefix("plane-") }) {
+            if let standard = StandardPlane(rawValue: String(plane.dropFirst(6))) {
+                await newSketch(on: standard)
+            } else {
+                await newSketch(onPlaneOrFace: plane)
+            }
+        } else if !selection.isEmpty {
+            lastError = ForgeError(.invalidParams, "Select a planar face or reference plane to start a sketch, or choose a plane from the Sketch menu.", entities: selection)
         } else {
             await newSketch(on: .front)
         }
