@@ -70,6 +70,15 @@ struct ForgeApp: App {
                 Button("Trimetric") { model.setOrientation(.trimetric) }
                 Button("Normal To") { model.normalToSketch() }.keyboardShortcut("8", modifiers: .control).disabled(!model.canNormalTo)
                 Divider()
+                Menu("Selection Filter") {
+                    ForEach(SelectionFilter.allCases, id: \.rawValue) { filter in
+                        Toggle(filter.title, isOn: Binding(get: { model.selectionFilter == filter }, set: { enabled in
+                            if enabled { Task { await model.setSelectionFilter(filter) } }
+                        }))
+                    }
+                }
+                Button("Select Other (Tab)") { Task { await model.selectOther() } }.disabled(!model.canSelectOther)
+                Divider()
                 Button("Zoom to Fit (F)") { model.zoomToFit() }
                 Button("Previous View") { model.previousView() }
                 Divider()

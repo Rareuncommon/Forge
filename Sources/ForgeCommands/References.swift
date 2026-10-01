@@ -185,7 +185,11 @@ extension Document {
                 var out: [String: JSONValue] = [:]
                 for (k, x) in o {
                     let kind: EntityRef.Kind? = k == "edges" ? .edge : (k == "faces" || k == "neutral_plane") ? .face : nil
-                    out[k] = k == "body" || k == "sketch" || k == "features" ? x : walk(x, bare: kind)
+                    if k == "surface", let name = x.stringValue, refPlanes[name] == nil, let plane = orderedRefPlanes.first(where: { $0.name == name }) {
+                        out[k] = .string(plane.id)
+                    } else {
+                        out[k] = k == "body" || k == "sketch" || k == "features" ? x : walk(x, bare: kind)
+                    }
                 }
                 return .object(out)
             default:

@@ -37,11 +37,8 @@ struct ViewportView: NSViewRepresentable {
             let p = ViewProjection(camera: camera, width: width, height: height)
             if model.projection != p { model.projection = p }
         }
-        view.onPick = { ref, extend, at in
-            Task {
-                await model.select(ref, extend: extend)
-                model.contextToolbarAt = ref == nil ? nil : at
-            }
+        view.onViewportPick = { camera, width, height, style, extend, at in
+            Task { await model.viewportPick(at: at, camera: camera, width: width, height: height, extend: extend, style: style) }
         }
         view.onSketchClick = { point, tolerance, curve, count, at in
             Task { await model.sketchClick(point, tolerance: tolerance, curve: curve, clickCount: count, viewPoint: at) }
@@ -61,7 +58,7 @@ struct ViewportView: NSViewRepresentable {
             context.coordinator.sceneVersion = model.sceneVersion
             view.documentScene = ds
             view.renderer?.setScene(ds.scene)
-            view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
+            view.sketchPlane = model.viewportSketchPlane
             if first { view.fit() } else { view.cameraChanged() }
             view.needsDisplay = true
         }
@@ -82,7 +79,7 @@ struct ViewportView: NSViewRepresentable {
             view.needsDisplay = true
         }
         let commands = model.viewportCommands.log
-        view.sketchPlane = model.sketchState.tool == nil ? nil : model.sketchState.plane
+        view.sketchPlane = model.viewportSketchPlane
         if context.coordinator.appliedCommands < commands.count {
             for c in commands[context.coordinator.appliedCommands...] {
                 switch c {
@@ -113,7 +110,7 @@ struct ViewportView: NSViewRepresentable {
 final class ForgeMTKView: MTKView {
     var renderer: MetalViewportRenderer?
     var documentScene: DocumentScene?
-    var onPick: ((String?, Bool, CGPoint) -> Void)?
+    var onViewportPick: ((Camera, Double, Double, RenderStyle, Bool, CGPoint) -> Void)?
     /// Set while a sketch tool is active: clicks become sketch coordinates instead of picks.
     var sketchPlane: SketchPlane?
     var onSketchClick: ((Point2, Double, String?, Int, CGPoint) -> Void)?
@@ -304,10 +301,9 @@ final class ForgeMTKView: MTKView {
             return
         }
         guard !dragged, let r = renderer else { return }
-        guard let ds = documentScene else { return }
-        let px = Int(Double(p.x) * scale), py = Int(Double(bounds.height - p.y) * scale)
-        let hit = r.pick(x: px, y: py, drawableWidth: Int(drawableSize.width), drawableHeight: Int(drawableSize.height))
-        onPick?(hit.flatMap { ds.reference(for: $0) }, !event.modifierFlags.intersection([.shift, .command, .control]).isEmpty, CGPoint(x: p.x, y: bounds.height - p.y))
+        onViewportPick?(r.camera, Double(bounds.width), Double(bounds.height), r.style,
+                        !event.modifierFlags.intersection([.shift, .command, .control]).isEmpty,
+                        CGPoint(x: p.x, y: bounds.height - p.y))
     }
 
     override func keyDown(with event: NSEvent) {
@@ -320,6 +316,7 @@ final class ForgeMTKView: MTKView {
         case 36, 76: key = "return"
         case 51, 117: key = "delete"
         case 49: key = "space"
+        case 48: key = "tab"
         default: key = event.characters ?? ""
         }
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty, onKey?(key, lastMouse) == true { return }

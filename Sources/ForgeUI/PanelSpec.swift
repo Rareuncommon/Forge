@@ -162,7 +162,30 @@ extension AppModel {
     }
 
     private var endConditionOptions: [(tag: String, title: String)] {
-        EndConditionUI.allCases.filter { operation == .cutExtrude || !bodies.isEmpty || $0.needsDepth || $0 == .upToVertex }.map { ($0.rawValue, $0.rawValue) }
+        EndConditionUI.allCases.filter { operation == .cutExtrude || !bodies.isEmpty || $0.needsDepth || $0 == .upToVertex || $0.needsSurface }.map { ($0.rawValue, $0.rawValue) }
+    }
+
+    private func extrudeSurfaceControls(direction2: Bool) -> [PanelControl] {
+        let prefix = direction2 ? "surface2" : "surface"
+        var controls = [field(prefix, "Face or plane", direction2 ? \.surface2 : \.surface),
+                        PanelControl(id: prefix + "Pick", kind: .buttons([(title: "Use Selected Face/Plane", action: { [unowned self] in useSelectedExtrudeSurface(direction2: direction2) })])),
+                        note(prefix + "Note", "Planar limits only. Faces use their supporting plane.")]
+        if (direction2 ? form.endCondition2 : form.endCondition) == .offsetFromSurface {
+            controls += [field(prefix + "Offset", "Normal offset", unit: "mm", direction2 ? \.surfaceOffset2 : \.surfaceOffset),
+                         check(prefix + "ReverseOffset", "Beyond surface", direction2 ? \.reverseSurfaceOffset2 : \.reverseSurfaceOffset)]
+        }
+        return controls
+    }
+
+    private var extrudeContourControls: [PanelControl] {
+        var controls = [PanelControl(id: "allContours", kind: .check(label: "All closed regions", get: { [unowned self] in form.contours == nil }, set: { [unowned self] all in form.contours = all ? nil : [] })),
+                        PanelControl(id: "pickContours", kind: .buttons([(title: form.activeBox == "contours" ? "Stop Picking Regions" : "Pick Regions in View", action: { [unowned self] in form.activeBox = form.activeBox == "contours" ? "" : "contours" })]))]
+        if let error = contourQueryError { controls.append(note("contourError", error, warning: true)) }
+        for (index, region) in contourChoices.enumerated() {
+            controls.append(PanelControl(id: "contour-" + region.id, kind: .check(label: "\(index + 1). \(region.title)", get: { [unowned self] in contourIsSelected(region) }, set: { [unowned self] selected in setContourSelected(region, selected) })))
+        }
+        controls.append(note("contoursNote", "Each selected outer contour keeps its holes. Nested islands are independent regions."))
+        return controls
     }
 
     // MARK: operations
@@ -193,15 +216,17 @@ extension AppModel {
                 }
             }
             if f.endCondition == .upToVertex { d1 += [field("vertexX", "Vertex X", unit: "mm", \.vertexX), field("vertexY", "Vertex Y", unit: "mm", \.vertexY), field("vertexZ", "Vertex Z", unit: "mm", \.vertexZ)] }
+            if f.endCondition.needsSurface { d1 += extrudeSurfaceControls(direction2: false) }
             s.append(PanelSection("Direction 1", controls: d1))
             if f.endCondition != .midPlane && f.endCondition != .throughAllBoth {
                 var d2: [PanelControl] = [
                     PanelControl(id: "end2", kind: .choice(
-                        label: "End condition", options: [EndConditionUI.blind, .throughAll, .upToVertex].filter { $0 != .throughAll || !bodies.isEmpty }.map { ($0.rawValue, $0.rawValue) },
+                        label: "End condition", options: [EndConditionUI.blind, .throughAll, .upToVertex, .upToSurface, .offsetFromSurface].filter { $0 != .throughAll || !bodies.isEmpty }.map { ($0.rawValue, $0.rawValue) },
                         get: { [unowned self] in form.endCondition2.rawValue }, set: { [unowned self] in if let v = EndConditionUI(rawValue: $0) { form.endCondition2 = v } })),
                 ]
                 if f.endCondition2 == .blind { d2.append(field("depth2", "Depth", unit: "mm", \.depth2)) }
                 if f.endCondition2 == .upToVertex { d2 += [field("vertex2X", "Vertex X", unit: "mm", \.vertex2X), field("vertex2Y", "Vertex Y", unit: "mm", \.vertex2Y), field("vertex2Z", "Vertex Z", unit: "mm", \.vertex2Z)] }
+                if f.endCondition2.needsSurface { d2 += extrudeSurfaceControls(direction2: true) }
                 s.append(PanelSection("Direction 2", toggle: (get: { [unowned self] in form.direction2 }, set: { [unowned self] in form.direction2 = $0 }), controls: d2))
             }
             var thin = [choice("thinType", "Type", [("one_direction", "One-Direction"), ("mid_plane", "Mid-Plane"), ("two_direction", "Two-Direction")], \.thinType),
@@ -210,8 +235,8 @@ extension AppModel {
             if f.thinType == "one_direction" { thin.append(check("thinReverse", "Reverse (inside the profile)", \.thinReverse)) }
             s.append(PanelSection("Thin Feature", toggle: (get: { [unowned self] in form.thinOn }, set: { [unowned self] in form.thinOn = $0 }), controls: thin))
             s.append(PanelSection("Selected Contours", controls: [
-                sketchChoice, note("contoursNote", "All closed regions of the sketch are used; holes and islands are kept."),
-            ]))
+                sketchChoice,
+            ] + extrudeContourControls))
             if op == .cutExtrude || f.merge && !bodies.isEmpty {
                 var scope: [PanelControl] = [
                     PanelControl(id: "scopeAll", kind: .check(label: "All bodies", get: { [unowned self] in form.scope.isEmpty }, set: { [unowned self] all in

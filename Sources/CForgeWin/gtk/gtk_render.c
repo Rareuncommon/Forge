@@ -369,6 +369,7 @@ static gboolean onKey(GtkEventControllerKey *k, guint keyval, guint code, GdkMod
     case GDK_KEY_Delete:
     case GDK_KEY_BackSpace: name = "delete"; break;
     case GDK_KEY_space: name = "space"; break;
+    case GDK_KEY_Tab: name = "tab"; break;
     default: {
         gunichar c = gdk_keyval_to_unicode(keyval);
         if (c < 32 || c == 127) return FALSE;

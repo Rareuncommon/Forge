@@ -27,11 +27,22 @@ package struct RibbonGroupSpec {
 extension AppModel {
     /// The groups of the current ribbon tab.
     package var ribbonGroups: [RibbonGroupSpec] {
-        switch ribbonTab {
+        let groups: [RibbonGroupSpec] = switch ribbonTab {
         case .features: featureGroups
         case .sketch: sketchGroups
         case .evaluate: evaluateGroups
         }
+        return [selectionGroup] + groups
+    }
+
+    private var selectionGroup: RibbonGroupSpec {
+        RibbonGroupSpec(title: "Selection", buttons: SelectionFilter.allCases.map { filter in
+            button("filter-" + filter.rawValue, .part, filter.title,
+                   help: "Filter viewport selection to \(filter.title.lowercased()); drawing tools and tree selection are unaffected",
+                   active: selectionFilter == filter, large: false) { [unowned self] in Task { await setSelectionFilter(filter) } }
+        } + [button("selectOther", .hideShow, "Select Other (Tab)",
+                    help: "Click geometry, then cycle through all candidates beneath that point, including occluded faces",
+                    enabled: canSelectOther, large: false) { [unowned self] in Task { await selectOther() } }])
     }
 
     private func button(

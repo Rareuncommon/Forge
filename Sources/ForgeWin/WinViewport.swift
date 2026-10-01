@@ -68,7 +68,7 @@ final class WinViewport {
     private var scale: Float { fw_dpi_scale(app) }
 
     /// Sketch plane while a sketch tool is active (clicks become sketch coordinates).
-    private var sketchPlane: SketchPlane? { model.sketchState.tool == nil ? nil : model.sketchState.plane }
+    private var sketchPlane: SketchPlane? { model.viewportSketchPlane }
 
     /// Model units per pixel at the camera target.
     private var pixelSize: Double { 2 * camera.visibleHalfHeight / Double(max(height, 1)) }
@@ -517,8 +517,8 @@ final class WinViewport {
             return
         }
         guard pressAt != nil, !dragged else { return }
-        let ref = reference(at: x, y)
         let extend = mods & (FW_MOD_SHIFT | FW_MOD_CTRL) != 0
-        Task { await model.select(ref, extend: extend) }
+        let viewCamera = camera, viewWidth = Double(width), viewHeight = Double(height), viewStyle = style
+        Task { await model.viewportPick(at: CGPoint(x: x, y: y), camera: viewCamera, width: viewWidth, height: viewHeight, extend: extend, style: viewStyle) }
     }
 }

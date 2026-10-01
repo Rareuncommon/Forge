@@ -129,3 +129,21 @@ The Slot tool offers straight, centerpoint straight, centerpoint arc and three-p
 variants. Curved slots use center/start/end/width or start/end/through/width clicks,
 respect construction mode and remain editable with sketch dimensions and relations.
 The typed command is `sketch.add_arc_slot`; it rejects collapsed or self-overlapping slots.
+
+Extrusion now supports **Selected Contours**: choose closed regions from the checklist
+or enable **Pick Regions in View** and click inside them. Holes stay attached to their
+outer region; nested islands are independent. MCP `sketch.regions` returns stable
+`selector` arrays for `body.extrude.contours`. Crossing/branching geometry is not split
+into intersection cells; changed contour membership produces an explicit reference error.
+
+**Up To Surface** and **Offset From Surface** accept planar faces and reference planes,
+including tilted planes, in either direction. Pick a face/plane, then use **Use Selected
+Face/Plane**. Offset is perpendicular to the limiting plane; **Beyond surface** reverses
+it. The face's supporting plane is extended. Curved limits and draft with these end
+conditions remain unsupported.
+
+The **Selection** ribbon offers All Geometry/Bodies/Faces/Edges filters. Click in the
+viewport, then **Select Other** or **Tab** to cycle candidates behind the first hit.
+Hidden bodies are excluded; other selected entities remain selected. Filters are session
+preferences and do not restrict tree/explicit selections. MCP commands are
+`selection.set_filter` and `view.pick_candidates`; the existing `view.pick` stays compatible.

@@ -1,5 +1,42 @@
 # Progress
 
+## Session 12 — 2026-09-30 — Selected contours, planar limits and selection filters
+
+- Added `sketch.regions` with stable complete-curve selectors, holes, nested islands,
+  analytic areas, sampled display outlines and point hits. `body.extrude.contours`
+  selects only the requested closed regions, retaining holes and allowing unrelated
+  open geometry. Changed contour membership fails explicitly instead of rebinding.
+- Both desktop extrusion pages now have region checklists and explicit viewport region
+  picking, including when opened from a still-active sketch drawing tool. Stored
+  selectors survive feature editing. Qualified IDs compare canonically; async region
+  queries coalesce and are guarded against document/sketch/scene changes.
+- Up To Surface and Offset From Surface support planar face/plane limits, parallel or
+  oblique, both directions, true perpendicular offset, persistent references, dependency
+  validation, cuts, previews and feature editing. Exact planar clipping uses geometry-sized
+  masks. Lost/suppressed supports fail; upstream edits and save/open regenerate correctly.
+- All/body/face/edge selection filters and Select Other candidate cycling share ray
+  picking across macOS, Windows/Linux and `view.pick_candidates`. Tab/ribbon/menu actions
+  cycle occluded geometry while retaining other selections. Hidden bodies and reference
+  overlays are excluded. Session filter preferences survive geometry undo but are not saved.
+- Fixed curved-edge candidate deduplication so an occluded segment cannot discard the
+  visible part of that same edge. All-filter picking follows shaded/wireframe styles;
+  explicit filters can still request geometry regardless of display style.
+- Added the analytic selected-annulus/offset-plane golden model and a real MCP
+  selected-region/extrude/filter/save/open/rebuild workflow.
+
+Validation: build with tests and all **379 Swift tests** pass; **33 golden models**,
+**five MCP subprocess workflows**, and **three packaging regressions** pass. Windows
+frontend cross-platform and optimized Linux desktop/CLI builds pass. Native runtime
+checks run in CI using virtual displays; no app windows were launched on the live desktop.
+Matrix synchronization and whitespace checks pass.
+
+Remaining boundaries: contour selection handles complete closed loops, not intersection
+cells of crossing/branching sketches. Region hit/display outlines are sampled. Surface
+limits require planes, extend a face's supporting plane, reject crossing/behind limits,
+and do not support curved limits, Translate Surface, Up To Next or draft+surface.
+Select Other cycles candidates; radial UI, vertex filters, hover and tangent-chain
+selection remain pending. Broader SolidWorks parity remains unfinished.
+
 ## Session 11 — 2026-09-30 — Subentity measurement, visibility and curved slots
 
 - `query.measure` now resolves bodies, faces, edges and vertices, including persistent
