@@ -74,7 +74,7 @@ struct OperationPage: View {
                     .help("Reverse Direction")
                     .disabled(model.form.endCondition == .midPlane || model.form.endCondition == .throughAllBoth)
                     Picker("End condition", selection: $model.form.endCondition) {
-                        ForEach(EndConditionUI.allCases.filter { op == .cutExtrude || !model.bodies.isEmpty || $0.needsDepth || $0 == .upToVertex }, id: \.self) {
+                        ForEach(EndConditionUI.allCases.filter { op == .cutExtrude || !model.bodies.isEmpty || $0.needsDepth || $0 == .upToVertex || $0.needsSurface }, id: \.self) {
                             Text($0.rawValue).tag($0)
                         }
                     }
@@ -88,6 +88,15 @@ struct OperationPage: View {
                     PMField(label: "Vertex X", text: $model.form.vertexX, unit: "mm")
                     PMField(label: "Vertex Y", text: $model.form.vertexY, unit: "mm")
                     PMField(label: "Vertex Z", text: $model.form.vertexZ, unit: "mm")
+                }
+                if model.form.endCondition.needsSurface {
+                    PMField(label: "Face or plane", text: $model.form.surface)
+                    Button("Use Selected Face/Plane") { model.useSelectedExtrudeSurface() }
+                    PMNote(text: "Planar limits only. Faces use their supporting plane.")
+                    if model.form.endCondition == .offsetFromSurface {
+                        PMField(label: "Normal offset", text: $model.form.surfaceOffset, unit: "mm")
+                        PMCheckbox(label: "Beyond surface", isOn: $model.form.reverseSurfaceOffset)
+                    }
                 }
                 if op == .extrude && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
                     PMCheckbox(label: "Merge result", isOn: $model.form.merge)
@@ -106,7 +115,7 @@ struct OperationPage: View {
             if model.form.endCondition != .midPlane && model.form.endCondition != .throughAllBoth {
                 PMCheckGroup(title: "Direction 2", isOn: $model.form.direction2) {
                     Picker("End condition", selection: $model.form.endCondition2) {
-                        ForEach([EndConditionUI.blind, .throughAll, .upToVertex].filter { $0 != .throughAll || !model.bodies.isEmpty }, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach([EndConditionUI.blind, .throughAll, .upToVertex, .upToSurface, .offsetFromSurface].filter { $0 != .throughAll || !model.bodies.isEmpty }, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
@@ -117,6 +126,15 @@ struct OperationPage: View {
                     }
                     if model.form.endCondition2 == .blind {
                         PMField(label: "Depth", text: $model.form.depth2, unit: "mm", icon: .smartDimension)
+                    }
+                    if model.form.endCondition2.needsSurface {
+                        PMField(label: "Face or plane", text: $model.form.surface2)
+                        Button("Use Selected Face/Plane") { model.useSelectedExtrudeSurface(direction2: true) }
+                        PMNote(text: "Planar limits only. Faces use their supporting plane.")
+                        if model.form.endCondition2 == .offsetFromSurface {
+                            PMField(label: "Normal offset", text: $model.form.surfaceOffset2, unit: "mm")
+                            PMCheckbox(label: "Beyond surface", isOn: $model.form.reverseSurfaceOffset2)
+                        }
                     }
                 }
             }
@@ -140,7 +158,15 @@ struct OperationPage: View {
                 PMPicker(label: "Sketch", selection: Binding(get: { model.operationSketch ?? "" }, set: { model.operationSketch = $0 }), icon: .sketch) {
                     ForEach(model.sketches) { Text($0.name).tag($0.id) }
                 }
-                PMNote(text: "All closed regions of the sketch are used; holes and islands are kept.")
+                PMCheckbox(label: "All closed regions", isOn: Binding(get: { model.form.contours == nil }, set: { model.form.contours = $0 ? nil : [] }))
+                Button(model.form.activeBox == "contours" ? "Stop Picking Regions" : "Pick Regions in View") {
+                    model.form.activeBox = model.form.activeBox == "contours" ? "" : "contours"
+                }
+                if let error = model.contourQueryError { PMNote(text: error) }
+                ForEach(Array(model.contourChoices.enumerated()), id: \.element.id) { index, region in
+                    PMCheckbox(label: "\(index + 1). \(region.title)", isOn: Binding(get: { model.contourIsSelected(region) }, set: { model.setContourSelected(region, $0) }))
+                }
+                PMNote(text: "Each selected outer contour keeps its holes. Nested islands are independent regions.")
             }
             if op == .cutExtrude || model.form.merge && !model.bodies.isEmpty {
                 PMSection("Feature Scope") {

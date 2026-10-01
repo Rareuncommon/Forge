@@ -60,6 +60,26 @@ freedom, width editing, construction, atomic validation, undo and persistence. G
 Fix Slot/Equal Slots relations remain pending.
 
 
+## Further delivery: selected contours, planar limits and selection filters
+
+Extrusions now store complete outer-curve ID sets as contour intent. Region discovery
+returns holes, nested islands, analytic area, sampled display outlines and point hits.
+Desktop checklists and explicit ray picking share these selectors, including while
+starting an extrusion from an active drawing tool. Unrelated open geometry can be ignored
+for explicit selections; crossing/branching sketches still need intersection-cell decomposition.
+
+Planar Up To Surface and Offset From Surface use exact clipped geometry for parallel or
+oblique limits, true perpendicular offset, both directions, persistent references and
+upstream dependency tracking. The supporting plane of a face is extended. Curved limits,
+Translate Surface, Up To Next and draft combined with surface limits remain pending.
+[Official Extrude PropertyManager](https://help.solidworks.com/2021/english/solidworks/sldworks/r_extrude_propertymanager.htm).
+
+All/body/face/edge filters and Select Other candidate cycling now share CPU ray candidate
+queries across the native desktops and MCP. Hidden bodies and reference overlays are
+excluded. Filters are session preferences; explicit/tree selections stay unrestricted.
+The UI provides Tab/ribbon/menu cycling. Radial candidate UI, vertex filters, hover previews
+and chain/tangent selection remain pending.
+
 ## How to interpret the evidence
 
 - **Engine available, guided UI missing** means there is a registered command but no

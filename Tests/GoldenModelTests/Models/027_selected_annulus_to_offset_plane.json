@@ -1,0 +1,99 @@
+{
+  "forge_script": 1,
+  "name": "027_selected_annulus_to_offset_plane",
+  "description": "Select only R5/R2 annular region, ignore separate R3 region. Normal plane offset10, stop2mm short: volume=pi*(25-4)*8=168pi.",
+  "commands": [
+    {
+      "command": "document.new",
+      "params": {}
+    },
+    {
+      "command": "plane.create",
+      "params": {
+        "reference": "front",
+        "offset": 10
+      }
+    },
+    {
+      "command": "sketch.create",
+      "params": {
+        "plane": "front"
+      }
+    },
+    {
+      "command": "sketch.add_circle",
+      "params": {
+        "center": [
+          0,
+          0
+        ],
+        "radius": 5
+      }
+    },
+    {
+      "command": "sketch.add_circle",
+      "params": {
+        "center": [
+          0,
+          0
+        ],
+        "radius": 2
+      }
+    },
+    {
+      "command": "sketch.add_circle",
+      "params": {
+        "center": [
+          20,
+          0
+        ],
+        "radius": 3
+      }
+    },
+    {
+      "command": "body.extrude",
+      "params": {
+        "sketch": "sketch-1",
+        "contours": [
+          [
+            "circle-1"
+          ]
+        ],
+        "end_condition": "offset_from_surface",
+        "surface": "plane-1",
+        "offset": 2
+      }
+    }
+  ],
+  "expect": {
+    "body_count": 1,
+    "bodies": [
+      {
+        "body": "body-1",
+        "volume_mm3": {
+          "value": 527.7875658030853,
+          "tol": 1e-06
+        },
+        "bbox_min": {
+          "value": [
+            -5,
+            -5,
+            0
+          ],
+          "tol": 1e-06
+        },
+        "bbox_max": {
+          "value": [
+            5,
+            5,
+            8
+          ],
+          "tol": 1e-06
+        },
+        "faces": 4,
+        "valid": true,
+        "closed": true
+      }
+    ]
+  }
+}

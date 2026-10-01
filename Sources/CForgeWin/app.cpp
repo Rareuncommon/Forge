@@ -832,6 +832,7 @@ static const char *keyName(WPARAM vk) {
     case VK_DELETE:
     case VK_BACK: return "delete";
     case VK_SPACE: return "space";
+    case VK_TAB: return "tab";
     default: return nullptr;
     }
 }

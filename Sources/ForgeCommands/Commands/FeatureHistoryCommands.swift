@@ -116,7 +116,7 @@ extension Document {
             if f.isSketch, let sketch = f.sketchID { result[sketch] = f.id }
         }
         var writers = [String: String](), graph = [String: Set<String>]()
-        let refKeys: Set<String> = ["body", "target", "tool", "scope", "edges", "faces", "neutral_plane", "reference", "plane", "face", "sketch", "profile", "profiles", "path", "features", "axis", "direction", "direction2"]
+        let refKeys: Set<String> = ["body", "target", "tool", "scope", "edges", "faces", "neutral_plane", "reference", "plane", "face", "surface", "sketch", "profile", "profiles", "path", "features", "axis", "direction", "direction2"]
         for (i, f) in features.enumerated() {
             let before = replay.snapshots[i]
             let after = i + 1 < replay.snapshots.count ? replay.snapshots[i + 1] : replay.currentBodyState

@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 1000 rows — not started: 836 · in progress: 136 · done: 28 · verified: 0
+**Totals:** 1000 rows — not started: 834 · in progress: 138 · done: 28 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -69,7 +69,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `P/inspector` | Inspector panel instead of modal PropertyManagers (§6.2) | in progress | ForgeApp | — | — | PropertyManager panels (OK/Cancel, groups, selection boxes) for every UI operation; read-only entity descriptors |
 | `P/handles` | Direct-manipulation handles (§6.3) | not started | — | — | — |  |
 | `P/explainable-failures` | Explainable failures in the viewport (§6.4) | not started | — | — | — |  |
-| `P/smart-selection` | Smart selection, filters, select-other (§6.5) | not started | — | — | — |  |
+| `P/smart-selection` | Smart selection, filters, select-other (§6.5) | in progress | ForgeCommands / ForgeRender / ForgeUI | Tests/ForgeCommandsTests/SelectionPickingTests.swift, Tests/ForgeUITests/SelectionWorkflowTests.swift, Tests/ForgeRenderTests/CandidatePickingTests.swift | execute:selection.set_filter, execute:view.pick_candidates | all/body/face/edge filters; occluded candidate cycling via Tab/ribbon/menu; hidden-body exclusion and style parity; radial picker, vertex filters, hover and chain selection pending |
 | `P/input-devices` | Trackpad gestures, 3Dconnexion, Pencil/Sidecar, keymaps (§1.4, §6.9) | in progress | ForgeApp | — | — | mouse + trackpad written, unverified; 3Dconnexion/keymaps pending |
 | `P/accessibility` | VoiceOver, keyboard-only, high contrast, Dynamic Type (§6.10) | not started | — | — | — |  |
 | `P/performance` | Performance targets + benchmarks with regression alerts (§6.11, §9) | not started | — | — | — |  |
@@ -160,7 +160,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/sketchxpert/conflict-repair` | ↳ conflict repair | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | — | see parent |
 | `7.1/tools/check-sketch-for-feature` | Tools: Check Sketch for Feature | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | check_sketch | loops, nesting, open ends, branches, crossings; exact areas |
 | `7.1/tools/repair-sketch` | Tools: Repair Sketch | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketch-contours-regions-selection` | Tools: sketch contours/regions selection | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | check_sketch | loop/region detection done; picking a region for a feature lands with extrude (M2) |
+| `7.1/tools/sketch-contours-regions-selection` | Tools: sketch contours/regions selection | in progress | ForgeSketch | Tests/ForgeCommandsTests/SketchRegionTests.swift, Tests/ForgeUITests/ExtrudeRegionSurfaceWorkflowTests.swift | execute:sketch.regions, execute:body.extrude | closed-loop region discovery and point picking; stable complete-curve selectors, holes and nested islands; crossing/branching intersection cells pending |
 | `7.1/tools/sketch-ink-equivalent` | Tools: Sketch Ink equivalent | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-ink-equivalent/pencil` | ↳ pencil | not started | ForgeSketch | — | — |  |
 | `7.1/relations/coincident` | Relations: coincident | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_relation | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
@@ -223,12 +223,12 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/boss-base-and-cut/extrude` | Boss/base & cut: extrude | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | kernel-level from sketch profiles (holes, islands); parametric feature, cut and end conditions in M2 |
 | `7.2/boss-base-and-cut/extrude/blind` | ↳ blind | in progress | ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.extrude | normal/reverse |
 | `7.2/boss-base-and-cut/extrude/through-all` | ↳ through all | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | through_all and through_all_both (depth from the bodies in scope) |
-| `7.2/boss-base-and-cut/extrude/up-to-next-vertex-surface-offset` | ↳ up to next/vertex/surface/offset | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | up_to_vertex; up to next/surface/offset not started |
+| `7.2/boss-base-and-cut/extrude/up-to-next-vertex-surface-offset` | ↳ up to next/vertex/surface/offset | in progress | ForgeCommands | Tests/ForgeCommandsTests/SurfaceExtrudeTests.swift, Tests/ForgeUITests/ExtrudeRegionSurfaceWorkflowTests.swift | execute:body.extrude | vertex and planar face/plane limits, oblique caps, true perpendicular offset in both directions; Up To Next, curved limits, Translate Surface and surface-limit draft pending |
 | `7.2/boss-base-and-cut/extrude/mid-plane` | ↳ mid-plane | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | end_condition mid_plane |
 | `7.2/boss-base-and-cut/extrude/thin-feature` | ↳ thin feature | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.extrude | closed profiles: one direction (either side), mid plane, two directions; open-profile thin features pending |
 | `7.2/boss-base-and-cut/extrude/draft` | ↳ draft | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.extrude | Direction 1, inward/outward |
 | `7.2/boss-base-and-cut/extrude/direction-2` | ↳ direction-2 | in progress | ForgeCommands | Tests/ForgeCommandsTests/FeatureTreeTests.swift | execute:body.extrude | blind, through all, up to vertex |
-| `7.2/boss-base-and-cut/extrude/contour-selection` | ↳ contour selection | not started | ForgeModel | — | — |  |
+| `7.2/boss-base-and-cut/extrude/contour-selection` | ↳ contour selection | in progress | ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/SketchRegionTests.swift, Tests/ForgeUITests/ExtrudeRegionSurfaceWorkflowTests.swift | execute:sketch.regions, execute:body.extrude | closed-loop selectors with holes, desktop checklist/ray picking, preview/edit/rebuild/save/undo; intersection-cell decomposition pending |
 | `7.2/boss-base-and-cut/revolve` | Boss/base & cut: revolve | in progress | ForgeKernel / ForgeCommands | Tests/GoldenModelTests (013–016), Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:body.revolve | about a sketch line, any angle; parametric feature in M2 |
 | `7.2/boss-base-and-cut/sweep` | Boss/base & cut: sweep | in progress | ForgeKernel / ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.sweep | Swept Boss/Base and Swept Cut: sketch profile or circular profile along a path chain (lines, arcs, splines); follow path / keep normal constant; merge, scope; feature + UI pages. Guide curves, twist, thin, solid-body sweep: not implemented |
 | `7.2/boss-base-and-cut/sweep/profile` | ↳ profile | done | ForgeCommands | Tests/ForgeCommandsTests/SweepLoftRibTests.swift, Tests/ForgeKernelTests/KernelTests.swift | execute:body.sweep | sketch profile (holes kept) or circular_diameter |

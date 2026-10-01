@@ -44,6 +44,61 @@ public enum RayPicker {
         return bestFace?.0
     }
 
+    /// Unique ray hits, including rear surfaces for Select Other when requested.
+    /// Normal picking excludes edges occluded by the nearest face. Reference geometry
+    /// should be removed by the caller before using this geometry-only picker.
+    public static func candidates(_ scene: RenderScene, origin: Vec3, direction: Vec3,
+                                  edgeTolerance: Double = 0, includeOccluded: Bool = true) -> [PickHit] {
+        guard direction.length > 1e-12 else { return [] }
+        let d = direction.normalized
+        struct Key: Hashable { var object: UInt32; var element: PickHit.Element; var index: UInt32 }
+        var hits: [Key: (hit: PickHit, depth: Double, offset: Double)] = [:]
+        var edgeSegments: [(hit: PickHit, depth: Double, offset: Double)] = []
+        for item in scene.items {
+            let m = item.mesh
+            for t in 0..<m.triangleCount {
+                let a = m.position(Int(m.indices[3*t])), b = m.position(Int(m.indices[3*t+1])), c = m.position(Int(m.indices[3*t+2]))
+                guard let depth = intersect(origin: origin, dir: d, a, b, c) else { continue }
+                let key = Key(object: item.objectID, element: .face, index: m.triangleFaces[t])
+                if hits[key] == nil || depth < hits[key]!.depth {
+                    hits[key] = (PickHit(objectID: item.objectID, element: .face, index: key.index, point: origin + d * depth), depth, 0)
+                }
+            }
+            guard edgeTolerance > 0 else { continue }
+            for e in 0..<m.edgeCount {
+                let start = Int(m.edgeOffsets[e]), end = Int(m.edgeOffsets[e+1])
+                guard end - start >= 2 else { continue }
+                for k in start..<(end-1) {
+                    let p = Vec3(Double(m.edgePoints[3*k]), Double(m.edgePoints[3*k+1]), Double(m.edgePoints[3*k+2]))
+                    let q = Vec3(Double(m.edgePoints[3*k+3]), Double(m.edgePoints[3*k+4]), Double(m.edgePoints[3*k+5]))
+                    let (offset, depth, point) = raySegmentDistance(origin: origin, dir: d, p, q)
+                    guard offset <= edgeTolerance else { continue }
+                    // Retain segment hits until visibility is known. An occluded part of
+                    // one curved edge may be closer to the ray than its visible part;
+                    // deduplicating here would incorrectly discard that visible edge.
+                    edgeSegments.append((PickHit(objectID: item.objectID, element: .edge, index: m.edgeIDs[e], point: point), depth, offset))
+                }
+            }
+        }
+        let nearestFace = hits.values.filter { $0.hit.element == .face }.map(\.depth).min() ?? .infinity
+        let limit = nearestFace + max(1e-8, edgeTolerance * 2)
+        let ordered = (Array(hits.values) + edgeSegments).filter { includeOccluded || $0.depth <= limit }.sorted { a, b in
+            let aEdge = a.hit.element == .edge && a.depth <= limit
+            let bEdge = b.hit.element == .edge && b.depth <= limit
+            if aEdge != bEdge { return aEdge }
+            if aEdge && a.offset != b.offset { return a.offset < b.offset }
+            if a.depth != b.depth { return a.depth < b.depth }
+            if a.hit.objectID != b.hit.objectID { return a.hit.objectID < b.hit.objectID }
+            if a.hit.element != b.hit.element { return a.hit.element == .edge }
+            return a.hit.index < b.hit.index
+        }
+        var seen = Set<Key>()
+        return ordered.compactMap { candidate in
+            let hit = candidate.hit
+            return seen.insert(Key(object: hit.objectID, element: hit.element, index: hit.index)).inserted ? hit : nil
+        }
+    }
+
     static func intersect(origin: Vec3, dir: Vec3, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Double? {
         let e1 = b - a, e2 = c - a
         let p = dir.cross(e2)

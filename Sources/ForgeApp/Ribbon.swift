@@ -13,6 +13,8 @@ struct RibbonView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 4) {
+                SelectionGroup()
+                RibbonSeparator()
                 switch model.ribbonTab {
                 case .features: FeaturesTab()
                 case .sketch: SketchTab()
@@ -28,6 +30,32 @@ struct RibbonView: View {
         .onChange(of: model.activeSketch) { old, now in
             // Entering a sketch shows the sketch tools; leaving it goes back to features.
             if (old == nil) != (now == nil) { model.ribbonTab = now == nil ? .features : .sketch }
+        }
+    }
+}
+
+private struct SelectionGroup: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        RibbonGroup("Selection") {
+            RibbonStack {
+                ForEach([SelectionFilter.all, .bodies], id: \.rawValue) { filter in
+                    RibbonSmall(.part, filter.title, active: model.selectionFilter == filter) {
+                        Task { await model.setSelectionFilter(filter) }
+                    }
+                }
+            }
+            RibbonStack {
+                ForEach([SelectionFilter.faces, .edges], id: \.rawValue) { filter in
+                    RibbonSmall(.part, filter.title, active: model.selectionFilter == filter) {
+                        Task { await model.setSelectionFilter(filter) }
+                    }
+                }
+                RibbonSmall(.hideShow, "Select Other (Tab)", enabled: model.canSelectOther,
+                            help: "Cycle through candidates beneath the last click, including occluded faces") {
+                    Task { await model.selectOther() }
+                }
+            }
         }
     }
 }

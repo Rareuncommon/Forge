@@ -121,8 +121,8 @@ extension Sketch {
 
     /// Analyse the non-construction geometry as feature profiles (SPEC 7.1 "Check Sketch for
     /// Feature", "sketch contours/regions").
-    public func profiles() -> ProfileReport {
-        let curves = orderedEntities.filter { $0.kind != .point && !$0.construction }
+    public func profiles(including entityIDs: Set<String>? = nil) -> ProfileReport {
+        let curves = orderedEntities.filter { $0.kind != .point && !$0.construction && (entityIDs?.contains($0.id) ?? true) }
         let scale = max(1, params.map(abs).max() ?? 1)
         let tol = 1e-7 * scale
         var issues: [String] = []
@@ -197,7 +197,10 @@ extension Sketch {
 
         // Nesting by containment of a sample point, smallest container wins.
         let loopPolys = loops.map { loop -> [(Double, Double)] in
-            loop.entities.flatMap { polyline($0) }
+            zip(loop.entities, loop.forward).flatMap { id, forward in
+                let points = polyline(id)
+                return forward ? points : Array(points.reversed())
+            }
         }
         for i in loops.indices {
             let probe = loopPolys[i][0]

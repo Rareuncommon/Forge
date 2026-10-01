@@ -11,7 +11,7 @@ import Observation
 
 /// SolidWorks' end conditions as shown in the Extrude page (the engine's body.extrude names).
 package enum EndConditionUI: String, CaseIterable {
-    case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane", upToVertex = "Up To Vertex"
+    case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane", upToVertex = "Up To Vertex", upToSurface = "Up To Surface", offsetFromSurface = "Offset From Surface"
 
     package var param: String {
         switch self {
@@ -20,6 +20,8 @@ package enum EndConditionUI: String, CaseIterable {
         case .throughAllBoth: "through_all_both"
         case .midPlane: "mid_plane"
         case .upToVertex: "up_to_vertex"
+        case .upToSurface: "up_to_surface"
+        case .offsetFromSurface: "offset_from_surface"
         }
     }
 
@@ -28,6 +30,7 @@ package enum EndConditionUI: String, CaseIterable {
         self = v
     }
 
+    package var needsSurface: Bool { self == .upToSurface || self == .offsetFromSurface }
     package var needsDepth: Bool { self == .blind || self == .midPlane }
 }
 
@@ -39,6 +42,9 @@ package struct OperationForm {
     package var bodyOriginX = "0", bodyOriginY = "0", bodyOriginZ = "0"
     package var vertexX = "0", vertexY = "0", vertexZ = "10"
     package var vertex2X = "0", vertex2Y = "0", vertex2Z = "-10"
+    package var surface = "", surfaceOffset = "0", reverseSurfaceOffset = false
+    package var surface2 = "", surfaceOffset2 = "0", reverseSurfaceOffset2 = false
+    package var contours: [[String]]?
     package var depth = "10"
     package var endCondition = EndConditionUI.blind
     package var reverse = false
@@ -97,6 +103,7 @@ extension AppModel {
     /// Start an operation: its page appears in the PropertyManager.
     package func begin(_ op: Operation) {
         form.result = nil
+        form.activeBox = ""
         switch op {
         case .moveBody:
             form.target = selectedBodies.first ?? bodies.first?.id ?? ""
@@ -123,6 +130,11 @@ extension AppModel {
             form.draftOn = false
             form.thinOn = false
             form.scope = []
+            form.contours = nil
+            if op == .extrude || op == .cutExtrude {
+                form.surface = selectedFace ?? selection.last(where: { $0.hasPrefix("plane-") }) ?? form.surface
+                Task { await refreshContourChoices() }
+            }
             if op == .cutExtrude {
                 // A cut goes into the material: opposite to the sketch normal by default.
                 form.reverse = true
@@ -229,6 +241,10 @@ extension AppModel {
             let ec = p["end_condition"]?.stringValue ?? (p["direction"]?.stringValue == "mid_plane" ? "mid_plane" : "blind")
             form.endCondition = EndConditionUI(param: ec) ?? .blind
             form.depth = t(p["depth"]) ?? form.depth
+            form.surface = p["surface"]?.stringValue ?? ""
+            form.surfaceOffset = t(p["offset"]) ?? "0"
+            form.reverseSurfaceOffset = p["reverse_offset"]?.boolValue ?? false
+            form.contours = p["contours"]?.arrayValue?.map { $0.arrayValue?.compactMap(\.stringValue) ?? [] }
             if let v = p["vertex"]?.arrayValue, v.count == 3 {
                 form.vertexX = t(v[0]) ?? "0"; form.vertexY = t(v[1]) ?? "0"; form.vertexZ = t(v[2]) ?? "0"
             }
@@ -237,6 +253,9 @@ extension AppModel {
                 form.direction2 = true
                 form.endCondition2 = EndConditionUI(param: d2["end_condition"]?.stringValue ?? "blind") ?? .blind
                 form.depth2 = t(d2["depth"]) ?? form.depth2
+                form.surface2 = d2["surface"]?.stringValue ?? ""
+                form.surfaceOffset2 = t(d2["offset"]) ?? "0"
+                form.reverseSurfaceOffset2 = d2["reverse_offset"]?.boolValue ?? false
                 if let v = d2["vertex"]?.arrayValue, v.count == 3 {
                     form.vertex2X = t(v[0]) ?? "0"; form.vertex2Y = t(v[1]) ?? "0"; form.vertex2Z = t(v[2]) ?? "0"
                 }
@@ -433,7 +452,15 @@ extension AppModel {
         case .extrude, .cutExtrude:
             guard let sk = operationSketch else { return nil }
             var p: [String: JSONValue] = ["sketch": .string(sk), "end_condition": .string(form.endCondition.param)]
+            if let contours = form.contours { p["contours"] = .array(contours.map { .array($0.map(JSONValue.string)) }) }
             if form.endCondition.needsDepth { p["depth"] = quantity(form.depth) }
+            if form.endCondition.needsSurface {
+                p["surface"] = .string(form.surface)
+                if form.endCondition == .offsetFromSurface {
+                    p["offset"] = quantity(form.surfaceOffset)
+                    p["reverse_offset"] = .bool(form.reverseSurfaceOffset)
+                }
+            }
             if form.endCondition == .upToVertex { p["vertex"] = [quantity(form.vertexX), quantity(form.vertexY), quantity(form.vertexZ)] }
             if form.reverse && form.endCondition != .midPlane && form.endCondition != .throughAllBoth { p["reverse"] = true }
             if form.draftOn && !form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
@@ -450,6 +477,13 @@ extension AppModel {
             if form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
                 var d2: [String: JSONValue] = ["end_condition": .string(form.endCondition2.param)]
                 if form.endCondition2 == .blind { d2["depth"] = quantity(form.depth2) }
+                if form.endCondition2.needsSurface {
+                    d2["surface"] = .string(form.surface2)
+                    if form.endCondition2 == .offsetFromSurface {
+                        d2["offset"] = quantity(form.surfaceOffset2)
+                        d2["reverse_offset"] = .bool(form.reverseSurfaceOffset2)
+                    }
+                }
                 if form.endCondition2 == .upToVertex { d2["vertex"] = [quantity(form.vertex2X), quantity(form.vertex2Y), quantity(form.vertex2Z)] }
                 p["direction2"] = .object(d2)
             }
@@ -724,7 +758,9 @@ extension AppModel {
         let f = form
         let placement = [f.bodyDX, f.bodyDY, f.bodyDZ, String(f.bodyCopy), String(f.bodyRotation), f.bodyAngle, f.bodyAxis,
                          JSONCoding.string(.array(f.bodyCustomAxis)), f.bodyOriginX, f.bodyOriginY, f.bodyOriginZ,
-                         f.vertexX, f.vertexY, f.vertexZ, f.vertex2X, f.vertex2Y, f.vertex2Z].joined(separator: "|")
+                         f.vertexX, f.vertexY, f.vertexZ, f.vertex2X, f.vertex2Y, f.vertex2Z,
+                         f.surface, f.surfaceOffset, String(f.reverseSurfaceOffset), f.surface2, f.surfaceOffset2, String(f.reverseSurfaceOffset2),
+                         JSONCoding.string(f.contours.map { .array($0.map { .array($0.map(JSONValue.string)) }) } ?? .null)].joined(separator: "|")
         return [op.title, placement, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
                 String(f.merge), f.scope.joined(separator: ","), f.seeds.joined(separator: ","), f.linDirection, f.linSpacing, f.linCount, String(f.linReverse),
                 String(f.linDirection2On), f.linDirection2, f.linSpacing2, f.linCount2, f.cirAxis, f.cirAngle, f.cirCount, String(f.cirEqual),

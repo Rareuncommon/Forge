@@ -114,6 +114,44 @@ class MCPWorkflowTests(unittest.TestCase):
             self.assertEqual(reopened[3]["result"]["structuredContent"]["result"]["visible_bodies"], ["body-1"])
             self.assertAlmostEqual(reopened[4]["result"]["structuredContent"]["from_entity"]["volume_mm3"], 72 * math.pi, places=6)
 
+    def test_selected_contour_surface_limit_and_selection_filters(self):
+        import math
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        with tempfile.TemporaryDirectory() as temporary:
+            saved = str(Path(temporary) / "selected-region.forgepart")
+            responses = self.run_calls(executable, [
+                ("new_document", {}),
+                ("execute", {"command": "plane.create", "params": {"reference": "front", "offset": 10}}),
+                ("execute", {"command": "sketch.create", "params": {"plane": "front"}}),
+                ("execute", {"command": "sketch.add_circle", "params": {"center": [0, 0], "radius": 5}}),
+                ("execute", {"command": "sketch.add_circle", "params": {"center": [0, 0], "radius": 2}}),
+                ("execute", {"command": "sketch.add_circle", "params": {"center": [20, 0], "radius": 3}}),
+                ("execute", {"command": "sketch.regions", "params": {"sketch": "sketch-1", "at": [4, 0]}}),
+                ("execute", {"command": "sketch.exit", "params": {}}),
+                ("execute", {"command": "body.extrude", "params": {"sketch": "sketch-1", "contours": [["circle-1"]],
+                    "end_condition": "offset_from_surface", "surface": "plane-1", "offset": 2}}),
+                ("measure", {"from": "body-1"}),
+                ("execute", {"command": "selection.set_filter", "params": {"filter": "faces"}}),
+                ("execute", {"command": "document.state", "params": {}}),
+                ("save", {"path": saved}),
+            ])
+            for response in responses:
+                self.assertFalse(response["result"]["isError"], response)
+            regions = responses[6]["result"]["structuredContent"]["result"]["regions"]
+            self.assertEqual(len(regions), 1)
+            self.assertEqual(regions[0]["selector"], ["circle-1"])
+            self.assertEqual(regions[0]["holes"], [["circle-3"]])
+            self.assertAlmostEqual(responses[9]["result"]["structuredContent"]["from_entity"]["volume_mm3"], 168 * math.pi, places=6)
+            self.assertEqual(responses[11]["result"]["structuredContent"]["result"]["selection_filter"], "faces")
+            reopened = self.run_calls(executable, [
+                ("open", {"path": saved}), ("rebuild", {}), ("measure", {"from": "body-1"}),
+                ("execute", {"command": "document.state", "params": {}}),
+            ])
+            for response in reopened:
+                self.assertFalse(response["result"]["isError"], response)
+            self.assertAlmostEqual(reopened[2]["result"]["structuredContent"]["from_entity"]["volume_mm3"], 168 * math.pi, places=6)
+            self.assertEqual(reopened[3]["result"]["structuredContent"]["result"]["selection_filter"], "all")
+
     def run_calls(self, executable, calls):
         messages = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}]
         messages.extend({"jsonrpc": "2.0", "id": index + 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}

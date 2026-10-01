@@ -30,6 +30,7 @@ extension CommandRegistry {
         r.register(SketchRemove.self)
         r.register(SketchGet.self)
         r.register(SketchCheck.self)
+        r.register(SketchRegions.self)
         r.register(SketchAddPoint.self)
         r.register(SketchAddLine.self)
         r.register(SketchAddCircle.self)
@@ -111,6 +112,8 @@ extension CommandRegistry {
         r.register(SelectionSet.self)
         r.register(SelectionGet.self)
         r.register(SelectionClear.self)
+        r.register(SelectionSetFilter.self)
+        r.register(ViewPickCandidates.self)
         // view
         r.register(ViewSetVisibility.self)
         r.register(ViewIsolate.self)

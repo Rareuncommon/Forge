@@ -228,6 +228,9 @@ package final class AppModel {
     /// The rollback and re-selection that start an edit (awaited by tests).
     package var editTask: Task<Void, Never>?
     package var selection: [String] = []
+    package var selectionFilter: SelectionFilter = .all
+    package var viewportPickContext: ViewportPickContext?
+    private var pickDocumentID: String?
     package var inspector: JSONValue?
     package var lastError: ForgeError?
     package var log: [String] = []
@@ -236,7 +239,19 @@ package final class AppModel {
     package var ribbonTab: RibbonTab = .features
     package var operation: Operation?
     /// The sketch an extrude/revolve uses, and the values being edited in the PropertyManager.
-    package var operationSketch: String?
+    package var operationSketch: String? {
+        didSet {
+            guard oldValue != operationSketch else { return }
+            form.contours = nil
+            contourChoices = []
+            Task { await refreshContourChoices() }
+        }
+    }
+    package var contourChoices: [ExtrudeContourChoice] = []
+    package var contourQueryError: String?
+    @ObservationIgnored package var contourRequest = 0
+    @ObservationIgnored package var contourQueryTask: Task<Void, Never>?
+    @ObservationIgnored package var contourQueryKey: String?
     package var form = OperationForm()
     /// Bumped whenever the scene must be re-uploaded to the GPU.
     package var sceneVersion = 0
@@ -410,6 +425,9 @@ package final class AppModel {
         rollback = doc.rollback
         refPlanes = doc.orderedRefPlanes
         selection = doc.selection
+        if pickDocumentID != doc.id || selectionFilter != doc.selectionFilter { viewportPickContext = nil }
+        pickDocumentID = doc.id
+        selectionFilter = doc.selectionFilter
         sketchLineIDs = Dictionary(uniqueKeysWithValues: doc.orderedSketches.map { sk in
             let lines = sk.orderedEntities.filter { $0.kind == .line }
             return (sk.id, (lines.filter(\.construction) + lines.filter { !$0.construction }).map(\.id))
@@ -439,6 +457,7 @@ package final class AppModel {
             composeScene()
         }
         await refreshSketchState()
+        if operation == .extrude || operation == .cutExtrude { await refreshContourChoices() }
         if let first = selection.first, !first.hasPrefix("sketch-"), let o = try? await engine.execute("query.entity", ["ref": .string(first)]) {
             inspector = o.result
         } else {
@@ -479,7 +498,7 @@ package final class AppModel {
     package func setOrientation(_ o: ViewOrientation) { viewportCommands.send(.orient(o)) }
     package func zoomToFit() { viewportCommands.send(.fit) }
     package func previousView() { viewportCommands.send(.previous) }
-    package func setStyle(_ s: RenderStyle) { viewportCommands.send(.style(s)) }
+    package func setStyle(_ s: RenderStyle) { viewportPickContext = nil; viewportCommands.send(.style(s)) }
     package func setPerspective(_ on: Bool) {
         display.perspective = on
         viewportCommands.send(.projection(on ? .perspective : .orthographic))
@@ -495,6 +514,9 @@ package final class AppModel {
         case "Z": viewportCommands.send(.zoom(1.25))
         case "s", "S": shortcutBarAt = p
         case "space": orientationPaletteShown.toggle()
+        case "tab", "\t":
+            guard canSelectOther else { return false }
+            Task { await selectOther() }
         case "return":
             if activeSketch != nil, sketchState.tool == nil, let t = lastSketchTool {
                 chooseTool(t)

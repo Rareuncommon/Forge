@@ -294,7 +294,7 @@ public actor Engine {
                 if dryRun && !descriptor.supportsDryRun {
                     throw ForgeError(.unsupported, "'\(item.command)' cannot run in a dry-run batch")
                 }
-                let localSessionCommands: Set<String> = ["selection.set", "selection.clear", "sketch.edit", "sketch.exit"]
+                let localSessionCommands: Set<String> = ["selection.set", "selection.clear", "selection.set_filter", "sketch.edit", "sketch.exit"]
                 if atomic && !descriptor.supportsDryRun && !localSessionCommands.contains(item.command) {
                     throw ForgeError(.unsupported, "'\(item.command)' cannot run in an atomic batch; execute it separately or use atomic: false")
                 }
@@ -421,6 +421,7 @@ extension Document {
     func preservingSelection(of current: Document) -> Document {
         var d = self
         d.selection = current.selection.filter { d.referenceExists($0) }
+        d.selectionFilter = current.selectionFilter
         return d
     }
 }

@@ -36,6 +36,7 @@ public struct Document: Sendable {
     public internal(set) var bodies: [String: Body] = [:]
     /// Explicit, queryable selection (SPEC §5.4: no hidden state). Entity reference strings.
     public var selection: [String] = []
+    public var selectionFilter: SelectionFilter = .all
     /// Persistent display visibility; geometry and exports still include hidden bodies.
     public var hiddenBodyIDs: Set<String> = []
     /// Temporary isolation whitelist. Nil restores ordinary saved visibility.

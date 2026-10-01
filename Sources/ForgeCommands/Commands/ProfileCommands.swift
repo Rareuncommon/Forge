@@ -14,8 +14,8 @@ extension Sketch {
 
     /// As profileLoops, plus the sketch entity of each segment (in segment order), which names
     /// the faces swept from it (docs/adr/0002).
-    func profileLoopsWithIDs() throws -> (loops: [[ProfileSegment]], regions: [Int], ids: [String]) {
-        let report = profiles()
+    func profileLoopsWithIDs(contours: [[String]]? = nil) throws -> (loops: [[ProfileSegment]], regions: [Int], ids: [String]) {
+        let report = try selectedProfileReport(contours: contours)
         guard report.valid else {
             throw ForgeError(
                 .preconditionFailed, "sketch \(id) is not a valid profile: " + report.issues.joined(separator: "; "),
@@ -89,9 +89,9 @@ public enum ExtrudeDirection: String, Codable, Sendable, CaseIterable, SchemaEnu
     case normal, reverse, midPlane = "mid_plane"
 }
 
-/// SolidWorks' extrude end conditions (docs/research §2.4) that need no face reference.
+/// Supported extrusion end conditions; surface limits currently require planar geometry.
 public enum EndCondition: String, Codable, Sendable, CaseIterable, SchemaEnum {
-    case blind, throughAll = "through_all", throughAllBoth = "through_all_both", midPlane = "mid_plane", upToVertex = "up_to_vertex"
+    case blind, throughAll = "through_all", throughAllBoth = "through_all_both", midPlane = "mid_plane", upToVertex = "up_to_vertex", upToSurface = "up_to_surface", offsetFromSurface = "offset_from_surface"
 }
 
 public enum ThinType: String, Codable, Sendable, CaseIterable, SchemaEnum {
@@ -130,13 +130,20 @@ public struct ExtrudeDirection2: Codable, Sendable, SchemaDocumented {
     public var endCondition: EndCondition?
     public var depth: Length?
     public var vertex: Point3?
+    public var surface: String?
+    public var offset: Length?
+    public var reverseOffset: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case depth, vertex
+        case depth, vertex, surface, offset
+        case reverseOffset = "reverse_offset"
         case endCondition = "end_condition"
     }
     public static let fieldDocs: [String: FieldDoc] = [
-        "end_condition": FieldDoc("blind, through_all or up_to_vertex", default: "blind"),
+        "end_condition": FieldDoc("blind, through_all, up_to_vertex, up_to_surface or offset_from_surface", default: "blind"),
+        "surface": "Planar face or reference plane for a surface end condition (the supporting plane is extended)",
+        "offset": "Nonnegative perpendicular distance from the surface, required for offset_from_surface",
+        "reverse_offset": FieldDoc("Offset beyond the surface instead of stopping short", default: false),
         "depth": "Depth for blind",
         "vertex": "Point the extrusion reaches for up_to_vertex (model coordinates)",
     ]
@@ -217,11 +224,15 @@ enum FeatureScope {
 public enum BodyExtrude: Command {
     public struct Params: Codable, Sendable, SchemaDocumented, ValidatableParams {
         public var sketch: String?
+        public var contours: [[String]]?
         public var depth: Length?
         public var direction: ExtrudeDirection?
         public var endCondition: EndCondition?
         public var reverse: Bool?
         public var vertex: Point3?
+        public var surface: String?
+        public var offset: Length?
+        public var reverseOffset: Bool?
         public var direction2: ExtrudeDirection2?
         public var draft: DraftOption?
         public var thin: ThinOption?
@@ -233,18 +244,23 @@ public enum BodyExtrude: Command {
         public var instancesOnly: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case sketch, depth, direction, reverse, vertex, direction2, draft, thin, operation, merge, scope, name, instances
+            case sketch, contours, depth, direction, reverse, vertex, surface, offset, direction2, draft, thin, operation, merge, scope, name, instances
+            case reverseOffset = "reverse_offset"
             case endCondition = "end_condition"
             case instancesOnly = "instances_only"
         }
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": FieldDoc("Sketch whose closed profile is extruded", default: "the sketch being edited"),
+            "contours": "Optional closed-region selectors from sketch.regions (each is the complete outer contour entity-ID set); holes retained, nil uses all regions",
             "depth": "Direction 1 depth for blind (total depth for mid_plane)",
             "direction": FieldDoc("Legacy shorthand: normal, reverse (= reverse: true) or mid_plane (= end_condition mid_plane)", default: "normal"),
             "end_condition": FieldDoc(
-                "Direction 1 end condition: blind, through_all (through every body in scope), through_all_both, mid_plane, up_to_vertex",
+                "Direction 1 end condition: blind, through_all (through every body in scope), through_all_both, mid_plane, up_to_vertex, up_to_surface, offset_from_surface",
                 default: "blind"),
             "reverse": FieldDoc("Extrude against the sketch normal", default: false),
+            "surface": "Planar face or reference plane for Direction 1 surface limit (the supporting plane is extended)",
+            "offset": "Nonnegative perpendicular distance from the surface, required for offset_from_surface",
+            "reverse_offset": FieldDoc("Offset beyond the surface instead of stopping short", default: false),
             "vertex": "Point Direction 1 reaches, for up_to_vertex (model coordinates)",
             "direction2": "Also extrude the other way (not with mid_plane or through_all_both)",
             "draft": "Draft the sides, from the sketch plane (Direction 1 only: not with direction2, mid_plane or through_all_both)",
@@ -257,13 +273,18 @@ public enum BodyExtrude: Command {
             "instances_only": FieldDoc("Build only the instances, not the original (used by pattern.* features)", default: false),
         ]
         public func validate() throws {
+            if let contours, contours.isEmpty || contours.contains(where: \.isEmpty) {
+                throw ForgeError(.invalidParams, "contours must contain at least one nonempty contour selector")
+            }
             let ec = endCondition ?? (direction == .midPlane ? .midPlane : .blind)
             if ec == .blind || ec == .midPlane {
                 guard let depth else { throw ForgeError(.invalidParams, "depth is required for \(ec.rawValue)") }
                 try requirePositive(depth, "depth")
             }
             if ec == .upToVertex && vertex == nil { throw ForgeError(.invalidParams, "vertex is required for up_to_vertex") }
+            try BodyExtrude.validateSurface(ec, surface: surface, offset: offset, reverseOffset: reverseOffset)
             if let d = draft {
+                guard ![ec, direction2?.endCondition ?? .blind].contains(where: { $0 == .upToSurface || $0 == .offsetFromSurface }) else { throw ForgeError(.invalidParams, "draft with a surface end condition is not supported") }
                 guard d.angle.radians > 0, d.angle.radians < .pi / 2 else { throw ForgeError(.invalidParams, "draft angle must be between 0 and 90 degrees") }
                 if direction2 != nil || ec == .midPlane || ec == .throughAllBoth {
                     throw ForgeError(.invalidParams, "draft applies to Direction 1 only (not with direction2, mid_plane or through_all_both)")
@@ -277,6 +298,7 @@ public enum BodyExtrude: Command {
                 }
             }
             if let d2 = direction2 {
+                try BodyExtrude.validateSurface(d2.endCondition ?? .blind, surface: d2.surface, offset: d2.offset, reverseOffset: d2.reverseOffset)
                 if ec == .midPlane || ec == .throughAllBoth { throw ForgeError(.invalidParams, "direction2 does not combine with \(ec.rawValue)") }
                 switch d2.endCondition ?? .blind {
                 case .blind:
@@ -294,17 +316,30 @@ public enum BodyExtrude: Command {
     public static let name = "body.extrude"
     public static let summary = "Extruded Boss/Base or Extruded Cut from a sketch's closed profile (holes and islands kept)"
     public static let discussion = """
-        SolidWorks' Extrude: Direction 1 end condition (blind, through all, through all both, mid plane, up to vertex) with         reverse, an optional Direction 2, boss or cut, merge result and feature scope. Recorded as a feature: editing the         sketch or feature.edit regenerates it. Also draft (Direction 1) and thin feature for closed profiles. The up-to-surface \
-        end conditions and thin features from open sketches are not implemented yet.
+        SolidWorks' Extrude: Direction 1 end condition (blind, through all, through all both, mid plane, up to vertex) with         reverse, an optional Direction 2, boss or cut, merge result and feature scope. Recorded as a feature: editing the         sketch or feature.edit regenerates it. Also draft (Direction 1) and thin feature for closed profiles. Planar up-to-surface and offset-from-surface limits support both directions, including oblique planes; offsets are perpendicular to the surface. Curved limits, draft with surface limits and thin features from open sketches are not implemented yet.
         """
     public static let category = CommandCategory.body
     public static let undo = UndoBehavior.undoable
-    public static let errors: [ErrorCode] = [.preconditionFailed, .unknownEntity, .kernelFailure, .emptyResult]
+    public static let errors: [ErrorCode] = [.invalidParams, .preconditionFailed, .unknownEntity, .referenceLost, .kernelFailure, .emptyResult]
     public static let examples: [JSONValue] = [
         ["sketch": "sketch-1", "depth": 10], ["depth": "0.5 in", "direction": "mid_plane"],
         ["sketch": "sketch-2", "end_condition": "through_all", "operation": "cut"],
         ["sketch": "sketch-1", "depth": 10, "direction2": ["depth": 4], "merge": true],
     ]
+
+    static func validateSurface(_ condition: EndCondition, surface: String?, offset: Length?, reverseOffset: Bool?) throws {
+        let usesSurface = condition == .upToSurface || condition == .offsetFromSurface
+        guard usesSurface else {
+            guard surface == nil, offset == nil, reverseOffset == nil else { throw ForgeError(.invalidParams, "surface/offset/reverse_offset require a surface end condition") }
+            return
+        }
+        guard let surface, !surface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ForgeError(.invalidParams, "surface is required for \(condition.rawValue)") }
+        if condition == .offsetFromSurface {
+            guard let offset, offset.millimeters.isFinite, offset.millimeters >= 0 else { throw ForgeError(.invalidParams, "offset_from_surface requires a nonnegative offset") }
+        } else if offset != nil || reverseOffset != nil {
+            throw ForgeError(.invalidParams, "offset/reverse_offset require offset_from_surface")
+        }
+    }
 
     /// The wall region of a Thin Feature: the band between offsets of the profile boundary.
     static func thinFace(_ face: Shape, _ t: ThinOption) throws -> Shape {
@@ -347,7 +382,7 @@ public enum BodyExtrude: Command {
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
         let sk = try doc.modelingSketch(p.sketch)
-        let (loops, regions, segmentIDs) = try sk.profileLoopsWithIDs()
+        let (loops, regions, segmentIDs) = try sk.profileLoopsWithIDs(contours: p.contours)
         let feature = doc.currentFeature
         var face = try Kernel.faces(loops: loops, regions: regions)
         // The profile's edges carry the sketch entities they came from: the side faces swept
@@ -361,8 +396,9 @@ public enum BodyExtrude: Command {
         let ec = p.endCondition ?? (p.direction == .midPlane ? .midPlane : .blind)
         let s1: Double = (p.reverse ?? false) || p.direction == .reverse ? -1 : 1
         let margin = 1.0
-        // The extrusion as an interval [a, b] along the sketch normal.
-        func reach(_ cond: EndCondition, depth: Length?, vertex: Point3?, sign: Double) throws -> Double {
+        var surfaceLimits: [ExtrusionSurfaceLimit] = []
+        // The provisional extrusion interval; oblique surface limits are clipped afterward.
+        func reach(_ cond: EndCondition, depth: Length?, vertex: Point3?, surface: String?, offset: Length?, reverseOffset: Bool?, sign: Double) throws -> Double {
             switch cond {
             case .blind:
                 return depth!.millimeters
@@ -375,6 +411,13 @@ public enum BodyExtrude: Command {
                 let t = (vertex!.mm - origin).dot(n) * sign
                 guard t > 1e-9 else { throw ForgeError(.invalidParams, "the vertex is not on the extrusion side of the sketch plane") }
                 return t
+            case .upToSurface, .offsetFromSurface:
+                let limit = try ExtrusionSurfaceLimit(document: doc, reference: surface!, offset: offset?.millimeters ?? 0,
+                                                      reverseOffset: reverseOffset ?? false, travel: n * sign,
+                                                      role: sign > 0 ? "end_cap" : "start_cap")
+                let distance = try limit.reach(profile: face, travel: n * sign)
+                surfaceLimits.append(limit)
+                return distance
             case .midPlane, .throughAllBoth:
                 preconditionFailure("handled by the caller")
             }
@@ -388,8 +431,8 @@ public enum BodyExtrude: Command {
             let e = try extent(doc, p.scope, origin: origin, normal: n)
             (a, b) = (e.min - margin, e.max + margin)
         default:
-            let t1 = try reach(ec, depth: p.depth, vertex: p.vertex, sign: s1)
-            let t2 = try p.direction2.map { d2 in try reach(d2.endCondition ?? .blind, depth: d2.depth, vertex: d2.vertex, sign: -s1) } ?? 0
+            let t1 = try reach(ec, depth: p.depth, vertex: p.vertex, surface: p.surface, offset: p.offset, reverseOffset: p.reverseOffset, sign: s1)
+            let t2 = try p.direction2.map { d2 in try reach(d2.endCondition ?? .blind, depth: d2.depth, vertex: d2.vertex, surface: d2.surface, offset: d2.offset, reverseOffset: d2.reverseOffset, sign: -s1) } ?? 0
             (a, b) = s1 > 0 ? (-t2, t1) : (-t1, t2)
         }
         let solid: Shape
@@ -403,7 +446,8 @@ public enum BodyExtrude: Command {
             solid = try Kernel.extrude(start, by: n * (b - a))
         }
         let profile = NamedShape(face, faces: [], edges: edgeNames)
-        let named = try Naming.named(solid, [profile], feature: feature, roles: NamingRoles(fromEdge: "side"))
+        var named = try Naming.named(solid, [profile], feature: feature, roles: NamingRoles(fromEdge: "side"))
+        for limit in surfaceLimits { named = try limit.clip(named, feature: feature) }
 
         let tools = try FeatureScope.tools(named, p.instances, only: p.instancesOnly)
         let ids = try FeatureScope.apply(tools, cut: p.operation == .cut, merge: p.merge == true, &doc, p.scope, name: p.name, producedBy: name)
