@@ -779,12 +779,28 @@ extension AppModel {
     }
 
     package func computeMeasure() async {
-        let refs = selection.filter { !$0.hasPrefix("sketch-") }
-        guard refs.count == 2 else {
+        let refs = selection
+        guard (1...2).contains(refs.count) else {
             form.result = nil
             return
         }
-        form.result = try? await engine.execute("query.measure", ["from": .string(refs[0]), "to": .string(refs[1])]).result
+        let requestedSelection = selection
+        var params: [String: JSONValue] = ["from": .string(refs[0])]
+        if refs.count == 2 { params["to"] = .string(refs[1]) }
+        do {
+            let result = try await engine.execute("query.measure", .object(params)).result
+            guard selection == requestedSelection, operation == .measure else { return }
+            form.result = result
+            lastError = nil
+        } catch let error as ForgeError {
+            guard selection == requestedSelection, operation == .measure else { return }
+            form.result = nil
+            lastError = error
+        } catch {
+            guard selection == requestedSelection, operation == .measure else { return }
+            form.result = nil
+            lastError = ForgeError(.internalError, error.localizedDescription)
+        }
     }
 
     package func computeCheck() async {

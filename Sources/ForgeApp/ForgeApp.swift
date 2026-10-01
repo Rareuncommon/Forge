@@ -73,6 +73,12 @@ struct ForgeApp: App {
                 Button("Zoom to Fit (F)") { model.zoomToFit() }
                 Button("Previous View") { model.previousView() }
                 Divider()
+                Button("Hide Selected Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, false) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Show Selected Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, true) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Isolate Selected Bodies") { Task { await model.isolateBodies(model.selectedBodies) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Exit Isolation") { Task { await model.exitBodyIsolation() } }.disabled(!model.isIsolatingBodies)
+                Button("Show All Bodies") { Task { await model.showAllBodies() } }
+                Divider()
                 Toggle("Perspective", isOn: Binding(get: { model.display.perspective }, set: { model.setPerspective($0) }))
                 Toggle("Planes", isOn: Binding(get: { model.display.planes }, set: { model.display.planes = $0; Task { await model.refresh() } }))
                 Toggle("Sketch Relations", isOn: Binding(get: { model.display.relations }, set: { model.display.relations = $0 }))

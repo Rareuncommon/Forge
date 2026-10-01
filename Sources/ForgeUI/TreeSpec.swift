@@ -55,16 +55,20 @@ extension AppModel {
         if !bodies.isEmpty {
             let kids = bodies.filter { matches($0.name) }.map { b in
                 TreeNode(
-                    id: b.id, icon: .part, title: b.name, tooltip: "\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³",
+                    id: b.id, icon: hiddenBodyIDs.contains(b.id) ? .hideShow : .part, title: b.name + (hiddenBodyIDs.contains(b.id) ? " (Hidden)" : ""), tooltip: "\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³",
                     selected: selection.contains(b.id), select: { [unowned self] extend in Task { await select(b.id, extend: extend) } },
                     menu: [
+                        (hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body", { [unowned self] in Task { await setBodiesVisible([b.id], hiddenBodyIDs.contains(b.id)) } }),
+                        ("Isolate Body", { [unowned self] in Task { await isolateBodies([b.id]) } }),
                         ("Rename…", { [unowned self] in Task { await renameBody(b.id) } }),
                         ("Mass Properties", { [unowned self] in Task { await select(b.id, extend: false); begin(.massProperties) } }),
                         ("Export STEP…", { [unowned self] in Task { await select(b.id, extend: false); export("step") } }),
                         ("Export STL…", { [unowned self] in Task { await select(b.id, extend: false); export("stl") } }),
                     ])
             }
-            out.append(TreeNode(id: "bodies", icon: .folder, title: "Solid Bodies (\(bodies.count))", children: kids))
+            var menu: [(title: String, action: () -> Void)] = [("Show All Bodies", { [unowned self] in Task { await showAllBodies() } })]
+            if isIsolatingBodies { menu.append(("Exit Isolation", { [unowned self] in Task { await exitBodyIsolation() } })) }
+            out.append(TreeNode(id: "bodies", icon: .folder, title: "Solid Bodies (\(bodies.count))", children: kids, menu: menu))
         }
         for p in StandardPlane.allCases where matches(p.rawValue + " plane") {
             let name = "\(p.rawValue.capitalized) Plane"

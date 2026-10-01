@@ -431,8 +431,13 @@ struct ContextToolbar: View {
                 item(.fillet, "Fillet") { model.begin(.fillet) }
                 item(.chamfer, "Chamfer") { model.begin(.chamfer) }
             }
-            if model.selection.count == 2 { item(.measure, "Measure") { model.begin(.measure) } }
-            if !model.selectedBodies.isEmpty { item(.massProps, "Mass Properties") { model.begin(.massProperties) } }
+            if (1...2).contains(model.selection.count) { item(.measure, "Measure") { model.begin(.measure) } }
+            if !model.selectedBodies.isEmpty {
+                item(.hideShow, "Hide Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, false) } }
+                item(.part, "Isolate Bodies") { Task { await model.isolateBodies(model.selectedBodies) } }
+                item(.massProps, "Mass Properties") { model.begin(.massProperties) }
+            }
+            if model.isIsolatingBodies { item(.part, "Exit Isolation") { Task { await model.exitBodyIsolation() } } }
             item(.zoomFit, "Zoom to Fit") { model.zoomToFit() }
         }
     }

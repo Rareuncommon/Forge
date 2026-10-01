@@ -241,6 +241,8 @@ package final class AppModel {
     /// Bumped whenever the scene must be re-uploaded to the GPU.
     package var sceneVersion = 0
     package var scene = DocumentSceneBox()
+    package var hiddenBodyIDs: Set<String> = []
+    package var isIsolatingBodies = false
     /// The document's scene before reference geometry (planes, axes, the sketch grid).
     @ObservationIgnored private var baseScene: DocumentScene?
     @ObservationIgnored private var referenceInputs: ReferenceInputs?
@@ -392,6 +394,8 @@ package final class AppModel {
     package func refresh() async {
         guard let doc = await engine.activeDocument else { return }
         documentName = doc.name
+        hiddenBodyIDs = Set(doc.bodyOrder.filter { !doc.isBodyVisible($0) })
+        isIsolatingBodies = doc.isolatedBodyIDs != nil
         bodies = (try? doc.orderedBodies.map(BodySummary.init)) ?? []
         sketches = doc.orderedSketches.map {
             SketchRow(

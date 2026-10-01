@@ -37,6 +37,29 @@ assemblies, drawings, simulation, manufacturing and the remaining matrix backlog
 Full test/build outcomes belong in the PR and PROGRESS record; this document makes no
 independent all-tests-passed claim.
 
+## Further delivery: measurement, body visibility and curved slots
+
+The next implementation adds `query.measure` for bodies and individual faces, edges
+and vertices, including persistent face/edge names. One selection reports its physical
+size or coordinates; two report B-rep minimum distance, closest points and XYZ deltas.
+The desktop accepts either selection count and displays command errors. Angles,
+maximum/normal distances and sketch-entity measurement remain pending.
+
+Body visibility now has registered show/hide/isolate/exit/show-all commands. Hidden
+bodies remain in modeling and export, but are excluded from rendering, picking and
+framing. Ordinary hidden state persists, including suppressed feature output intent;
+isolation is temporary and exits to the prior state. Tree, ribbon and macOS View/context
+actions expose the commands. Components, individual sketch and plane visibility still
+need their own display-pane workflows.
+
+Centerpoint and three-point arc slots create editable concentric sides and tangent
+semicircular caps, with a construction centerline. All four slot variants are available
+in desktop tool choices; curved slots use four clicks with a live boundary preview.
+Command and desktop regressions cover analytic extrusion volume, solver degrees of
+freedom, width editing, construction, atomic validation, undo and persistence. Grouped
+Fix Slot/Equal Slots relations remain pending.
+
+
 ## How to interpret the evidence
 
 - **Engine available, guided UI missing** means there is a registered command but no

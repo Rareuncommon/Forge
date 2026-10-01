@@ -94,6 +94,13 @@ extension AppModel {
             RibbonGroupSpec(title: "Reference", buttons: [
                 button("plane", .plane, "Reference Geometry", active: o == .plane, variants: [("Plane", op(.plane))], op(.plane)),
             ]),
+            RibbonGroupSpec(title: "Visibility", buttons: [
+                button("hideBodies", .hideShow, "Hide Bodies", enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await setBodiesVisible(selectedBodies, false) } },
+                button("showBodies", .hideShow, "Show Bodies", enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await setBodiesVisible(selectedBodies, true) } },
+                button("isolateBodies", .part, "Isolate Bodies", active: isIsolatingBodies, enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await isolateBodies(selectedBodies) } },
+                button("exitIsolation", .part, "Exit Isolation", enabled: isIsolatingBodies, large: false) { [unowned self] in Task { await exitBodyIsolation() } },
+                button("showAllBodies", .hideShow, "Show All Bodies", enabled: !hiddenBodyIDs.isEmpty || isIsolatingBodies, large: false) { [unowned self] in Task { await showAllBodies() } },
+            ]),
             RibbonGroupSpec(title: "Primitives", buttons: Primitive.allCases.map { p in
                 button("prim-" + p.rawValue, p.icon, p.title, active: o == .primitive(p), large: false, op(.primitive(p)))
             }),

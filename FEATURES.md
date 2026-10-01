@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 1000 rows — not started: 839 · in progress: 133 · done: 28 · verified: 0
+**Totals:** 1000 rows — not started: 836 · in progress: 136 · done: 28 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -88,11 +88,11 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/entities/rectangle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | construction diagonal + midpoint centre |
 | `7.1/entities/rectangle/3-point` | ↳ 3-point | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 5 tested |
 | `7.1/entities/rectangle/parallelogram` | ↳ parallelogram | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_rectangle | DOF 6 tested |
-| `7.1/entities/slot` | Entities: slot | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot | straight and center-point slots; arc slots not started |
+| `7.1/entities/slot` | Entities: slot | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot | all four slot types; curved slots have editable tangent/concentric geometry and desktop previews |
 | `7.1/entities/slot/straight` | ↳ straight | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot | DOF 5, exact area tested; golden 102 |
 | `7.1/entities/slot/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_slot |  |
-| `7.1/entities/slot/arc` | ↳ arc | not started | ForgeSketch | — | — |  |
-| `7.1/entities/slot/3-point-arc` | ↳ 3-point arc | not started | ForgeSketch | — | — |  |
+| `7.1/entities/slot/arc` | ↳ arc | in progress | ForgeSketch | Tests/ForgeCommandsTests/ArcSlotTests.swift, Tests/ForgeUITests/ArcSlotWorkflowTests.swift | execute:sketch.add_arc_slot | center/start/end/width; constraints, preview, extrusion, undo and persistence; grouped slot relations pending |
+| `7.1/entities/slot/3-point-arc` | ↳ 3-point arc | in progress | ForgeSketch | Tests/ForgeCommandsTests/ArcSlotTests.swift, Tests/ForgeUITests/ArcSlotWorkflowTests.swift | execute:sketch.add_arc_slot | minor/major clockwise/counter-clockwise arcs selected by through point; grouped slot relations pending |
 | `7.1/entities/circle` | Entities: circle | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle | round-trips document.save/open (golden test); not yet a feature-tree item (M2) |
 | `7.1/entities/circle/center` | ↳ center | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle |  |
 | `7.1/entities/circle/perimeter` | ↳ perimeter | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.add_circle(through) |  |
@@ -736,7 +736,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `7.12/measure` | Measure | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/ForgeCommandsTests/EngineTests.swift | measure | body↔body minimum distance only |
+| `7.12/measure` | Measure | in progress | ForgeKernel | Tests/ForgeCommandsTests/MeasurementTests.swift, Tests/ForgeUITests/MeasureWorkflowTests.swift | measure | bodies/faces/edges/vertices: size, radius, coordinates, minimum distance, closest points and XYZ deltas; angles/max/normal-distance modes pending |
 | `7.12/measure/all-modes` | ↳ all modes | not started | ForgeModel | — | — |  |
 | `7.12/measure/point-to-point` | ↳ point-to-point | not started | ForgeModel | — | — |  |
 | `7.12/measure/min-max-normal` | ↳ min/max/normal | not started | ForgeModel | — | — |  |
@@ -1116,7 +1116,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `D/hide-show` | Hide/show bodies, components, sketches, planes (display pane) | not started | ForgeModel | — | — |  |
+| `D/hide-show` | Hide/show bodies, components, sketches, planes (display pane) | in progress | ForgeModel | Tests/ForgeCommandsTests/VisibilityTests.swift, Tests/ForgeUITests/BodyVisibilityWorkflowTests.swift | execute:view.set_visibility, execute:view.isolate, execute:view.show_all | saved body visibility, temporary part-body isolation, undo and hidden-body picking exclusion; components/sketches/planes display pane pending |
 | `D/transparency` | Per-body/component transparency | not started | ForgeModel | — | — |  |
 | `D/section-view-part` | Section view (dynamic display section in parts/assemblies) | not started | ForgeModel | — | — |  |
 | `D/view-selector` | View selector cube, named/saved views, previous view | not started | ForgeModel | — | — |  |

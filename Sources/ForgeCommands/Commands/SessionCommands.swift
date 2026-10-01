@@ -115,12 +115,13 @@ public enum DocumentState: Command {
         public var sketches: [SketchSummary]
         public var activeSketch: String?
         public var selection: [String]
+        public var visibility: BodyVisibilityState
         public var undo: [String]
         public var redo: [String]
         public var transaction: String?
 
         enum CodingKeys: String, CodingKey {
-            case document, bodies, sketches, selection, undo, redo, transaction
+            case document, bodies, sketches, selection, visibility, undo, redo, transaction
             case activeSketch = "active_sketch"
         }
     }
@@ -140,6 +141,7 @@ public enum DocumentState: Command {
             bodies: try doc.orderedBodies.map(BodySummary.init),
             sketches: doc.orderedSketches.map { SketchSummary($0, active: $0.id == doc.activeSketch) }, activeSketch: doc.activeSketch,
             selection: doc.selection,
+            visibility: BodyVisibilityState(doc),
             undo: s.undoLabels, redo: s.redoLabels, transaction: s.transactionLabel)
     }
 }

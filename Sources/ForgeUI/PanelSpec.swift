@@ -351,7 +351,7 @@ extension AppModel {
         case .massProperties, .measure, .check:
             let rows = form.result.map(Self.keyValues) ?? []
             s.append(PanelSection(op == .measure ? "Measure" : "Results", controls: rows.isEmpty
-                ? [note("empty", op == .measure ? "Select two faces, edges, vertices or bodies." : "Select a body.")]
+                ? [note("empty", op == .measure ? "Select one entity for its size, or two for their minimum distance." : "Select a body.")]
                 : rows.enumerated().map { i, kv in PanelControl(id: "r\(i)", kind: .value(label: kv.0, value: kv.1)) }))
         case .addRelation:
             s += [selectedEntitiesSection, relationsSection(all: false), relationButtonsSection].compactMap { $0 }
@@ -420,7 +420,7 @@ extension AppModel {
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
         case .draft: form.activeBox == "neutral" ? "Select the neutral plane: a planar face." : "Select the faces to draft."
         case .combine: "Click the bodies to combine in the view: the main body first."
-        case .measure where selection.count != 2: "Select two entities to measure between."
+        case .measure where !(1...2).contains(selection.count): "Select one or two entities to measure."
         case .sketchMirror where form.mirrorAxis.isEmpty: "Select the entities to mirror and a line (ideally a centerline) to mirror about."
         case .sketchOffset, .sketchLinearPattern, .sketchCircularPattern, .sketchMove, .sketchRotate, .sketchScale:
             sketchSelection.isEmpty ? "Select the sketch entities in the view." : nil
@@ -512,7 +512,11 @@ extension AppModel {
         case .rectangle: s = [PanelSection("Rectangle Type", controls: [toolChoice("type", "Type", \.rectangleType)]), construction]
         case .circle: s = [PanelSection("Circle Type", controls: [toolChoice("type", "Type", \.circleType)]), construction]
         case .arc: s = [PanelSection("Arc Type", controls: [toolChoice("type", "Type", \.arcType)]), construction]
-        case .slot: s = [PanelSection("Slot Types", controls: [toolChoice("type", "Type", \.slotType)])]
+        case .slot:
+            s = [PanelSection("Slot Types", controls: [PanelControl(id: "type", kind: .choice(
+                label: "Type", options: SlotType.allCases.map { (tag: $0.rawValue, title: $0.rawValue) },
+                get: { [unowned self] in sketchState.slotType.rawValue },
+                set: { [unowned self] in if let type = SlotType(rawValue: $0) { chooseSlotType(type) } }))]), construction]
         case .polygon:
             s = [PanelSection("Parameters", controls: [
                 PanelControl(id: "sides", kind: .field(

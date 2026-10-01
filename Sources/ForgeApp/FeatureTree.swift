@@ -52,12 +52,18 @@ struct FeatureTreeView: View {
     @ViewBuilder private var rows: some View {
         if !model.bodies.isEmpty {
             TreeRow(icon: .folder, title: "Solid Bodies (\(model.bodies.count))", depth: 1, disclosure: bodiesOpen) { bodiesOpen.toggle() }
+                .contextMenu {
+                    Button("Show All Bodies") { Task { await model.showAllBodies() } }
+                    if model.isIsolatingBodies { Button("Exit Isolation") { Task { await model.exitBodyIsolation() } } }
+                }
             if bodiesOpen {
                 ForEach(model.bodies.filter { matches($0.name) }, id: \.id) { b in
-                    TreeRow(icon: .part, title: b.name, depth: 2, selected: model.selection.contains(b.id)) {
+                    TreeRow(icon: model.hiddenBodyIDs.contains(b.id) ? .hideShow : .part, title: b.name + (model.hiddenBodyIDs.contains(b.id) ? " (Hidden)" : ""), depth: 2, selected: model.selection.contains(b.id), muted: model.hiddenBodyIDs.contains(b.id)) {
                         Task { await model.select(b.id, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
                     }
                     .contextMenu {
+                        Button(model.hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body") { Task { await model.setBodiesVisible([b.id], model.hiddenBodyIDs.contains(b.id)) } }
+                        Button("Isolate Body") { Task { await model.isolateBodies([b.id]) } }
                         Button("Rename…") { Task { await model.renameBody(b.id) } }
                         Button("Mass Properties") {
                             Task {

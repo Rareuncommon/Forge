@@ -115,3 +115,17 @@ platforms. Lost sketch supports now block dependent features; use
 
 The [complete modeling gap inventory](docs/research/modeling-workflow-gaps.md)
 accounts for all 1,000 matrix entries and documents remaining work.
+
+**Measure** accepts one face, edge, vertex or body for its size/coordinates, or two
+for minimum distance and closest points. The MCP `measure` tool uses `from` and an
+optional `to`; results use millimeters. Angle and maximum-distance modes remain pending.
+
+Use the body tree or **Features → Visibility** to hide/show bodies, isolate a selection,
+exit isolation or show all bodies. Hidden bodies are excluded from drawing and picking;
+they still participate in modeling, measurements and exports. Ordinary hidden state is
+saved; isolation is temporary and restores the prior visibility when exited.
+
+The Slot tool offers straight, centerpoint straight, centerpoint arc and three-point arc
+variants. Curved slots use center/start/end/width or start/end/through/width clicks,
+respect construction mode and remain editable with sketch dimensions and relations.
+The typed command is `sketch.add_arc_slot`; it rejects collapsed or self-overlapping slots.

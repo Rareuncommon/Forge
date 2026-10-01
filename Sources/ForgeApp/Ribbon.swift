@@ -110,6 +110,18 @@ private struct FeaturesTab: View {
             }
         }
         RibbonSeparator()
+        RibbonGroup("Visibility") {
+            RibbonStack {
+                RibbonSmall(.hideShow, "Hide Bodies", enabled: !model.selectedBodies.isEmpty) { Task { await model.setBodiesVisible(model.selectedBodies, false) } }
+                RibbonSmall(.hideShow, "Show Bodies", enabled: !model.selectedBodies.isEmpty) { Task { await model.setBodiesVisible(model.selectedBodies, true) } }
+                RibbonSmall(.part, "Isolate Bodies", active: model.isIsolatingBodies, enabled: !model.selectedBodies.isEmpty) { Task { await model.isolateBodies(model.selectedBodies) } }
+            }
+            RibbonStack {
+                RibbonSmall(.part, "Exit Isolation", enabled: model.isIsolatingBodies) { Task { await model.exitBodyIsolation() } }
+                RibbonSmall(.hideShow, "Show All Bodies", enabled: !model.hiddenBodyIDs.isEmpty || model.isIsolatingBodies) { Task { await model.showAllBodies() } }
+            }
+        }
+        RibbonSeparator()
         RibbonGroup("Primitives") {
             RibbonStack {
                 ForEach([Primitive.box, .cylinder, .sphere]) { p in

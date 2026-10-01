@@ -36,6 +36,14 @@ public struct Document: Sendable {
     public internal(set) var bodies: [String: Body] = [:]
     /// Explicit, queryable selection (SPEC §5.4: no hidden state). Entity reference strings.
     public var selection: [String] = []
+    /// Persistent display visibility; geometry and exports still include hidden bodies.
+    public var hiddenBodyIDs: Set<String> = []
+    /// Temporary isolation whitelist. Nil restores ordinary saved visibility.
+    public var isolatedBodyIDs: Set<String>?
+
+    public func isBodyVisible(_ id: String) -> Bool {
+        isolatedBodyIDs.map { $0.contains(id) } ?? !hiddenBodyIDs.contains(id)
+    }
     var nextBodyNumber = 1
 
     /// Sketches in creation order.

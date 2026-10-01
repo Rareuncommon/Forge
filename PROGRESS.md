@@ -1,5 +1,38 @@
 # Progress
 
+## Session 11 — 2026-09-30 — Subentity measurement, visibility and curved slots
+
+- `query.measure` now resolves bodies, faces, edges and vertices, including persistent
+  face/edge references. One selection returns applicable length, area, volume, radius
+  or coordinates; pairs return minimum distance, closest points and XYZ displacement.
+  Desktop errors remain visible and async results cannot overwrite a newer selection.
+  Mixed body/sketch selections are rejected instead of silently dropping the sketch.
+- Added typed hide/show/isolate/exit/show-all commands, shared desktop tree/ribbon and
+  macOS View/context actions. Hidden bodies are excluded from rendering, picking and
+  fit bounds; ordinary visibility persists while isolation restores prior visibility.
+  Display-only transactions now have undo records. Loading ignores unknown visibility
+  IDs without losing suppressed feature output state. Modeling and exports include all bodies.
+- Added centerpoint and three-point arc slots with editable concentric/tangent geometry,
+  construction centerlines, four-click desktop previews, and construction support for
+  all four slot types. Switching slot types clears pending clicks. Validation rejects
+  degenerate arcs, collapsed widths and overlapping major-arc caps atomically.
+- Curved-slot constraints use existing internal-row yield metadata so normal relations
+  remain independent after rotation; no solver algorithm changes. Tests exercise six
+  noncardinal orientations, 90-degree rotation, width edits and cap alignment.
+- Added an analytically derived quarter-circle-slot golden model and a real MCP
+  create/extrude/measure/hide/isolate/save/open/rebuild workflow.
+
+Validation: final local build with tests and all **350 Swift tests** pass; all **32 golden
+models**, **four MCP subprocess workflows**, and **three packaging regressions** pass.
+Optimized Linux desktop/CLI and Windows frontend cross-platform builds pass. Native
+platform runtime checks are delegated to CI with a virtual display; no windows were
+opened on the user's desktop. Matrix synchronization and whitespace checks pass.
+
+Remaining scope: measurement angle/max/normal modes and sketch entity measurements;
+grouped Fix Slot/Equal Slots relations; individual sketch/plane/component display panes;
+associative conversion, advanced extrude conditions, configurations/equations, assemblies,
+drawings and the rest of the declared matrix. This delivery does not complete SolidWorks parity.
+
 ## Session 10 — 2026-09-30 — Face sketches and everyday modeling workflows
 
 - Added explicit Features-tab Sketch on Face entry on all desktops, selection-aware

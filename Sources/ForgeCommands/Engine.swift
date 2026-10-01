@@ -57,6 +57,7 @@ public struct ChangeSet: Codable, Sendable, Hashable {
         // Reordering and rollback can change the history without changing any shape.
         if let before, let after,
             before.name != after.name || before.units != after.units || before.rollback != after.rollback
+                || before.hiddenBodyIDs != after.hiddenBodyIDs || before.isolatedBodyIDs != after.isolatedBodyIDs
                 || (Set(bf.map(\.id)) == Set(af.map(\.id)) && bf.map(\.id) != af.map(\.id)) {
             c.modified.append(after.id)
         }

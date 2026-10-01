@@ -42,6 +42,24 @@ public final class Shape: @unchecked Sendable {
         }
     }
 
+    public enum SubshapeKind: Int32, Sendable { case face = 0, edge, vertex }
+
+    /// Extract one topological entity without copying or modifying its geometry.
+    public func subshape(_ kind: SubshapeKind, index: Int) throws -> Shape {
+        guard let i = Int32(exactly: index), i >= 0 else { throw ForgeError(.invalidParams, "invalid subshape index") }
+        var err = FKError()
+        guard let h = fk_subshape(handle, kind.rawValue, i, &err) else { throw Kernel.error(err) }
+        return Shape(owning: h)
+    }
+
+    public func vertex(_ index: Int) throws -> Vec3 {
+        guard let i = Int32(exactly: index), i >= 0 else { throw ForgeError(.invalidParams, "invalid vertex index") }
+        var point = [Double](repeating: 0, count: 3)
+        var err = FKError()
+        if fk_vertex_position(handle, i, &point, &err) != 0 { throw Kernel.error(err) }
+        return Vec3(point[0], point[1], point[2])
+    }
+
     public struct Topology: Codable, Sendable, Hashable {
         public var solids, shells, faces, wires, edges, vertices: Int
     }

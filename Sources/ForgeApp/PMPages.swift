@@ -46,7 +46,7 @@ struct OperationPage: View {
         case .chamfer where model.filletItems.isEmpty: "Select edges or faces to chamfer. Each click adds an item; click it again to remove it."
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
         case .draft: model.form.activeBox == "neutral" ? "Select the neutral plane: a planar face." : "Select the faces to draft (⇧-click adds)."
-        case .measure where model.selection.count != 2: "Select two entities to measure between."
+        case .measure where !(1...2).contains(model.selection.count): "Select one or two entities to measure."
         case .sketchMirror where model.form.mirrorAxis.isEmpty: "Select the entities to mirror and a line (ideally a centerline) to mirror about."
         case .sketchOffset, .sketchLinearPattern, .sketchCircularPattern, .sketchMove, .sketchRotate, .sketchScale:
             model.sketchSelection.isEmpty ? "Select the sketch entities in the view (⇧-click adds)." : nil
@@ -484,7 +484,7 @@ struct OperationPage: View {
                 if let r = model.form.result {
                     KeyValueList(value: r)
                 } else {
-                    Text(op == .measure ? "Select two faces, edges, vertices or bodies." : "Select a body.")
+                    Text(op == .measure ? "Select one entity for its size, or two for their minimum distance." : "Select a body.")
                         .font(.system(size: 12)).foregroundStyle(Theme.text2)
                 }
             }
@@ -623,9 +623,11 @@ struct SketchToolPage: View {
             PMSection("Options") { PMCheckbox(label: "For construction", isOn: $model.sketchState.forConstruction) }
         case .slot:
             PMSection("Slot Types") {
-                PMTypeList(options: [(value: SlotType.straight, icon: .slot, title: "Straight Slot"), (value: .center, icon: .slot, title: "Centerpoint Straight Slot")],
-                           selection: $model.sketchState.slotType)
+                PMTypeList(options: [(value: SlotType.straight, icon: .slot, title: "Straight Slot"), (value: .center, icon: .slot, title: "Centerpoint Straight Slot"),
+                                     (value: .arc, icon: .slot, title: "Centerpoint Arc Slot"), (value: .threePointArc, icon: .slot, title: "3 Point Arc Slot")],
+                           selection: Binding(get: { model.sketchState.slotType }, set: { model.chooseSlotType($0) }))
             }
+            PMSection("Options") { PMCheckbox(label: "For construction", isOn: $model.sketchState.forConstruction) }
         case .polygon:
             PMSection("Parameters") {
                 PMField(label: "Sides", text: Binding(get: { String(model.sketchState.polygonSides) },
