@@ -99,6 +99,7 @@ public enum ToolCatalog {
             // ---- sketch
             alias("create_sketch", "Create sketch", "sketch.create"),
             alias("get_sketch", "Get sketch", "sketch.get"),
+            alias("convert_entities", "Project model edges into detached sketch curves", "sketch.convert_entities"),
             alias("edit_dimension", "Edit dimension", "sketch.set_dimension"),
             alias("check_sketch", "Check sketch", "sketch.check"),
             // ---- parametric history: the same commands used by the desktop feature tree

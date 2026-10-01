@@ -38,6 +38,7 @@ extension CommandRegistry {
         r.register(SketchAddSpline.self)
         r.register(SketchAddRectangle.self)
         r.register(SketchAddSlot.self)
+        r.register(SketchAddArcSlot.self)
         r.register(SketchAddPolygon.self)
         r.register(SketchAddRelation.self)
         r.register(SketchAddDimension.self)
@@ -58,6 +59,7 @@ extension CommandRegistry {
         r.register(SketchRotate.self)
         r.register(SketchScale.self)
         r.register(SketchSplit.self)
+        r.register(SketchConvertEntities.self)
         // bodies
         r.register(BodyCreateBox.self)
         r.register(BodyCreateCylinder.self)
@@ -110,6 +112,10 @@ extension CommandRegistry {
         r.register(SelectionGet.self)
         r.register(SelectionClear.self)
         // view
+        r.register(ViewSetVisibility.self)
+        r.register(ViewIsolate.self)
+        r.register(ViewExitIsolation.self)
+        r.register(ViewShowAll.self)
         r.register(ViewRender.self)
         r.register(ViewRenderMultiview.self)
         r.register(ViewPick.self)

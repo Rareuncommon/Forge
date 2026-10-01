@@ -43,7 +43,7 @@ public struct DocumentScene: Sendable {
 
     public init(document: Document, bodies filter: [String]? = nil, highlight: [String] = [], showSketches: Bool = true) throws {
         let selected = try filter.map { try $0.map { try document.body($0).id } }
-        let list = document.orderedBodies.filter { selected?.contains($0.id) ?? true }
+        let list = document.orderedBodies.filter { (selected?.contains($0.id) ?? true) && document.isBodyVisible($0.id) }
         let bodyRefs = highlight.filter { !document.sketches.keys.contains(String($0.split(separator: "/").first ?? "")) }
         let refs = bodyRefs.compactMap(EntityRef.init(parsing:))
         var items: [RenderItem] = []

@@ -465,18 +465,18 @@ public enum SketchSplit: Command {
         public var at: [Point2]
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": sketchParamDoc,
-            "entity": "The line, arc or circle to split",
-            "at": "Split points (projected onto the curve): one for a line or arc, two for a circle",
+            "entity": "The line, circular arc, partial ellipse, circle or ellipse to split",
+            "at": "Split points (projected onto the curve): one for an open curve, two for a circle or ellipse",
         ]
         public func validate() throws {
-            guard at.count == 1 || at.count == 2 else { throw ForgeError(.invalidParams, "give one split point (line/arc) or two (circle)") }
+            guard at.count == 1 || at.count == 2 else { throw ForgeError(.invalidParams, "give one split point (line/arc/partial ellipse) or two (circle/ellipse)") }
         }
     }
     public typealias Output = SketchTrimOutput
 
     public static let name = "sketch.split"
-    public static let summary = "Split a line or arc at a point, or a circle at two points, into pieces joined by coincident relations"
-    public static let discussion = "Line pieces stay on one line, arc/circle pieces stay concentric; the far end's relations move to the new piece; length-type relations of the original are removed and listed. Ellipses: not implemented."
+    public static let summary = "Split an open sketch curve at one point or a circle/ellipse at two points, with coincident joins"
+    public static let discussion = "Line pieces stay on one line, arc/circle pieces stay concentric; the far end's relations move to the new piece; length-type relations of the original are removed and listed. Ellipse pieces share their axes and rotation. Spline splitting is not implemented."
     public static let category = CommandCategory.sketch
     public static let undo = UndoBehavior.undoable
     public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .notImplemented, .solverFailed]

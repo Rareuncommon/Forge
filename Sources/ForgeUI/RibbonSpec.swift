@@ -47,6 +47,11 @@ extension AppModel {
         let hasSketch = !sketches.isEmpty, hasBody = !bodies.isEmpty
         let o = operation
         return [
+            RibbonGroupSpec(title: "Sketch", buttons: [
+                button("startSketch", .sketch, sketchStartTitle, help: "Start a sketch on the selected planar face; use the Sketch tab to choose another plane", enabled: activeSketch == nil) { [unowned self] in
+                    Task { await startSketchFromSelection() }
+                },
+            ]),
             RibbonGroupSpec(title: "Boss / Base", buttons: [
                 button("extrude", .extrude, "Extruded Boss/Base", help: "Extrude a closed sketch profile into a new body", active: o == .extrude, enabled: hasSketch, op(.extrude)),
                 button("revolve", .revolve, "Revolved Boss/Base", help: "Revolve a sketch profile about a sketch line", active: o == .revolve, enabled: hasSketch, op(.revolve)),
@@ -67,6 +72,7 @@ extension AppModel {
                        enabled: sketches.count >= 2 && hasBody, large: false, op(.cutLoft)),
             ]),
             RibbonGroupSpec(title: "Modify", buttons: [
+                button("moveBody", .move, "Move/Copy Bodies", enabled: hasBody, large: false, op(.moveBody)),
                 button("fillet", o == .chamfer ? .chamfer : .fillet, o == .chamfer ? "Chamfer" : "Fillet", active: o == .fillet || o == .chamfer, enabled: hasBody,
                        variants: [("Fillet", op(.fillet)), ("Chamfer", op(.chamfer))], op(o == .chamfer ? .chamfer : .fillet)),
                 button("rib", .rib, "Rib", help: "A wall from an open sketch profile, extended to meet the body", active: o == .rib, enabled: hasSketch && hasBody,
@@ -87,6 +93,13 @@ extension AppModel {
             ]),
             RibbonGroupSpec(title: "Reference", buttons: [
                 button("plane", .plane, "Reference Geometry", active: o == .plane, variants: [("Plane", op(.plane))], op(.plane)),
+            ]),
+            RibbonGroupSpec(title: "Visibility", buttons: [
+                button("hideBodies", .hideShow, "Hide Bodies", enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await setBodiesVisible(selectedBodies, false) } },
+                button("showBodies", .hideShow, "Show Bodies", enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await setBodiesVisible(selectedBodies, true) } },
+                button("isolateBodies", .part, "Isolate Bodies", active: isIsolatingBodies, enabled: !selectedBodies.isEmpty, large: false) { [unowned self] in Task { await isolateBodies(selectedBodies) } },
+                button("exitIsolation", .part, "Exit Isolation", enabled: isIsolatingBodies, large: false) { [unowned self] in Task { await exitBodyIsolation() } },
+                button("showAllBodies", .hideShow, "Show All Bodies", enabled: !hiddenBodyIDs.isEmpty || isIsolatingBodies, large: false) { [unowned self] in Task { await showAllBodies() } },
             ]),
             RibbonGroupSpec(title: "Primitives", buttons: Primitive.allCases.map { p in
                 button("prim-" + p.rawValue, p.icon, p.title, active: o == .primitive(p), large: false, op(.primitive(p)))
@@ -118,8 +131,8 @@ extension AppModel {
         if editing {
             sketchButton = button("exitSketch", .exitSketch, "Exit Sketch", help: "Finish editing the sketch") { [unowned self] in Task { await exitSketch() } }
         } else {
-            sketchButton = button("sketch", .sketch, "Sketch", help: "Start a sketch on a plane (or the selected face)", variants: planes) { [unowned self] in
-                Task { await newSketch(onPlaneOrFace: selectedFace ?? "front") }
+            sketchButton = button("sketch", .sketch, sketchStartTitle, help: "Start a sketch on a plane (or the selected face)", variants: planes) { [unowned self] in
+                Task { await startSketchFromSelection() }
             }
         }
         func kinds<T: RawRepresentable & CaseIterable>(_ key: WritableKeyPath<SketchUIState, T>, _ t: SketchTool) -> [(title: String, action: () -> Void)]
@@ -150,6 +163,11 @@ extension AppModel {
                 },
             ]),
             RibbonGroupSpec(title: "Tools", buttons: [
+                button("selectModelGeometry", .sketch, "Select Model Geometry", help: "Stop drawing to select body edges or faces for Convert Entities", enabled: editing, large: false) { [unowned self] in selectModelGeometry() },
+                button("splitEntities", .trim, "Split Entities", help: "Split lines and arcs with one click; circles and ellipses with two", active: st.tool == .split, enabled: editing, large: false, tool(.split)),
+                button("convertEntities", .sketch, "Convert Entities", help: "Project selected edges or face boundaries into this sketch as fixed copies; copies do not follow later model edits", enabled: editing && !selectedModelGeometry.isEmpty, large: false) { [unowned self] in
+                    Task { await convertSelectedModelGeometry() }
+                },
                 button("sketchFillet", st.tool == .chamfer ? .sketchChamfer : .sketchFillet, st.tool == .chamfer ? "Sketch Chamfer" : "Sketch Fillet",
                        active: st.tool == .fillet || st.tool == .chamfer, enabled: editing,
                        variants: [("Sketch Fillet", { [unowned self] in chooseTool(.fillet) }), ("Sketch Chamfer", { [unowned self] in chooseTool(.chamfer) })],

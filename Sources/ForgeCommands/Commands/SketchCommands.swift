@@ -723,8 +723,10 @@ public enum SketchAddSlot: Command {
         public var start: Point2
         public var end: Point2
         public var width: Length
+        public var construction: Bool?
         public static let fieldDocs: [String: FieldDoc] = [
             "sketch": sketchParamDoc,
+            "construction": constructionDoc,
             "mode": FieldDoc("straight: start/end are the arc centres; center: start is the slot centre, end an arc centre", default: "straight"),
             "start": "First point", "end": "Second point", "width": "Slot width (arc diameter)",
         ]
@@ -742,6 +744,7 @@ public enum SketchAddSlot: Command {
         var (doc, s) = try ctx.sketchForEdit(p.sketch)
         let before = Set(s.constraints.map(\.id))
         let created = try s.addSlot(p.mode ?? .straight, p.start.tuple, p.end.tuple, width: p.width.millimeters)
+        if p.construction == true { for id in created.prefix(4) { try s.setConstruction(id, true) } }
         let added = s.constraints.map(\.id).filter { !before.contains($0) && !$0.contains("#") }
         return finish(&ctx, doc, &s, created: created, constraints: added, infer: false)
     }

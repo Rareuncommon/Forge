@@ -346,7 +346,7 @@ public enum BodyExtrude: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let sk = try doc.sketch(p.sketch)
+        let sk = try doc.modelingSketch(p.sketch)
         let (loops, regions, segmentIDs) = try sk.profileLoopsWithIDs()
         let feature = doc.currentFeature
         var face = try Kernel.faces(loops: loops, regions: regions)
@@ -457,7 +457,7 @@ public enum BodyRevolve: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let sk = try doc.sketch(p.sketch)
+        let sk = try doc.modelingSketch(p.sketch)
         let axisID = try localID(p.axis, in: sk)
         let axisEntity = try sk.entity(axisID)
         guard axisEntity.kind == .line else { throw ForgeError(.invalidParams, "the revolve axis must be a line", entities: ["\(sk.id)/\(axisID)"]) }

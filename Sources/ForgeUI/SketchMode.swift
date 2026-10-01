@@ -13,7 +13,7 @@ import Foundation
 /// SketchUIState and show it in their PropertyManager page, as SolidWorks does.
 package enum SketchTool: String, CaseIterable, Identifiable {
     case line, rectangle, circle, arc, slot, polygon, spline, ellipse, point
-    case fillet, chamfer, trim, extend, dimension
+    case fillet, chamfer, trim, extend, split, dimension
     package var id: String { rawValue }
 
     package var title: String {
@@ -31,6 +31,7 @@ package enum SketchTool: String, CaseIterable, Identifiable {
         case .chamfer: "Sketch Chamfer"
         case .trim: "Trim Entities"
         case .extend: "Extend Entities"
+        case .split: "Split Entities"
         case .dimension: "Smart Dimension"
         }
     }
@@ -50,6 +51,7 @@ package enum SketchTool: String, CaseIterable, Identifiable {
         case .chamfer: .sketchChamfer
         case .trim: .trim
         case .extend: .extend
+        case .split: .trim
         case .dimension: .smartDimension
         }
     }
@@ -62,7 +64,7 @@ package enum RectangleType: String, CaseIterable {
 }
 package enum CircleType: String, CaseIterable { case center = "Circle", perimeter = "Perimeter Circle" }
 package enum ArcType: String, CaseIterable { case center = "Centerpoint Arc", tangent = "Tangent Arc", threePoint = "3 Point Arc" }
-package enum SlotType: String, CaseIterable { case straight = "Straight Slot", center = "Centerpoint Straight Slot" }
+package enum SlotType: String, CaseIterable { case straight = "Straight Slot", center = "Centerpoint Straight Slot", arc = "Centerpoint Arc Slot", threePointArc = "3 Point Arc Slot" }
 package enum EllipseType: String, CaseIterable { case full = "Ellipse", partial = "Partial Ellipse" }
 package enum ChamferType: String, CaseIterable { case angleDistance = "Angle-distance", distanceDistance = "Distance-distance" }
 package enum TrimMode: String, CaseIterable { case power = "Power trim", closest = "Trim to closest" }
@@ -99,6 +101,8 @@ package struct SketchUIState {
     package var pending: [Point2] = []
     /// Ids of existing points the pending clicks landed on (for relations such as midpoint).
     package var pendingTargets: [String?] = []
+    /// Closed curve awaiting the second split point; Escape cancels this pending split.
+    package var splitEntity: String?
     /// First point of the current line chain: clicking it again closes the chain.
     package var chainStart: Point2?
     package var preview: SketchPreview?
@@ -232,6 +236,7 @@ extension AppModel {
 
     package func chooseTool(_ tool: SketchTool?) {
         sketchState.tool = tool
+        sketchState.splitEntity = nil
         sketchState.pending = []
         sketchState.pendingTargets = []
         sketchState.chainStart = nil
@@ -240,6 +245,13 @@ extension AppModel {
         if tool != nil { lastSketchTool = tool }
         if tool != nil, operation?.isSketchOperation == true { operation = nil }
         clearPreview()
+    }
+
+    /// Changing slot construction changes the meaning and number of collected clicks.
+    package func chooseSlotType(_ type: SlotType) {
+        guard sketchState.slotType != type else { return }
+        resetPending()
+        sketchState.slotType = type
     }
 
     package func clearPreview() {
@@ -361,7 +373,24 @@ extension AppModel {
                 }
             }
         case .slot:
-            if pending.count == 1 {
+            if sketchState.slotType == .arc || sketchState.slotType == .threePointArc {
+                if pending.count < 3 {
+                    if pending.count == 1 { pv.polylines = [[pending[0], p]] }
+                    if pending.count == 2 {
+                        if sketchState.slotType == .arc {
+                            if let g = arcSlotGeometry(pending + [p]) {
+                                pv.polylines = [Self.arcSlotOutline(g.center, g.radius, g.startAngle, g.sweep, 0)]
+                            }
+                        } else { pv.polylines = [Self.arcThrough(pending[0], p, pending[1])] }
+                    }
+                } else if let g = arcSlotGeometry(pending) {
+                    let halfWidth = abs(hypot(p.u - g.center.u, p.v - g.center.v) - g.radius)
+                    if halfWidth < g.radius {
+                        pv.polylines = [Self.arcSlotOutline(g.center, g.radius, g.startAngle, g.sweep, halfWidth)]
+                    }
+                    lines = ["W  \(fmt(2 * halfWidth))"]
+                }
+            } else if pending.count == 1 {
                 let a = sketchState.slotType == .center ? Point2(2 * pending[0].u - p.u, 2 * pending[0].v - p.v) : pending[0]
                 pv.polylines = [[a, p]]
                 lines = ["L  \(fmt(hypot(p.u - a.u, p.v - a.v)))"]
@@ -401,6 +430,11 @@ extension AppModel {
                 let b = pending.count == 2 ? Self.distanceToLine(p, c, m) : Self.distanceToLine(pending[2], c, m)
                 pv.polylines = [Self.ellipsePolyline(c, a, b, rot)]
                 lines = pending.count == 2 ? ["a  \(fmt(a))", "b  \(fmt(b))"] : ["Click the end of the arc"]
+            }
+        case .split:
+            if let first = pending.first {
+                pv.marker = first
+                lines = ["Click a second point on the same closed curve"]
             }
         case .point, .fillet, .chamfer, .trim, .extend, .dimension:
             break
@@ -502,6 +536,48 @@ extension AppModel {
             out.append(Point2(a.u + r * cos(t), a.v + r * sin(t)))
         }
         return out + [out[0]]
+    }
+
+    /// Resolve the centerline before the width click. Center arcs project the end
+    /// click to the radius established by the start, matching the ordinary arc tool.
+    package func arcSlotGeometry(_ points: [Point2]) -> (center: Point2, radius: Double, start: Point2, end: Point2, startAngle: Double, sweep: Double)? {
+        guard points.count == 3 else { return nil }
+        let c: Point2, start: Point2, end: Point2, r: Double
+        if sketchState.slotType == .arc {
+            c = points[0]; start = points[1]
+            r = hypot(start.u - c.u, start.v - c.v)
+            let d = hypot(points[2].u - c.u, points[2].v - c.v)
+            guard r > 1e-9, d > 1e-9 else { return nil }
+            end = Point2(c.u + r * (points[2].u - c.u) / d, c.v + r * (points[2].v - c.v) / d)
+        } else {
+            guard let cc = try? Sketch.circumcircle(points[0].tuple, points[2].tuple, points[1].tuple) else { return nil }
+            c = Point2(cc.center.0, cc.center.1); r = cc.radius
+            start = points[0]; end = points[1]
+        }
+        let a0 = atan2(start.v - c.v, start.u - c.u)
+        func ccw(_ point: Point2) -> Double {
+            var angle = atan2(point.v - c.v, point.u - c.u) - a0
+            while angle < 0 { angle += 2 * .pi }
+            return angle
+        }
+        var sweep = ccw(end)
+        if sketchState.slotType == .threePointArc, ccw(points[2]) > sweep { sweep -= 2 * .pi }
+        guard abs(sweep) > 1e-9 else { return nil }
+        return (c, r, start, end, a0, sweep)
+    }
+
+    package static func arcSlotOutline(_ c: Point2, _ r: Double, _ a0: Double, _ sweep: Double, _ halfWidth: Double) -> [Point2] {
+        let sign = sweep > 0 ? 1.0 : -1.0
+        func point(_ center: Point2, _ radius: Double, _ angle: Double) -> Point2 {
+            Point2(center.u + radius * cos(angle), center.v + radius * sin(angle))
+        }
+        var out = (0...48).map { point(c, r + halfWidth, a0 + sweep * Double($0) / 48) }
+        let end = point(c, r, a0 + sweep)
+        out += (1...24).map { point(end, halfWidth, a0 + sweep + sign * .pi * Double($0) / 24) }
+        out += (1...48).map { point(c, r - halfWidth, a0 + sweep * (1 - Double($0) / 48)) }
+        let start = point(c, r, a0)
+        out += (1...24).map { point(start, halfWidth, a0 + sign * .pi + sign * .pi * Double($0) / 24) }
+        return out
     }
 
     /// Polyline of the arc from a to b passing through m (a straight segment if collinear).
@@ -743,7 +819,22 @@ extension AppModel {
             }
         case .slot:
             sketchState.pending.append(p)
-            if sketchState.pending.count == 3 {
+            if sketchState.slotType == .arc || sketchState.slotType == .threePointArc {
+                if sketchState.pending.count == 4 {
+                    let points = sketchState.pending
+                    resetPending()
+                    guard let g = arcSlotGeometry(Array(points.prefix(3))) else {
+                        lastError = ForgeError(.invalidParams, "The slot centerline needs a nonzero arc; three-point slots need noncollinear points.")
+                        return
+                    }
+                    let w = 2 * abs(hypot(p.u - g.center.u, p.v - g.center.v) - g.radius)
+                    var params: [String: JSONValue] = ["mode": .string(sketchState.slotType == .arc ? "center" : "three_point"),
+                        "start": pt(g.start), "end": pt(g.end), "width": .number(w), "construction": construction]
+                    if sketchState.slotType == .arc { params["center"] = pt(g.center) }
+                    else { params["through"] = pt(points[2]) }
+                    await run("sketch.add_arc_slot", .object(params))
+                }
+            } else if sketchState.pending.count == 3 {
                 let (p0, p1) = (sketchState.pending[0], sketchState.pending[1])
                 let (a, b) = slotCentres(p0, p1)
                 resetPending()
@@ -751,7 +842,7 @@ extension AppModel {
                 if w > 0 {
                     let mode = sketchState.slotType == .center ? "center" : "straight"
                     let start = sketchState.slotType == .center ? p0 : a
-                    await run("sketch.add_slot", ["mode": .string(mode), "start": pt(start), "end": pt(b), "width": .number(w)])
+                    await run("sketch.add_slot", ["mode": .string(mode), "start": pt(start), "end": pt(b), "width": .number(w), "construction": construction])
                 }
             }
         case .polygon:
@@ -825,6 +916,27 @@ extension AppModel {
             } else {
                 await run("sketch.extend", ["entity": .string(local), "near": pt(raw)])
             }
+        case .split:
+            guard let local, let sketch = sketchState.sketch, let entity = sketch.entities[local],
+                  curve?.contains("/") != true || curve?.hasPrefix(sketch.id + "/") == true else {
+                lastError = ForgeError(.invalidParams, "Click a curve in the active sketch to split it.")
+                return
+            }
+            if let pendingEntity = sketchState.splitEntity, pendingEntity != local {
+                lastError = ForgeError(.invalidParams, "Click the second point on the same closed curve, or press Esc to cancel.", entities: [pendingEntity])
+                return
+            }
+            if entity.kind == .circle || entity.kind == .ellipse {
+                if let first = sketchState.pending.first {
+                    if await run("sketch.split", ["entity": .string(local), "at": [pt(first), pt(raw)]]) != nil { resetPending() }
+                } else {
+                    sketchState.splitEntity = local
+                    sketchState.pending = [raw]
+                    lastError = nil
+                }
+            } else {
+                await run("sketch.split", ["entity": .string(local), "at": [pt(raw)]])
+            }
         case .dimension:
             await dimensionClick(snap.kind == .point ? snap.target : local, at: raw, viewPoint: viewPoint)
             return
@@ -843,6 +955,7 @@ extension AppModel {
     }
 
     private func resetPending() {
+        sketchState.splitEntity = nil
         sketchState.pending = []
         sketchState.pendingTargets = []
         sketchState.chainStart = nil
@@ -899,7 +1012,13 @@ extension AppModel {
             case .tangent: return "Click the end of a line or arc, then where the arc ends."
             case .threePoint: return "Click the start, the end, then a point the arc passes through."
             }
-        case .slot: return st.slotType == .straight ? "Click the two arc centres, then the width." : "Click the slot centre, an arc centre, then the width."
+        case .slot:
+            switch st.slotType {
+            case .straight: return "Click the two arc centres, then the width."
+            case .center: return "Click the slot centre, an arc centre, then the width."
+            case .arc: return "Click the centre, start, end (counter-clockwise), then the width."
+            case .threePointArc: return "Click the start, end, a point on the arc, then the width."
+            }
         case .polygon: return "Click the centre, then a vertex (inscribed) or the middle of a side (circumscribed)."
         case .spline: return "Click the points the spline passes through; double-click to finish."
         case .ellipse:
@@ -911,6 +1030,10 @@ extension AppModel {
         case .chamfer: return "Click a corner where two lines meet."
         case .trim: return st.trimMode == .power ? "Drag across the pieces to remove, or click them." : "Click the piece of a curve to remove."
         case .extend: return "Click a curve near the end to extend it to the next curve."
+        case .split:
+            return st.splitEntity == nil
+                ? "Click inside a line or arc to split it. On a circle or ellipse, click two different points."
+                : "Click a second point on the same closed curve, or press Esc to cancel."
         case .dimension:
             if let e = dimensionEdit, !e.placed {
                 return e.measurement == nil ? "Click a second entity to dimension to." : "Move the pointer to where the dimension goes and click to place it (or click a second entity)."

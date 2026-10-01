@@ -162,7 +162,7 @@ extension AppModel {
     }
 
     private var endConditionOptions: [(tag: String, title: String)] {
-        EndConditionUI.allCases.filter { operation == .cutExtrude || !bodies.isEmpty || $0.needsDepth }.map { ($0.rawValue, $0.rawValue) }
+        EndConditionUI.allCases.filter { operation == .cutExtrude || !bodies.isEmpty || $0.needsDepth || $0 == .upToVertex }.map { ($0.rawValue, $0.rawValue) }
     }
 
     // MARK: operations
@@ -192,14 +192,16 @@ extension AppModel {
                     d1.append(check("draftOutward", "Draft outward", \.draftOutward))
                 }
             }
+            if f.endCondition == .upToVertex { d1 += [field("vertexX", "Vertex X", unit: "mm", \.vertexX), field("vertexY", "Vertex Y", unit: "mm", \.vertexY), field("vertexZ", "Vertex Z", unit: "mm", \.vertexZ)] }
             s.append(PanelSection("Direction 1", controls: d1))
             if f.endCondition != .midPlane && f.endCondition != .throughAllBoth {
                 var d2: [PanelControl] = [
                     PanelControl(id: "end2", kind: .choice(
-                        label: "End condition", options: [EndConditionUI.blind, .throughAll].filter { $0 == .blind || !bodies.isEmpty }.map { ($0.rawValue, $0.rawValue) },
+                        label: "End condition", options: [EndConditionUI.blind, .throughAll, .upToVertex].filter { $0 != .throughAll || !bodies.isEmpty }.map { ($0.rawValue, $0.rawValue) },
                         get: { [unowned self] in form.endCondition2.rawValue }, set: { [unowned self] in if let v = EndConditionUI(rawValue: $0) { form.endCondition2 = v } })),
                 ]
                 if f.endCondition2 == .blind { d2.append(field("depth2", "Depth", unit: "mm", \.depth2)) }
+                if f.endCondition2 == .upToVertex { d2 += [field("vertex2X", "Vertex X", unit: "mm", \.vertex2X), field("vertex2Y", "Vertex Y", unit: "mm", \.vertex2Y), field("vertex2Z", "Vertex Z", unit: "mm", \.vertex2Z)] }
                 s.append(PanelSection("Direction 2", toggle: (get: { [unowned self] in form.direction2 }, set: { [unowned self] in form.direction2 = $0 }), controls: d2))
             }
             var thin = [choice("thinType", "Type", [("one_direction", "One-Direction"), ("mid_plane", "Mid-Plane"), ("two_direction", "Two-Direction")], \.thinType),
@@ -309,6 +311,13 @@ extension AppModel {
                 PanelControl(id: "faces", kind: .list(
                     items: f.draftFaces.map(shortName), placeholder: "Faces", active: f.activeBox == "faces", activate: { [unowned self] in form.activeBox = "faces" })),
             ]))
+        case .moveBody:
+            s.append(PanelSection("Body", controls: [choice("body", "Body", bodies.map { ($0.id, $0.name) }, \.target), check("copyBody", "Create copy", \.bodyCopy)]))
+            s.append(PanelSection("Translation", controls: [field("bodyDX", "X", unit: "mm", \.bodyDX), field("bodyDY", "Y", unit: "mm", \.bodyDY), field("bodyDZ", "Z", unit: "mm", \.bodyDZ)]))
+            s.append(PanelSection("Rotation", toggle: (get: { [unowned self] in form.bodyRotation }, set: { [unowned self] in form.bodyRotation = $0 }), controls: [
+                choice("bodyAxis", "Axis", [("x", "X"), ("y", "Y"), ("z", "Z")] + (f.bodyAxis == "custom" ? [("custom", "Stored custom axis")] : []), \.bodyAxis), field("bodyAngle", "Angle", unit: "°", \.bodyAngle),
+                field("bodyOriginX", "Origin X", unit: "mm", \.bodyOriginX), field("bodyOriginY", "Origin Y", unit: "mm", \.bodyOriginY), field("bodyOriginZ", "Origin Z", unit: "mm", \.bodyOriginZ),
+            ]))
         case .combine:
             let bodyOptions = bodies.map { (tag: $0.id, title: $0.name) }
             s.append(PanelSection("Operation Type", controls: [choice("combine", "Operation", [("fuse", "Add"), ("cut", "Subtract"), ("common", "Common")], \.combine)]))
@@ -342,7 +351,7 @@ extension AppModel {
         case .massProperties, .measure, .check:
             let rows = form.result.map(Self.keyValues) ?? []
             s.append(PanelSection(op == .measure ? "Measure" : "Results", controls: rows.isEmpty
-                ? [note("empty", op == .measure ? "Select two faces, edges, vertices or bodies." : "Select a body.")]
+                ? [note("empty", op == .measure ? "Select one entity for its size, or two for their minimum distance." : "Select a body.")]
                 : rows.enumerated().map { i, kv in PanelControl(id: "r\(i)", kind: .value(label: kv.0, value: kv.1)) }))
         case .addRelation:
             s += [selectedEntitiesSection, relationsSection(all: false), relationButtonsSection].compactMap { $0 }
@@ -411,7 +420,7 @@ extension AppModel {
         case .shell: "Select the faces to remove. With none, the body becomes a closed hollow shell."
         case .draft: form.activeBox == "neutral" ? "Select the neutral plane: a planar face." : "Select the faces to draft."
         case .combine: "Click the bodies to combine in the view: the main body first."
-        case .measure where selection.count != 2: "Select two entities to measure between."
+        case .measure where !(1...2).contains(selection.count): "Select one or two entities to measure."
         case .sketchMirror where form.mirrorAxis.isEmpty: "Select the entities to mirror and a line (ideally a centerline) to mirror about."
         case .sketchOffset, .sketchLinearPattern, .sketchCircularPattern, .sketchMove, .sketchRotate, .sketchScale:
             sketchSelection.isEmpty ? "Select the sketch entities in the view." : nil
@@ -503,7 +512,11 @@ extension AppModel {
         case .rectangle: s = [PanelSection("Rectangle Type", controls: [toolChoice("type", "Type", \.rectangleType)]), construction]
         case .circle: s = [PanelSection("Circle Type", controls: [toolChoice("type", "Type", \.circleType)]), construction]
         case .arc: s = [PanelSection("Arc Type", controls: [toolChoice("type", "Type", \.arcType)]), construction]
-        case .slot: s = [PanelSection("Slot Types", controls: [toolChoice("type", "Type", \.slotType)])]
+        case .slot:
+            s = [PanelSection("Slot Types", controls: [PanelControl(id: "type", kind: .choice(
+                label: "Type", options: SlotType.allCases.map { (tag: $0.rawValue, title: $0.rawValue) },
+                get: { [unowned self] in sketchState.slotType.rawValue },
+                set: { [unowned self] in if let type = SlotType(rawValue: $0) { chooseSlotType(type) } }))]), construction]
         case .polygon:
             s = [PanelSection("Parameters", controls: [
                 PanelControl(id: "sides", kind: .field(
@@ -531,7 +544,7 @@ extension AppModel {
             }
             s = [PanelSection("Chamfer Parameters", controls: c)]
         case .trim: s = [PanelSection("Options", controls: [toolChoice("mode", "Mode", \.trimMode)])]
-        case .point, .extend, .dimension: s = []
+        case .point, .extend, .split, .dimension: s = []
         }
         return PanelPage(
             icon: tool.icon, title: tool == .line ? "Insert \(st.lineKind.rawValue)" : tool.title, subtitle: "", message: toolMessage(tool), ok: nil,

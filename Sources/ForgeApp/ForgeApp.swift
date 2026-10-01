@@ -68,10 +68,16 @@ struct ForgeApp: App {
                 Button("Isometric") { model.setOrientation(.isometric) }.keyboardShortcut("7", modifiers: .control)
                 Button("Dimetric") { model.setOrientation(.dimetric) }
                 Button("Trimetric") { model.setOrientation(.trimetric) }
-                Button("Normal To") { model.normalToSketch() }.keyboardShortcut("8", modifiers: .control).disabled(model.activeSketch == nil)
+                Button("Normal To") { model.normalToSketch() }.keyboardShortcut("8", modifiers: .control).disabled(!model.canNormalTo)
                 Divider()
                 Button("Zoom to Fit (F)") { model.zoomToFit() }
                 Button("Previous View") { model.previousView() }
+                Divider()
+                Button("Hide Selected Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, false) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Show Selected Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, true) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Isolate Selected Bodies") { Task { await model.isolateBodies(model.selectedBodies) } }.disabled(model.selectedBodies.isEmpty)
+                Button("Exit Isolation") { Task { await model.exitBodyIsolation() } }.disabled(!model.isIsolatingBodies)
+                Button("Show All Bodies") { Task { await model.showAllBodies() } }
                 Divider()
                 Toggle("Perspective", isOn: Binding(get: { model.display.perspective }, set: { model.setPerspective($0) }))
                 Toggle("Planes", isOn: Binding(get: { model.display.planes }, set: { model.display.planes = $0; Task { await model.refresh() } }))
@@ -370,6 +376,20 @@ final class MacPlatform: PlatformServices {
         alert.addButton(withTitle: confirm)
         alert.addButton(withTitle: cancel)
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    func requestName(_ title: String, currentName: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: currentName)
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        field.setAccessibilityLabel("Name")
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        field.selectText(nil)
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
     func chooseSavePath(suggestedName name: String) -> String? {

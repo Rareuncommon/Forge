@@ -255,14 +255,17 @@ public struct Sketch: Codable, Sendable, Hashable {
 
     /// Arc from start to end, counter-clockwise around the centre.
     @discardableResult
-    public mutating func addArc(center: (Double, Double), start: (Double, Double), end: (Double, Double), construction: Bool = false) -> String {
+    public mutating func addArc(center: (Double, Double), start: (Double, Double), end: (Double, Double), construction: Bool = false, radiusYieldsToRelations: Bool = false) -> String {
         let id = newID(.arc)
         let c = addPoint(center.0, center.1, construction: true, owner: id)
         let s = addPoint(start.0, start.1, construction: construction, owner: id)
         let e = addPoint(end.0, end.1, construction: construction, owner: id)
         insert(SketchEntity(id: id, kind: .arc, construction: construction, owner: nil, points: [c, s, e], params: []))
-        constraints.append(
-            SketchConstraint(id: "\(id)#radius", kind: .arcRadius, entities: [id], value: nil, driven: false, side: 1, isInternal: true))
+        var radiusConstraint = SketchConstraint(id: "\(id)#radius", kind: .arcRadius, entities: [id], value: nil, driven: false, side: 1, isInternal: true)
+        // Composite geometry may imply this invariant through its ordinary relations.
+        // Keep enforcing it, but diagnose it last so it does not make those relations redundant.
+        radiusConstraint.yields = radiusYieldsToRelations
+        constraints.append(radiusConstraint)
         return id
     }
 

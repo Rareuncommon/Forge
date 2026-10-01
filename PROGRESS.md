@@ -1,5 +1,71 @@
 # Progress
 
+## Session 11 — 2026-09-30 — Subentity measurement, visibility and curved slots
+
+- `query.measure` now resolves bodies, faces, edges and vertices, including persistent
+  face/edge references. One selection returns applicable length, area, volume, radius
+  or coordinates; pairs return minimum distance, closest points and XYZ displacement.
+  Desktop errors remain visible and async results cannot overwrite a newer selection.
+  Mixed body/sketch selections are rejected instead of silently dropping the sketch.
+- Added typed hide/show/isolate/exit/show-all commands, shared desktop tree/ribbon and
+  macOS View/context actions. Hidden bodies are excluded from rendering, picking and
+  fit bounds; ordinary visibility persists while isolation restores prior visibility.
+  Display-only transactions now have undo records. Loading ignores unknown visibility
+  IDs without losing suppressed feature output state. Modeling and exports include all bodies.
+- Added centerpoint and three-point arc slots with editable concentric/tangent geometry,
+  construction centerlines, four-click desktop previews, and construction support for
+  all four slot types. Switching slot types clears pending clicks. Validation rejects
+  degenerate arcs, collapsed widths and overlapping major-arc caps atomically.
+- Curved-slot constraints use existing internal-row yield metadata so normal relations
+  remain independent after rotation; no solver algorithm changes. Tests exercise six
+  noncardinal orientations, 90-degree rotation, width edits and cap alignment.
+- Added an analytically derived quarter-circle-slot golden model and a real MCP
+  create/extrude/measure/hide/isolate/save/open/rebuild workflow.
+
+Validation: final local build with tests and all **350 Swift tests** pass; all **32 golden
+models**, **four MCP subprocess workflows**, and **three packaging regressions** pass.
+Optimized Linux desktop/CLI and Windows frontend cross-platform builds pass. Native
+platform runtime checks are delegated to CI with a virtual display; no windows were
+opened on the user's desktop. Matrix synchronization and whitespace checks pass.
+
+Remaining scope: measurement angle/max/normal modes and sketch entity measurements;
+grouped Fix Slot/Equal Slots relations; individual sketch/plane/component display panes;
+associative conversion, advanced extrude conditions, configurations/equations, assemblies,
+drawings and the rest of the declared matrix. This delivery does not complete SolidWorks parity.
+
+## Session 10 — 2026-09-30 — Face sketches and everyday modeling workflows
+
+- Added explicit Features-tab Sketch on Face entry on all desktops, selection-aware
+  sketch shortcuts and rejection of unsuitable selections instead of silent Front-plane
+  fallback. Tests use actual face ray picking, rectangle drawing and a 125 mm³ cut.
+- Added exact model-edge/face-boundary conversion into detached sketch lines, circles
+  and arcs; fixed/editable and construction options, undo/dry-run/save/rebuild, desktop
+  model picking and a direct MCP alias. Associative links, oblique circles, ellipses
+  and splines remain pending.
+- Added desktop Split Entities, including two-point closed-curve splitting, pending
+  guidance, cancellation, cross-sketch guards and undo/redo.
+- Added Move/Copy Bodies translation/rotation/copy pages, live preview and feature
+  editing, preserving stored custom axes. Exposed Up To Vertex in both extrusion
+  directions so an inspector roundtrip cannot change the end condition to Blind.
+- Added Normal To selected faces and standard/reference planes, and plane selection.
+  Review fixes wire both desktop trees into selection, retain valid plane references
+  through rebuilds, prune suppressed planes, and make primary Sketch use the clicked
+  standard/reference plane. Four additional engine/UI regressions cover these paths.
+- Added shared Unicode Rename dialogs and body/feature/sketch tree actions.
+- Fixed sketch attachment repair and rejection of dependent modeling from lost,
+  suppressed or rolled-back sketch supports, preventing stale geometry regeneration.
+- The source-linked audit inventories all 1,000 matrix IDs and distinguishes hidden,
+  partial and absent workflows. Assemblies, drawings and hundreds of other declared
+  capabilities still remain. See docs/research/modeling-workflow-gaps.md.
+
+Validation: official Swift 6.4 build with tests and all **324 Swift tests** pass.
+All **31 golden models**, **3 MCP subprocess workflows** (debug and optimized CLI),
+three packaging regressions and native GTK menu/name-dialog regressions pass.
+Windows frontend cross-platform build and optimized Linux desktop/CLI builds pass.
+The Linux screenshot smoke check renders the new ribbon entry points. Native checks
+must now use Xvfb: the GTK runner refuses to fall back to the user's live desktop.
+Matrix synchronization and whitespace checks pass. Native macOS/Windows checks run in CI.
+
 ## Session 9 — 2026-09-29 — PR #3 review fixes
 
 - Imported faces now receive distinct persistent base names at intake. Kernel history

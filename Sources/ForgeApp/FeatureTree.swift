@@ -52,12 +52,19 @@ struct FeatureTreeView: View {
     @ViewBuilder private var rows: some View {
         if !model.bodies.isEmpty {
             TreeRow(icon: .folder, title: "Solid Bodies (\(model.bodies.count))", depth: 1, disclosure: bodiesOpen) { bodiesOpen.toggle() }
+                .contextMenu {
+                    Button("Show All Bodies") { Task { await model.showAllBodies() } }
+                    if model.isIsolatingBodies { Button("Exit Isolation") { Task { await model.exitBodyIsolation() } } }
+                }
             if bodiesOpen {
                 ForEach(model.bodies.filter { matches($0.name) }, id: \.id) { b in
-                    TreeRow(icon: .part, title: b.name, depth: 2, selected: model.selection.contains(b.id)) {
+                    TreeRow(icon: model.hiddenBodyIDs.contains(b.id) ? .hideShow : .part, title: b.name + (model.hiddenBodyIDs.contains(b.id) ? " (Hidden)" : ""), depth: 2, selected: model.selection.contains(b.id), muted: model.hiddenBodyIDs.contains(b.id)) {
                         Task { await model.select(b.id, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
                     }
                     .contextMenu {
+                        Button(model.hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body") { Task { await model.setBodiesVisible([b.id], model.hiddenBodyIDs.contains(b.id)) } }
+                        Button("Isolate Body") { Task { await model.isolateBodies([b.id]) } }
+                        Button("Rename…") { Task { await model.renameBody(b.id) } }
                         Button("Mass Properties") {
                             Task {
                                 await model.select(b.id, extend: false)
@@ -76,8 +83,12 @@ struct FeatureTreeView: View {
             }
         }
         ForEach(StandardPlane.allCases.filter { matches($0.rawValue + " plane") }, id: \.self) { p in
-            TreeRow(icon: .plane, title: "\(p.rawValue.capitalized) Plane", depth: 1, iconTint: Theme.text3,
-                    doubleAction: { Task { await model.newSketch(on: p) } }) {}
+            TreeRow(icon: .plane, title: "\(p.rawValue.capitalized) Plane", depth: 1,
+                    selected: model.selection.contains("plane-" + p.rawValue), iconTint: Theme.text3,
+                    doubleAction: { Task { await model.newSketch(on: p) } }) {
+                let extend = !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty
+                Task { await model.select("plane-" + p.rawValue, extend: extend) }
+            }
                 .contextMenu {
                     Button("Sketch on \(p.rawValue.capitalized) Plane") { Task { await model.newSketch(on: p) } }
                 }
@@ -130,8 +141,6 @@ private struct FeatureNode: View {
     let feature: FeatureRow
     let rolledBack: Bool
     @State private var open = false
-    @State private var renaming = false
-    @State private var newName = ""
 
     var body: some View {
         let sketch = feature.isSketch ? nil : feature.sketchID.flatMap { id in model.sketches.first { $0.id == id } }
@@ -148,14 +157,6 @@ private struct FeatureNode: View {
         }
         .contextMenu { menu }
         .help(feature.error.map { "\(feature.name): \($0)" } ?? (feature.command == "plane.create" ? "\(feature.name) — double-click to sketch on it" : "\(feature.name) — double-click to edit"))
-        .popover(isPresented: $renaming) {
-            HStack {
-                TextField("Name", text: $newName).textFieldStyle(.roundedBorder).frame(width: 180)
-                    .onSubmit { rename() }
-                Button("Rename") { rename() }.buttonStyle(PanelButtonStyle(prominent: true))
-            }
-            .padding(10)
-        }
         if let sketch, open || sketch.id == model.activeSketch {
             let row = model.features.first { $0.isSketch && $0.sketchID == sketch.id }
             FeatureChild(sketch: sketch, feature: row)
@@ -196,8 +197,8 @@ private struct FeatureNode: View {
         }
         if feature.isSketch, let s = feature.sketchID {
             Task { await model.select(s, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty) }
-        } else if !feature.createdBodies.isEmpty && feature.command != "plane.create" {
-            Task { await model.select(feature.createdBodies) }
+        } else {
+            model.treeSelect(feature, extend: !NSEvent.modifierFlags.intersection([.shift, .command, .control]).isEmpty)
         }
     }
 
@@ -209,12 +210,6 @@ private struct FeatureNode: View {
         } else if feature.operation != nil {
             model.editFeature(feature)
         }
-    }
-
-    private func rename() {
-        renaming = false
-        let n = newName
-        Task { await model.run("feature.rename", ["feature": .string(feature.id), "name": .string(n)]) }
     }
 
     @ViewBuilder private var menu: some View {
@@ -237,10 +232,7 @@ private struct FeatureNode: View {
             if index + 1 < model.features.count { Button("Move Down") { Task { await model.moveFeature(feature.id, by: 1) } } }
         }
         Button("Rollback") { Task { await model.run("feature.rollback", ["before": .string(feature.id)]) } }
-        Button("Rename") {
-            newName = feature.name
-            renaming = true
-        }
+        Button("Rename…") { Task { await model.renameFeature(feature.id) } }
         if let e = feature.error {
             Divider()
             Button("What's Wrong?") { model.lastError = ForgeError(.referenceLost, "\(feature.name): \(e)") }
@@ -265,6 +257,7 @@ private struct FeatureChild: View {
         .contextMenu {
             Button("Edit Sketch") { Task { await model.editSketch(sketch.id) } }
             if let feature {
+                Button("Rename…") { Task { await model.renameFeature(feature.id) } }
                 Button("Delete", role: .destructive) { Task { await model.run("feature.delete", ["feature": .string(feature.id)]) } }
             }
         }

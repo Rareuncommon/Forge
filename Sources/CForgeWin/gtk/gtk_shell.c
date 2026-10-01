@@ -1399,6 +1399,39 @@ int fw_confirm(fw_app *a, const char *title, const char *message, const char *ye
     return r.button == 1;
 }
 
+static void onNameResponse(GtkDialog *dialog, int response, gpointer data) {
+    (void)dialog;
+    DialogResult *r = data;
+    r->button = response;
+    r->done = 1;
+}
+
+char *fw_name_dialog(fw_app *a, const char *title, const char *current_name) {
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(title ? title : "Rename", GTK_WINDOW(a->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, NULL);
+    GtkWidget *entry = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(entry), current_name ? current_name : "");
+    gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
+    gtk_widget_set_margin_start(entry, 16);
+    gtk_widget_set_margin_end(entry, 16);
+    gtk_widget_set_margin_top(entry, 16);
+    gtk_widget_set_margin_bottom(entry, 16);
+    gtk_widget_set_size_request(entry, 300, -1);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(entry), GTK_ACCESSIBLE_PROPERTY_LABEL, "Name", -1);
+    gtk_box_append(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    DialogResult r = {0, GTK_RESPONSE_CANCEL, NULL};
+    g_signal_connect(dialog, "response", G_CALLBACK(onNameResponse), &r);
+    gtk_window_present(GTK_WINDOW(dialog));
+    gtk_widget_grab_focus(entry);
+    gtk_editable_select_region(GTK_EDITABLE(entry), 0, -1);
+    wait(&r);
+    char *name = r.button == GTK_RESPONSE_ACCEPT ? strdup(gtk_editable_get_text(GTK_EDITABLE(entry))) : NULL;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+    return name;
+}
+
 void fw_message(fw_app *a, const char *title, const char *message, int error) {
     (void)error;
     GtkAlertDialog *d = gtk_alert_dialog_new("%s", title ? title : "");

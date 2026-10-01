@@ -200,37 +200,94 @@ public enum QueryMassProperties: Command {
 public enum QueryMeasure: Command {
     public struct Params: Codable, Sendable, SchemaDocumented {
         public var from: String
-        public var to: String
-        public static let fieldDocs: [String: FieldDoc] = ["from": "First body", "to": "Second body"]
+        public var to: String?
+        public static let fieldDocs: [String: FieldDoc] = [
+            "from": "Body, face, edge or vertex reference (including persistent face/edge names)",
+            "to": "Optional second reference; return minimum distance and closest points when supplied",
+        ]
+    }
+    public struct EntityMeasurement: Codable, Sendable {
+        public var reference: String
+        public var kind: String
+        public var lengthMM: Double?
+        public var areaMM2: Double?
+        public var volumeMM3: Double?
+        public var radiusMM: Double?
+        public var center: [Double]?
+        public var normal: [Double]?
+        public var position: [Double]?
+        enum CodingKeys: String, CodingKey {
+            case reference, kind, center, normal, position
+            case lengthMM = "length_mm", areaMM2 = "area_mm2", volumeMM3 = "volume_mm3", radiusMM = "radius_mm"
+        }
     }
     public struct Output: Codable, Sendable {
-        public var distanceMM: Double
-        public var pointFrom: [Double]
-        public var pointTo: [Double]
-
+        public var distanceMM: Double?
+        public var pointFrom: [Double]?
+        public var pointTo: [Double]?
+        public var deltaMM: [Double]?
+        public var fromEntity: EntityMeasurement
+        public var toEntity: EntityMeasurement?
         enum CodingKeys: String, CodingKey {
-            case distanceMM = "distance_mm"
-            case pointFrom = "point_from"
-            case pointTo = "point_to"
+            case distanceMM = "distance_mm", pointFrom = "point_from", pointTo = "point_to", deltaMM = "delta_mm"
+            case fromEntity = "from_entity", toEntity = "to_entity"
         }
     }
 
     public static let name = "query.measure"
-    public static let summary = "Minimum distance between two bodies, with the closest points"
-    public static let discussion = "M0 measures body to body. Face/edge/vertex measurement and angles are not implemented yet."
+    public static let summary = "Measure bodies, faces, edges or vertices, with minimum distance between two selections"
+    public static let discussion = "One selection returns its length, area, volume, circular radius or vertex position as applicable. Two selections also return exact B-rep minimum distance, closest points and their signed XYZ displacement, all in millimeters. Named references must identify a single face or edge. Angles, maximum distances and normal-distance modes are not implemented."
     public static let category = CommandCategory.query
     public static let undo = UndoBehavior.none
-    public static let errors: [ErrorCode] = [.unknownEntity, .notImplemented]
-    public static let examples: [JSONValue] = [["from": "body-1", "to": "body-2"]]
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .referenceLost, .kernelFailure]
+    public static let examples: [JSONValue] = [
+        ["from": "body-1", "to": "body-2"], ["from": "body-1/edge-0"],
+        ["from": "body-1/face-0", "to": "body-1/vertex-2"],
+    ]
+
+    static func resolve(_ reference: String, in doc: Document) throws -> (Shape, EntityMeasurement) {
+        let ref = try EntityRef.parse(reference)
+        let body = try doc.body(ref.body)
+        var summary = EntityMeasurement(reference: reference, kind: ref.kind.rawValue)
+        switch ref.kind {
+        case .body:
+            let properties = try body.shape.massProperties()
+            summary.areaMM2 = properties.surfaceArea
+            summary.volumeMM3 = properties.volume
+            summary.center = properties.centroid.array
+            return (body.shape, summary)
+        case .face:
+            let index = try doc.faceIndices([reference], of: body, sets: false)[0]
+            let face = try body.shape.face(index)
+            summary.areaMM2 = face.area
+            summary.center = face.centroid.array
+            if face.surfaceType == .plane { summary.normal = face.normal.array }
+            return (try body.shape.subshape(.face, index: index), summary)
+        case .edge:
+            let indices = try doc.edgeIndices([reference], of: body)
+            guard indices.count == 1 else { throw ForgeError(.invalidParams, "measurement requires one edge; reference identifies \(indices.count)", entities: [reference]) }
+            let edge = try body.shape.edge(indices[0])
+            summary.lengthMM = edge.length
+            summary.radiusMM = edge.circleRadius
+            summary.center = edge.circleCenter?.array
+            return (try body.shape.subshape(.edge, index: indices[0]), summary)
+        case .vertex:
+            guard let index = ref.index, index < (try body.shape.topology().vertices) else {
+                throw ForgeError(.unknownEntity, "no vertex '\(reference)'", entities: [reference])
+            }
+            summary.position = try body.shape.vertex(index).array
+            return (try body.shape.subshape(.vertex, index: index), summary)
+        }
+    }
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         let doc = try ctx.requireDocument()
-        let a = try EntityRef.parse(p.from), b = try EntityRef.parse(p.to)
-        guard a.kind == .body, b.kind == .body else {
-            throw ForgeError(.notImplemented, "M0 measures between bodies only", entities: [p.from, p.to])
-        }
-        let d = try Kernel.distance(try doc.body(a.body).shape, try doc.body(b.body).shape)
-        return Output(distanceMM: d.distance, pointFrom: d.pointA.array, pointTo: d.pointB.array)
+        let (a, first) = try resolve(p.from, in: doc)
+        guard let to = p.to else { return Output(fromEntity: first) }
+        let (b, second) = try resolve(to, in: doc)
+        let distance = try Kernel.distance(a, b)
+        return Output(distanceMM: distance.distance, pointFrom: distance.pointA.array, pointTo: distance.pointB.array,
+                      deltaMM: (distance.pointB - distance.pointA).array, fromEntity: first, toEntity: second)
     }
 }
 
@@ -305,6 +362,14 @@ public enum SelectionSet: Command {
         var doc = try ctx.requireDocument()
         var refs: [String] = []
         for s in p.entities {
+            if s.hasPrefix("plane-"), StandardPlane(rawValue: String(s.dropFirst(6))) != nil {
+                refs.append(s)
+                continue
+            }
+            if let plane = doc.refPlanes[s] ?? doc.orderedRefPlanes.first(where: { $0.name == s }) {
+                refs.append(plane.id)
+                continue
+            }
             if s.hasPrefix("sketch-") || doc.sketches[String(s.split(separator: "/").first ?? "")] != nil {
                 guard doc.referenceExists(s) else {
                     throw ForgeError(.unknownEntity, "no sketch entity '\(s)'", entities: [s],

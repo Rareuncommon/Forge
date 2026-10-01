@@ -124,6 +124,10 @@ typedef struct FKEdgeInfo {
     double midpoint[3];
     int32_t isDegenerate;
     int32_t adjacentFaces;
+    /* Analytic circle data, valid only for FK_CURVE_CIRCLE. */
+    double circleCenter[3];
+    double circleAxis[3];
+    double circleRadius;
 } FKEdgeInfo;
 
 /* ---- library ---------------------------------------------------------- */
@@ -261,6 +265,11 @@ int32_t fk_face_info(const FKShape *shape, int32_t faceIndex, FKFaceInfo *out, F
 int32_t fk_edge_info(const FKShape *shape, int32_t edgeIndex, FKEdgeInfo *out, FKError *err);
 /* Indices of the faces adjacent to an edge (up to maxOut); returns count or -1. */
 int32_t fk_edge_faces(const FKShape *shape, int32_t edgeIndex, int32_t *outFaces, int32_t maxOut, FKError *err);
+/* Extract one face (kind 0), edge (1), or vertex (2), with the same indexed-map order
+   as face/edge info. Returned immutable shape handle is owned by the caller. */
+FKShape *fk_subshape(const FKShape *shape, int32_t kind, int32_t index, FKError *err);
+int32_t fk_vertex_position(const FKShape *shape, int32_t index, double outPoint[3], FKError *err);
+
 /* Minimum distance between two shapes; points receive the closest pair. */
 int32_t fk_distance(const FKShape *a, const FKShape *b, double *outDistance, double outPointA[3], double outPointB[3], FKError *err);
 

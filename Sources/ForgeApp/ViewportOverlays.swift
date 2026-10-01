@@ -431,8 +431,13 @@ struct ContextToolbar: View {
                 item(.fillet, "Fillet") { model.begin(.fillet) }
                 item(.chamfer, "Chamfer") { model.begin(.chamfer) }
             }
-            if model.selection.count == 2 { item(.measure, "Measure") { model.begin(.measure) } }
-            if !model.selectedBodies.isEmpty { item(.massProps, "Mass Properties") { model.begin(.massProperties) } }
+            if (1...2).contains(model.selection.count) { item(.measure, "Measure") { model.begin(.measure) } }
+            if !model.selectedBodies.isEmpty {
+                item(.hideShow, "Hide Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, false) } }
+                item(.part, "Isolate Bodies") { Task { await model.isolateBodies(model.selectedBodies) } }
+                item(.massProps, "Mass Properties") { model.begin(.massProperties) }
+            }
+            if model.isIsolatingBodies { item(.part, "Exit Isolation") { Task { await model.exitBodyIsolation() } } }
             item(.zoomFit, "Zoom to Fit") { model.zoomToFit() }
         }
     }
@@ -506,12 +511,12 @@ struct ShortcutBar: View {
 
     private var entries: [Entry] {
         if model.activeSketch != nil {
-            let tools: [SketchTool] = [.line, .rectangle, .circle, .arc, .slot, .polygon, .spline, .ellipse, .point, .fillet, .chamfer, .trim, .extend, .dimension]
+            let tools: [SketchTool] = [.line, .rectangle, .circle, .arc, .slot, .polygon, .spline, .ellipse, .point, .fillet, .chamfer, .trim, .extend, .split, .dimension]
             return tools.map { t in Entry(icon: t.icon, title: t.title) { model.chooseTool(t) } }
                 + [Entry(icon: .exitSketch, title: "Exit Sketch") { Task { await model.exitSketch() } }]
         }
         var out: [Entry] = [
-            Entry(icon: .sketch, title: "Sketch on Front Plane") { Task { await model.newSketch(on: .front) } },
+            Entry(icon: .sketch, title: model.sketchStartTitle) { Task { await model.startSketchFromSelection() } },
             Entry(icon: .extrude, title: "Extruded Boss/Base") { model.begin(.extrude) },
             Entry(icon: .revolve, title: "Revolved Boss/Base") { model.begin(.revolve) },
             Entry(icon: .cutExtrude, title: "Extruded Cut") { model.begin(.cutExtrude) },

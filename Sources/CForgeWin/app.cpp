@@ -1562,6 +1562,67 @@ static char *dup(const std::wstring &w) {
     return out;
 }
 
+struct NameDialogState {
+    std::wstring title;
+    std::wstring name;
+};
+
+static INT_PTR CALLBACK nameDialogProc(HWND dialog, UINT message, WPARAM wp, LPARAM lp) {
+    if (message == WM_INITDIALOG) {
+        auto *state = reinterpret_cast<NameDialogState *>(lp);
+        SetWindowLongPtrW(dialog, DWLP_USER, lp);
+        SetWindowTextW(dialog, state->title.c_str());
+        auto control = [dialog](const wchar_t *kind, const wchar_t *text, DWORD style,
+                                int id, int x, int y, int w, int h) {
+            RECT r = {x, y, x + w, y + h};
+            MapDialogRect(dialog, &r);
+            HWND child = CreateWindowExW(kind == std::wstring(L"EDIT") ? WS_EX_CLIENTEDGE : 0,
+                kind, text, WS_CHILD | WS_VISIBLE | style, r.left, r.top,
+                r.right - r.left, r.bottom - r.top, dialog, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                GetModuleHandleW(nullptr), nullptr);
+            SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+            return child;
+        };
+        control(L"STATIC", L"Name:", 0, -1, 10, 8, 210, 12);
+        HWND edit = control(L"EDIT", state->name.c_str(), WS_TABSTOP | ES_AUTOHSCROLL, 100, 10, 22, 220, 15);
+        control(L"BUTTON", L"Rename", WS_TABSTOP | BS_DEFPUSHBUTTON, IDOK, 110, 48, 56, 16);
+        control(L"BUTTON", L"Cancel", WS_TABSTOP | BS_PUSHBUTTON, IDCANCEL, 174, 48, 56, 16);
+        SendMessageW(dialog, DM_SETDEFID, IDOK, 0);
+        SetFocus(edit);
+        SendMessageW(edit, EM_SETSEL, 0, -1);
+        return FALSE; // focus was explicitly assigned to the name field
+    }
+    if (message == WM_COMMAND && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
+        if (LOWORD(wp) == IDOK) {
+            auto *state = reinterpret_cast<NameDialogState *>(GetWindowLongPtrW(dialog, DWLP_USER));
+            state->name = windowText(GetDlgItem(dialog, 100));
+        }
+        EndDialog(dialog, LOWORD(wp));
+        return TRUE;
+    }
+    if (message == WM_CLOSE) {
+        EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+extern "C" char *fw_name_dialog(fw_app *a, const char *title, const char *current_name) {
+    // A zero-control template; controls are created in WM_INITDIALOG. The three
+    // terminating WORDs are the variable menu, class and title template fields.
+    struct alignas(DWORD) NameTemplate {
+        DLGTEMPLATE dialog;
+        WORD menu, windowClass, title;
+    } templ = {};
+    templ.dialog.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    templ.dialog.cx = 240;
+    templ.dialog.cy = 74;
+    NameDialogState state{fw_widen(title), fw_widen(current_name)};
+    INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &templ.dialog, a->hwnd,
+        nameDialogProc, reinterpret_cast<LPARAM>(&state));
+    return result == IDOK ? dup(state.name) : nullptr;
+}
+
 extern "C" char *fw_save_dialog(fw_app *a, const char *suggested_name) {
     wchar_t file[MAX_PATH] = {};
     lstrcpynW(file, fw_widen(suggested_name).c_str(), MAX_PATH);

@@ -309,7 +309,7 @@ final class WinShell {
 
     private func pushMenus() {
         guard let app else { return }
-        let (display, style, canNormal) = observe({ (model.display, viewport?.style ?? .shadedWithEdges, model.activeSketch != nil) }) { $0.dirtyMenus = true }
+        let (display, style, canNormal) = observe({ (model.display, viewport?.style ?? .shadedWithEdges, model.canNormalTo) }) { $0.dirtyMenus = true }
         fw_set_menu_check(app, Int32(FW_MENU_PERSPECTIVE), display.perspective ? 1 : 0)
         fw_set_menu_check(app, Int32(FW_MENU_PLANES), display.planes ? 1 : 0)
         fw_set_menu_check(app, Int32(FW_MENU_RELATIONS), display.relations ? 1 : 0)
@@ -450,6 +450,12 @@ final class WinPlatform: PlatformServices {
 
     func confirm(_ title: String, _ message: String, confirm: String, cancel: String) -> Bool {
         fw_confirm(app, title, message, confirm, cancel) != 0
+    }
+
+    func requestName(_ title: String, currentName: String) -> String? {
+        guard let p = fw_name_dialog(app, title, currentName) else { return nil }
+        defer { fw_free(p) }
+        return String(cString: p)
     }
 
     func chooseSavePath(suggestedName name: String) -> String? {

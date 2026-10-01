@@ -42,6 +42,24 @@ public final class Shape: @unchecked Sendable {
         }
     }
 
+    public enum SubshapeKind: Int32, Sendable { case face = 0, edge, vertex }
+
+    /// Extract one topological entity without copying or modifying its geometry.
+    public func subshape(_ kind: SubshapeKind, index: Int) throws -> Shape {
+        guard let i = Int32(exactly: index), i >= 0 else { throw ForgeError(.invalidParams, "invalid subshape index") }
+        var err = FKError()
+        guard let h = fk_subshape(handle, kind.rawValue, i, &err) else { throw Kernel.error(err) }
+        return Shape(owning: h)
+    }
+
+    public func vertex(_ index: Int) throws -> Vec3 {
+        guard let i = Int32(exactly: index), i >= 0 else { throw ForgeError(.invalidParams, "invalid vertex index") }
+        var point = [Double](repeating: 0, count: 3)
+        var err = FKError()
+        if fk_vertex_position(handle, i, &point, &err) != 0 { throw Kernel.error(err) }
+        return Vec3(point[0], point[1], point[2])
+    }
+
     public struct Topology: Codable, Sendable, Hashable {
         public var solids, shells, faces, wires, edges, vertices: Int
     }
@@ -136,6 +154,9 @@ public final class Shape: @unchecked Sendable {
         public var midpoint: Vec3
         public var isDegenerate: Bool
         public var faces: [Int]
+        public var circleCenter: Vec3?
+        public var circleAxis: Vec3?
+        public var circleRadius: Double?
     }
 
     public func edge(_ index: Int) throws -> EdgeInfo {
@@ -150,7 +171,10 @@ public final class Shape: @unchecked Sendable {
             index: index, curveType: types[min(Int(e.curveType), types.count - 1)], length: e.length,
             start: Vec3(e.start.0, e.start.1, e.start.2), end: Vec3(e.end.0, e.end.1, e.end.2),
             midpoint: Vec3(e.midpoint.0, e.midpoint.1, e.midpoint.2), isDegenerate: e.isDegenerate != 0,
-            faces: faces.prefix(Int(min(n, 8))).map { Int($0) })
+            faces: faces.prefix(Int(min(n, 8))).map { Int($0) },
+            circleCenter: e.circleRadius > 0 ? Vec3(e.circleCenter.0, e.circleCenter.1, e.circleCenter.2) : nil,
+            circleAxis: e.circleRadius > 0 ? Vec3(e.circleAxis.0, e.circleAxis.1, e.circleAxis.2) : nil,
+            circleRadius: e.circleRadius > 0 ? e.circleRadius : nil)
     }
 
     /// Tessellate for display/picking. `linearDeflection` ≤ 0 picks an automatic value.

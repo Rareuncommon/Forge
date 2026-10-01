@@ -55,20 +55,27 @@ extension AppModel {
         if !bodies.isEmpty {
             let kids = bodies.filter { matches($0.name) }.map { b in
                 TreeNode(
-                    id: b.id, icon: .part, title: b.name, tooltip: "\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³",
+                    id: b.id, icon: hiddenBodyIDs.contains(b.id) ? .hideShow : .part, title: b.name + (hiddenBodyIDs.contains(b.id) ? " (Hidden)" : ""), tooltip: "\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³",
                     selected: selection.contains(b.id), select: { [unowned self] extend in Task { await select(b.id, extend: extend) } },
                     menu: [
+                        (hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body", { [unowned self] in Task { await setBodiesVisible([b.id], hiddenBodyIDs.contains(b.id)) } }),
+                        ("Isolate Body", { [unowned self] in Task { await isolateBodies([b.id]) } }),
+                        ("Rename…", { [unowned self] in Task { await renameBody(b.id) } }),
                         ("Mass Properties", { [unowned self] in Task { await select(b.id, extend: false); begin(.massProperties) } }),
                         ("Export STEP…", { [unowned self] in Task { await select(b.id, extend: false); export("step") } }),
                         ("Export STL…", { [unowned self] in Task { await select(b.id, extend: false); export("stl") } }),
                     ])
             }
-            out.append(TreeNode(id: "bodies", icon: .folder, title: "Solid Bodies (\(bodies.count))", children: kids))
+            var menu: [(title: String, action: () -> Void)] = [("Show All Bodies", { [unowned self] in Task { await showAllBodies() } })]
+            if isIsolatingBodies { menu.append(("Exit Isolation", { [unowned self] in Task { await exitBodyIsolation() } })) }
+            out.append(TreeNode(id: "bodies", icon: .folder, title: "Solid Bodies (\(bodies.count))", children: kids, menu: menu))
         }
         for p in StandardPlane.allCases where matches(p.rawValue + " plane") {
             let name = "\(p.rawValue.capitalized) Plane"
             out.append(TreeNode(
                 id: "plane-" + p.rawValue, icon: .plane, title: name, tooltip: "Double-click to sketch on this plane",
+                selected: selection.contains("plane-" + p.rawValue),
+                select: { [unowned self] extend in Task { await select("plane-" + p.rawValue, extend: extend) } },
                 activate: { [unowned self] in Task { await newSketch(on: p) } }, menu: [("Sketch on \(name)", { [unowned self] in Task { await newSketch(on: p) } })]))
         }
         if matches("origin") { out.append(TreeNode(id: "origin", icon: .origin, title: "Origin")) }
@@ -104,6 +111,7 @@ extension AppModel {
     private func sketchNode(_ s: SketchRow, feature: FeatureRow?) -> TreeNode {
         let prefix = s.status == .underDefined ? "(-) " : s.status == .redundant || s.status == .conflicting ? "(+) " : s.status == .failed ? "(?) " : ""
         var menu: [(title: String, action: () -> Void)] = [("Edit Sketch", { [unowned self] in Task { await editSketch(s.id) } })]
+        if let feature { menu.append(("Rename…", { [unowned self] in Task { await renameFeature(feature.id) } })) }
         if let feature { menu.append(("Delete", { [unowned self] in Task { await run("feature.delete", ["feature": .string(feature.id)]) } })) }
         return TreeNode(
             id: s.id, icon: .sketch, title: prefix + s.name, selected: selection.contains(s.id) || activeSketch == s.id,
@@ -126,6 +134,7 @@ extension AppModel {
         menu.append((f.suppressed ? "Unsuppress" : "Suppress", { [unowned self] in
             Task { await run("feature.suppress", ["feature": .string(f.id), "suppressed": .bool(!f.suppressed)]) }
         }))
+        menu.append(("Rename…", { [unowned self] in Task { await renameFeature(f.id) } }))
         menu.append(("Parent/Child…", { [unowned self] in Task { await showFeatureDependencies(f.id) } }))
         if rollback == nil, let index = features.firstIndex(where: { $0.id == f.id }) {
             if index > 0 { menu.append(("Move Up", { [unowned self] in Task { await moveFeature(f.id, by: -1) } })) }
@@ -148,17 +157,19 @@ extension AppModel {
         let bodySelected = f.createdBodies.contains { selection.contains($0) }
         return TreeNode(
             id: f.id, icon: f.icon, title: f.name, tooltip: f.error ?? "", selected: bodySelected, state: state, children: children,
-            select: { [unowned self] _ in treeSelect(f) }, activate: { [unowned self] in treeActivate(f) }, menu: menu)
+            select: { [unowned self] extend in treeSelect(f, extend: extend) }, activate: { [unowned self] in treeActivate(f) }, menu: menu)
     }
 
     /// Click on a feature: toggles it as a seed while a pattern or mirror is open, otherwise
     /// selects its bodies.
-    package func treeSelect(_ f: FeatureRow) {
+    package func treeSelect(_ f: FeatureRow, extend: Bool = false) {
         if let op = operation, [Operation.linearPattern, .circularPattern, .mirror].contains(op), !f.isSketch {
             if let i = form.seeds.firstIndex(of: f.id) { form.seeds.remove(at: i) } else { form.seeds.append(f.id) }
             return
         }
-        if !f.createdBodies.isEmpty && f.command != "plane.create" {
+        if f.command == "plane.create", let plane = f.createdBodies.first {
+            Task { await select(plane, extend: extend) }
+        } else if !f.createdBodies.isEmpty {
             Task { await select(f.createdBodies) }
         }
     }

@@ -98,3 +98,34 @@ SolidWorks functionality and acceptance criteria. This remains an early part mod
 
 A script is JSON: `{"forge_script": 1, "commands": [{"command": "...", "params": {...}}],
 "expect": {"bodies": [{"body": "body-1", "volume_mm3": {"value": 1000, "tol": 1e-6}}]}}`.
+
+Select a planar part face and choose **Features → Sketch on Face** to draw directly
+on it. **Normal To** aligns the view with a selected face or reference plane even
+without opening a sketch. In sketch mode, **Select Model Geometry** lets you pick
+part edges or faces; **Convert Entities** copies their projected boundaries into the
+sketch. These are detached copies, not associative links; lines and parallel
+circles/arcs are supported. **Split Entities** uses one click for lines/arcs and two
+clicks on a closed circle/ellipse.
+
+**Move/Copy Bodies** provides translation and optional rotation, copy, preview and
+feature editing. Extrusion pages support **Up To Vertex** with model-coordinate
+inputs in either direction. Body and feature tree menus include **Rename** on all
+platforms. Lost sketch supports now block dependent features; use
+`feature.repair_reference` to attach the sketch to a replacement planar support.
+
+The [complete modeling gap inventory](docs/research/modeling-workflow-gaps.md)
+accounts for all 1,000 matrix entries and documents remaining work.
+
+**Measure** accepts one face, edge, vertex or body for its size/coordinates, or two
+for minimum distance and closest points. The MCP `measure` tool uses `from` and an
+optional `to`; results use millimeters. Angle and maximum-distance modes remain pending.
+
+Use the body tree or **Features → Visibility** to hide/show bodies, isolate a selection,
+exit isolation or show all bodies. Hidden bodies are excluded from drawing and picking;
+they still participate in modeling, measurements and exports. Ordinary hidden state is
+saved; isolation is temporary and restores the prior visibility when exited.
+
+The Slot tool offers straight, centerpoint straight, centerpoint arc and three-point arc
+variants. Curved slots use center/start/end/width or start/end/through/width clicks,
+respect construction mode and remain editable with sketch dimensions and relations.
+The typed command is `sketch.add_arc_slot`; it rejects collapsed or self-overlapping slots.

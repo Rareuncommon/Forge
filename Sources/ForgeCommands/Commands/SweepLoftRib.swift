@@ -140,7 +140,7 @@ public enum BodySweep: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let pathSketch = try doc.sketch(p.path)
+        let pathSketch = try doc.modelingSketch(p.path)
         let (segments, pathIDs) = try pathSketch.pathChain(p.pathEntities)
         let path = try Kernel.wire(segments)
         let feature = doc.currentFeature
@@ -153,7 +153,7 @@ public enum BodySweep: Command {
             face = try Kernel.faces(loops: [[.circle(center: start.point, normal: start.tangent, radius: d.millimeters / 2)]], regions: [0])
             edgeNames = ["circle"]
         } else {
-            let sk = try doc.sketch(p.profile)
+            let sk = try doc.modelingSketch(p.profile)
             let (loops, regions, ids) = try sk.profileLoopsWithIDs()
             face = try Kernel.faces(loops: loops, regions: regions)
             edgeNames = try Naming.profileEdges(face, segmentIDs: ids)
@@ -213,7 +213,7 @@ public enum BodyLoft: Command {
         var doc = try ctx.requireDocument()
         var sections: [NamedShape] = []
         for ref in p.profiles {
-            let sk = try doc.sketch(ref)
+            let sk = try doc.modelingSketch(ref)
             let (loops, regions, ids) = try sk.profileLoopsWithIDs()
             guard Set(regions).count == 1 else {
                 throw ForgeError(.invalidParams, "\(sk.name) has \(Set(regions).count) separate profiles; a loft profile is one closed loop", entities: [sk.id])
@@ -290,7 +290,7 @@ public enum BodyRib: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let sk = try doc.sketch(p.sketch)
+        let sk = try doc.modelingSketch(p.sketch)
         let (segments, ids) = try sk.pathChain()
         var points: [Vec3] = []
         for s in segments {

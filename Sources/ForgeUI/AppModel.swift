@@ -19,7 +19,7 @@ package enum RibbonTab: String, CaseIterable, Identifiable {
 package enum Operation: Hashable {
     case extrude, cutExtrude, revolve, cutRevolve, hole, fillet, chamfer, shell, draft, plane, linearPattern, circularPattern, mirror, combine
     case sweep, cutSweep, loft, cutLoft, rib
-    case massProperties, measure, check, interference
+    case massProperties, measure, check, interference, moveBody
     case primitive(Primitive)
     // Sketch operations on the selected sketch entities.
     case addRelation, displayRelations, sketchOffset, sketchMirror, sketchLinearPattern, sketchCircularPattern
@@ -46,6 +46,7 @@ package enum Operation: Hashable {
         case .shell: "Shell"
         case .draft: "Draft"
         case .combine: "Combine"
+        case .moveBody: "Move/Copy Bodies"
         case .massProperties: "Mass Properties"
         case .measure: "Measure"
         case .check: "Check"
@@ -82,6 +83,7 @@ package enum Operation: Hashable {
         case .shell: .shell
         case .draft: .draft
         case .combine: .combine
+        case .moveBody: .move
         case .massProperties: .massProps
         case .measure: .measure
         case .check: .check
@@ -175,6 +177,7 @@ package struct FeatureRow: Identifiable, Equatable {
         case "body.shell": .shell
         case "body.draft": .draft
         case "body.boolean": .combine
+        case "body.transform": .moveBody
         case "body.create_box": .primitive(.box)
         case "body.create_cylinder": .primitive(.cylinder)
         case "body.create_sphere": .primitive(.sphere)
@@ -238,6 +241,8 @@ package final class AppModel {
     /// Bumped whenever the scene must be re-uploaded to the GPU.
     package var sceneVersion = 0
     package var scene = DocumentSceneBox()
+    package var hiddenBodyIDs: Set<String> = []
+    package var isIsolatingBodies = false
     /// The document's scene before reference geometry (planes, axes, the sketch grid).
     @ObservationIgnored private var baseScene: DocumentScene?
     @ObservationIgnored private var referenceInputs: ReferenceInputs?
@@ -389,6 +394,8 @@ package final class AppModel {
     package func refresh() async {
         guard let doc = await engine.activeDocument else { return }
         documentName = doc.name
+        hiddenBodyIDs = Set(doc.bodyOrder.filter { !doc.isBodyVisible($0) })
+        isIsolatingBodies = doc.isolatedBodyIDs != nil
         bodies = (try? doc.orderedBodies.map(BodySummary.init)) ?? []
         sketches = doc.orderedSketches.map {
             SketchRow(
@@ -505,8 +512,22 @@ package final class AppModel {
         return true
     }
 
+    package var canNormalTo: Bool { sketchState.plane != nil || selectedFace != nil || selection.contains { $0.hasPrefix("plane-") } }
+
     package func normalToSketch() {
-        if let p = sketchState.plane { viewportCommands.send(.normalTo(p)) }
+        if let plane = sketchState.plane { viewportCommands.send(.normalTo(plane)) }
+        else { Task { await normalToSelection() } }
+    }
+
+    package func normalToSelection() async {
+        if let plane = sketchState.plane { viewportCommands.send(.normalTo(plane)); return }
+        guard let ref = selectedFace ?? selection.last(where: { $0.hasPrefix("plane-") }) else { return }
+        do {
+            guard let doc = await engine.activeDocument else { return }
+            let placement = ref.hasPrefix("plane-") && StandardPlane(rawValue: String(ref.dropFirst(6))) != nil ? String(ref.dropFirst(6)) : ref
+            viewportCommands.send(.normalTo(try doc.resolvePlacement(placement)))
+            lastError = nil
+        } catch { lastError = ForgeError.wrap(error) }
     }
 
     /// Bodies in the selection (a face/edge selection counts for its body).

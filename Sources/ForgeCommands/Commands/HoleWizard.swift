@@ -136,7 +136,7 @@ public enum BodyHole: Command {
 
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
         var doc = try ctx.requireDocument()
-        let sk = try doc.sketch(p.sketch)
+        let sk = try doc.modelingSketch(p.sketch)
         let centres = sk.orderedEntities.filter { $0.kind == .point && !$0.construction && $0.owner == nil && $0.id != Sketch.originID }
         guard !centres.isEmpty else {
             throw ForgeError(

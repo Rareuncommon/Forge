@@ -127,6 +127,7 @@ public struct DocumentPackage: Sendable, Equatable {
         public var baseBodies: [String]
         public var baseSources: [BodyRecord]?
         public var bodyNames: [String: String]
+        public var hiddenBodies: [String]?
         /// Reference planes (outputs of Plane features), as JSON records.
         public var refPlanes: [JSONValue]?
         public var nextPlane: Int?
@@ -134,7 +135,8 @@ public struct DocumentPackage: Sendable, Equatable {
         public init(
             name: String, units: UnitSystem, bodies: [BodyRecord], sketches: [Sketch], nextBody: Int, nextSketch: Int,
             features: [FeatureRecord] = [], rollback: Int? = nil, nextFeature: Int = 1, featureCounters: [String: Int] = [:],
-            baseBodies: [String] = [], bodyNames: [String: String] = [:], refPlanes: [JSONValue]? = nil, nextPlane: Int? = nil, baseSources: [BodyRecord]? = nil
+            baseBodies: [String] = [], bodyNames: [String: String] = [:], refPlanes: [JSONValue]? = nil, nextPlane: Int? = nil, baseSources: [BodyRecord]? = nil,
+            hiddenBodies: [String]? = nil
         ) {
             self.name = name
             self.units = units
@@ -149,6 +151,7 @@ public struct DocumentPackage: Sendable, Equatable {
             self.baseBodies = baseBodies
             self.baseSources = baseSources
             self.bodyNames = bodyNames
+            self.hiddenBodies = hiddenBodies
             self.refPlanes = refPlanes
             self.nextPlane = nextPlane
         }
@@ -162,6 +165,7 @@ public struct DocumentPackage: Sendable, Equatable {
             case baseBodies = "base_bodies"
             case baseSources = "base_sources"
             case bodyNames = "body_names"
+            case hiddenBodies = "hidden_bodies"
             case refPlanes = "ref_planes"
             case nextPlane = "next_plane"
         }

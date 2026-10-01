@@ -147,6 +147,16 @@ public enum FeatureRepairReference: Command {
         var doc = try ctx.requireDocument()
         let i = try doc.featureIndex(p.feature)
         let before = doc.state(before: i, registry: ctx.registry)
+        if let sid = doc.features[i].sketchID, var sketch = doc.sketches[sid], sketch.placement == p.old {
+            // Sketch attachment is persisted on the sketch, not in its feature's params.
+            _ = try before.resolvePlacement(p.new)
+            sketch.placement = before.refPlanes[p.new]?.id ?? before.orderedRefPlanes.first(where: { $0.name == p.new })?.id
+                ?? before.persistentRef(p.new, defaultBody: nil, bareKind: nil).ref
+            doc.sketches[sid] = sketch
+            doc.regenerate(from: i, registry: ctx.registry)
+            ctx.document = doc
+            return FeatureTreeOutput(doc)
+        }
         guard before.referenceExists(p.new) else {
             throw ForgeError(
                 .unknownEntity, "\(p.new) does not exist in the model before \(doc.features[i].name)", entities: [p.new],

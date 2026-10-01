@@ -229,6 +229,22 @@ struct AppliedFeatureTests {
 
 @Suite("Reference planes and sketches on faces")
 struct ReferencePlaneTests {
+    @Test func planeSelectionSurvivesRebuildAndPrunesOnlyLostSupport() async throws {
+        let engine = Engine()
+        try await engine.execute("document.new")
+        try await engine.execute("plane.create", ["reference": "top", "offset": 20])
+        try await engine.execute("body.create_box", ["width": 10, "height": 20, "depth": 30])
+        try await engine.execute("selection.set", ["entities": ["plane-front", "plane-1"]])
+        try await engine.execute("document.regenerate")
+        #expect(await engine.activeDocument?.selection == ["plane-front", "plane-1"])
+        try await engine.execute("feature.edit", ["feature": "feature-1", "params": ["offset": 40]])
+        #expect(await engine.activeDocument?.selection == ["plane-front", "plane-1"])
+        try await engine.execute("feature.suppress", ["feature": "feature-1", "suppressed": true])
+        #expect(await engine.activeDocument?.selection == ["plane-front"])
+        #expect(await engine.activeDocument?.referenceExists("plane-1") == false)
+        #expect(await engine.activeDocument?.referenceExists("plane-missing") == false)
+    }
+
     func topFace(_ e: Engine, _ body: String = "body-1") async throws -> String {
         let faces = try await e.execute("query.faces", ["body": .string(body)]).result["faces"]!.arrayValue!
         return faces.first { $0["normal"]!.arrayValue!.map { $0.doubleValue! } == [0, 1, 0] }!["id"]!.stringValue!
@@ -267,7 +283,8 @@ struct ReferencePlaneTests {
         #expect(names == ["Plane1", "Sketch1", "Boss-Extrude1"])
         // Deleting the plane leaves the sketch with a lost reference.
         let states = try await e.execute("feature.delete", ["feature": "Plane1"]).result["features"]!.arrayValue!.map { $0["state"]!.stringValue! }
-        #expect(states == ["error", "ok"])
+        #expect(states == ["error", "error"])
+        #expect(await e.activeDocument!.bodies.isEmpty)
     }
 }
 

@@ -36,6 +36,14 @@ public struct Document: Sendable {
     public internal(set) var bodies: [String: Body] = [:]
     /// Explicit, queryable selection (SPEC §5.4: no hidden state). Entity reference strings.
     public var selection: [String] = []
+    /// Persistent display visibility; geometry and exports still include hidden bodies.
+    public var hiddenBodyIDs: Set<String> = []
+    /// Temporary isolation whitelist. Nil restores ordinary saved visibility.
+    public var isolatedBodyIDs: Set<String>?
+
+    public func isBodyVisible(_ id: String) -> Bool {
+        isolatedBodyIDs.map { $0.contains(id) } ?? !hiddenBodyIDs.contains(id)
+    }
     var nextBodyNumber = 1
 
     /// Sketches in creation order.
@@ -192,6 +200,16 @@ public struct Document: Sendable {
             suggestions: [SuggestedFix(description: "List document state", command: "document.state")])
     }
 
+    /// Profiles with unavailable attachments must never generate solids from stale geometry.
+    func modelingSketch(_ reference: String?) throws -> Sketch {
+        let s = try sketch(reference)
+        if let source = features.first(where: { $0.sketchID == s.id }),
+            source.status.state == .error || source.status.state == .suppressed || source.status.state == .rolledBack {
+            throw ForgeError(.referenceLost, "sketch \(s.name) is unavailable; repair or restore its feature before modeling", entities: [s.id, source.id])
+        }
+        return s
+    }
+
     public mutating func updateSketch(_ s: Sketch) {
         precondition(sketches[s.id] != nil)
         sketches[s.id] = s
@@ -217,6 +235,8 @@ public struct Document: Sendable {
     /// Whether a reference string names something that currently exists: "body-1",
     /// "body-1/face-3", "sketch-2", "sketch-2/line-5".
     public func referenceExists(_ ref: String) -> Bool {
+        if ref.hasPrefix("plane-"), StandardPlane(rawValue: String(ref.dropFirst(6))) != nil { return true }
+        if refPlanes[ref] != nil { return true }
         let parts = ref.split(separator: "/", maxSplits: 1).map(String.init)
         guard let head = parts.first else { return false }
         if let sk = sketches[head] {

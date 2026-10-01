@@ -33,7 +33,8 @@ enum DocumentFiles {
             nextFeature: doc.nextFeatureNumber, featureCounters: doc.featureNameCounters, baseBodies: doc.baseBodies.map(\.id),
             bodyNames: doc.bodyNames,
             refPlanes: doc.refPlaneOrder.isEmpty ? nil : try doc.orderedRefPlanes.map { try JSONCoding.toJSON($0) },
-            nextPlane: doc.nextPlaneNumber == 1 ? nil : doc.nextPlaneNumber, baseSources: sources.isEmpty ? nil : sources)
+            nextPlane: doc.nextPlaneNumber == 1 ? nil : doc.nextPlaneNumber, baseSources: sources.isEmpty ? nil : sources,
+            hiddenBodies: doc.hiddenBodyIDs.isEmpty ? nil : doc.hiddenBodyIDs.sorted())
         return DocumentPackage(
             manifest: DocumentPackage.Manifest(app: appVersion, kernel: Kernel.version), model: model, breps: breps,
             thumbnailPNG: try thumbnail(doc), baseBreps: baseBreps)
@@ -42,6 +43,8 @@ enum DocumentFiles {
     /// 256 px isometric thumbnail for Finder / Quick Look (deterministic).
     static func thumbnail(_ doc: Document) throws -> Data? {
         guard !doc.bodyOrder.isEmpty || !doc.sketchOrder.isEmpty else { return nil }
+        var doc = doc
+        doc.isolatedBodyIDs = nil
         let ds = try DocumentScene(document: doc)
         guard let bounds = ds.scene.bounds else { return nil }
         var cam = Camera()
@@ -92,6 +95,11 @@ enum DocumentFiles {
             }
         }
         doc.bodyNames = m.bodyNames
+        // Keep visibility for suppressed/rolled-back outputs, but never let an unknown
+        // package ID silently hide a body created later in this session.
+        let knownBodyIDs = Set(m.bodies.map(\.id) + (m.baseSources ?? []).map(\.id)
+            + m.features.flatMap(\.createdBodies).filter { $0.hasPrefix("body-") })
+        doc.hiddenBodyIDs = Set(m.hiddenBodies ?? []).intersection(knownBodyIDs)
         for r in try (m.refPlanes ?? []).map({ try JSONCoding.fromJSON(RefPlane.self, $0) }) {
             doc.refPlanes[r.id] = r
             doc.refPlaneOrder.append(r.id)

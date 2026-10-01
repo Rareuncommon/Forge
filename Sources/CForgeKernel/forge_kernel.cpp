@@ -1393,6 +1393,12 @@ int32_t fk_edge_info(const FKShape *shape, int32_t edgeIndex, FKEdgeInfo *out, F
         BRepAdaptor_Curve curve(edge);
         out->curveType = curveType(curve.GetType());
         out->length = GCPnts_AbscissaPoint::Length(curve);
+        if (curve.GetType() == GeomAbs_Circle) {
+            const gp_Circ circle = curve.Circle();
+            put3(out->circleCenter, circle.Location().XYZ());
+            put3(out->circleAxis, circle.Axis().Direction().XYZ());
+            out->circleRadius = circle.Radius();
+        }
         put3(out->midpoint, curve.Value(0.5 * (curve.FirstParameter() + curve.LastParameter())).XYZ());
     } else {
         out->curveType = FK_CURVE_OTHER;
@@ -1432,6 +1438,40 @@ int32_t fk_edge_faces(const FKShape *shape, int32_t edgeIndex, int32_t *outFaces
     for (int32_t i = 0; i < (int32_t)found.size() && i < maxOut; ++i) outFaces[i] = found[i];
     return static_cast<int32_t>(found.size());
     FK_END(-1)
+}
+
+FKShape *fk_subshape(const FKShape *shape, int32_t kind, int32_t index, FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err)) return nullptr;
+    if (kind < 0 || kind > 2 || index < 0) {
+        setError(err, FK_ERR_INVALID_ARGUMENT, "invalid subshape kind or index");
+        return nullptr;
+    }
+    FK_BEGIN
+    const TopAbs_ShapeEnum types[] = {TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX};
+    TopTools_IndexedMapOfShape map;
+    TopExp::MapShapes(shape->shape, types[kind], map);
+    if (index >= map.Extent()) {
+        setError(err, FK_ERR_OUT_OF_RANGE, "subshape index out of range");
+        return nullptr;
+    }
+    return wrap(map(index + 1));
+    FK_END(nullptr)
+}
+
+int32_t fk_vertex_position(const FKShape *shape, int32_t index, double outPoint[3], FKError *err) {
+    clearError(err);
+    if (!hasShape(shape, err) || !outPoint) return FK_ERR_INVALID_ARGUMENT;
+    FK_BEGIN
+    TopTools_IndexedMapOfShape vertices;
+    TopExp::MapShapes(shape->shape, TopAbs_VERTEX, vertices);
+    if (index < 0 || index >= vertices.Extent()) {
+        setError(err, FK_ERR_OUT_OF_RANGE, "vertex index out of range");
+        return FK_ERR_OUT_OF_RANGE;
+    }
+    put3(outPoint, BRep_Tool::Pnt(TopoDS::Vertex(vertices(index + 1))).XYZ());
+    return FK_OK;
+    FK_END(FK_ERR_KERNEL_EXCEPTION)
 }
 
 int32_t fk_distance(const FKShape *a, const FKShape *b, double *outDistance, double outPointA[3], double outPointB[3], FKError *err) {

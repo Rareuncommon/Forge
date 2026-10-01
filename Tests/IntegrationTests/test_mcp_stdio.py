@@ -58,6 +58,62 @@ class MCPWorkflowTests(unittest.TestCase):
             self.assertFalse(responses[2]["result"]["isError"])
             self.assertEqual(responses[2]["result"]["structuredContent"]["bodies"], [])
 
+    def test_face_sketch_conversion_builds_an_analytic_boss(self):
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        responses = self.run_calls(executable, [
+            ("new_document", {}),
+            ("execute", {"command": "body.create_box", "params": {"width": 10, "height": 20, "depth": 30}}),
+            ("execute", {"command": "sketch.create", "params": {"face": "body-1/face-5"}}),
+            ("convert_entities", {"entities": ["body-1/face-5"]}),
+            ("execute", {"command": "sketch.exit", "params": {}}),
+            ("execute", {"command": "body.extrude", "params": {"sketch": "sketch-1", "depth": 2}}),
+            ("compare_to_spec", {"spec": {"body_count": 2, "bodies": [
+                {"body": "body-1", "volume_mm3": {"value": 6000, "tol": 1e-6}},
+                {"body": "body-2", "volume_mm3": {"value": 400, "tol": 1e-6}},
+            ]}}),
+        ])
+        for response in responses:
+            self.assertFalse(response["result"]["isError"], response)
+        self.assertTrue(responses[-1]["result"]["structuredContent"]["passed"])
+
+    def test_curved_slot_measurement_and_body_visibility(self):
+        import math
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        with tempfile.TemporaryDirectory() as temporary:
+            saved = str(Path(temporary) / "curved-slot.forgepart")
+            responses = self.run_calls(executable, [
+                ("new_document", {}),
+                ("execute", {"command": "sketch.create", "params": {"plane": "front"}}),
+                ("execute", {"command": "sketch.add_arc_slot", "params": {
+                    "center": [0, 0], "start": [10, 0], "end": [0, 10], "width": 4}}),
+                ("execute", {"command": "sketch.exit", "params": {}}),
+                ("execute", {"command": "body.extrude", "params": {"sketch": "sketch-1", "depth": 3}}),
+                ("measure", {"from": "body-1"}),
+                ("execute", {"command": "view.set_visibility", "params": {"bodies": ["body-1"], "visible": False}}),
+                ("execute", {"command": "view.isolate", "params": {"bodies": ["body-1"]}}),
+                ("save", {"path": saved}),
+            ])
+            for response in responses:
+                self.assertFalse(response["result"]["isError"], response)
+            measured = responses[5]["result"]["structuredContent"]["from_entity"]
+            self.assertAlmostEqual(measured["volume_mm3"], 72 * math.pi, places=6)
+            self.assertEqual(responses[6]["result"]["structuredContent"]["result"]["visible_bodies"], [])
+            self.assertEqual(responses[7]["result"]["structuredContent"]["result"]["visible_bodies"], ["body-1"])
+            reopened = self.run_calls(executable, [
+                ("open", {"path": saved}), ("rebuild", {}),
+                ("execute", {"command": "document.state", "params": {}}),
+                ("execute", {"command": "view.show_all", "params": {}}),
+                ("measure", {"from": "body-1"}),
+            ])
+            for response in reopened:
+                self.assertFalse(response["result"]["isError"], response)
+            visibility = reopened[2]["result"]["structuredContent"]["result"]["visibility"]
+            self.assertEqual(visibility["hidden_bodies"], ["body-1"])
+            self.assertEqual(visibility["visible_bodies"], [])
+            self.assertIsNone(visibility.get("isolated_bodies"))
+            self.assertEqual(reopened[3]["result"]["structuredContent"]["result"]["visible_bodies"], ["body-1"])
+            self.assertAlmostEqual(reopened[4]["result"]["structuredContent"]["from_entity"]["volume_mm3"], 72 * math.pi, places=6)
+
     def run_calls(self, executable, calls):
         messages = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}]
         messages.extend({"jsonrpc": "2.0", "id": index + 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
