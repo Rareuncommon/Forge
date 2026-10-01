@@ -506,12 +506,12 @@ struct ShortcutBar: View {
 
     private var entries: [Entry] {
         if model.activeSketch != nil {
-            let tools: [SketchTool] = [.line, .rectangle, .circle, .arc, .slot, .polygon, .spline, .ellipse, .point, .fillet, .chamfer, .trim, .extend, .dimension]
+            let tools: [SketchTool] = [.line, .rectangle, .circle, .arc, .slot, .polygon, .spline, .ellipse, .point, .fillet, .chamfer, .trim, .extend, .split, .dimension]
             return tools.map { t in Entry(icon: t.icon, title: t.title) { model.chooseTool(t) } }
                 + [Entry(icon: .exitSketch, title: "Exit Sketch") { Task { await model.exitSketch() } }]
         }
         var out: [Entry] = [
-            Entry(icon: .sketch, title: "Sketch on Front Plane") { Task { await model.newSketch(on: .front) } },
+            Entry(icon: .sketch, title: model.sketchStartTitle) { Task { await model.startSketchFromSelection() } },
             Entry(icon: .extrude, title: "Extruded Boss/Base") { model.begin(.extrude) },
             Entry(icon: .revolve, title: "Revolved Boss/Base") { model.begin(.revolve) },
             Entry(icon: .cutExtrude, title: "Extruded Cut") { model.begin(.cutExtrude) },

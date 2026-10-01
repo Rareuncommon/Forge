@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 1000 rows — not started: 841 · in progress: 131 · done: 28 · verified: 0
+**Totals:** 1000 rows — not started: 839 · in progress: 133 · done: 28 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -125,14 +125,14 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/offset/bi-directional` | ↳ bi-directional | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(bidirectional) |  |
 | `7.1/tools/offset/cap-ends` | ↳ cap ends | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(cap_ends) | line caps only (arc caps NOT IMPLEMENTED) |
 | `7.1/tools/offset/construction` | ↳ construction | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.offset(make_base_construction) |  |
-| `7.1/tools/convert-entities` | Tools: convert entities | not started | ForgeSketch | — | — |  |
+| `7.1/tools/convert-entities` | Tools: convert entities | in progress | ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/SketchConvertTests.swift, Tests/ForgeUITests/SketchPlacementWorkflowTests.swift | convert_entities | Exact detached projections of lines and parallel circles/arcs and face boundaries; fixed/editable and construction options; desktop model picking. Associative links, oblique circles, ellipses and splines remain pending. |
 | `7.1/tools/intersection-curve` | Tools: intersection curve | not started | ForgeSketch | — | — |  |
 | `7.1/tools/silhouette-entities` | Tools: silhouette entities | not started | ForgeSketch | — | — |  |
 | `7.1/tools/mirror` | Tools: mirror | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift, Tests/GoldenModelTests/Models/017_mirrored_profile_extruded.json | execute:sketch.mirror | copies with symmetric relations (circles/arcs as wholes); ellipses copied unrelated; not yet a feature-tree item (M2) |
 | `7.1/tools/mirror/static-dynamic` | ↳ static + dynamic | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.mirror | static mirror only; dynamic mirror (mirror while sketching) NOT IMPLEMENTED |
 | `7.1/tools/linear-circular-sketch-patterns` | Tools: linear/circular sketch patterns | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.pattern_linear, execute:sketch.pattern_circular | instances tied to the seed by equal/parallel; spacing/angle not yet driven by dimensions |
 | `7.1/tools/move-copy-rotate-scale-stretch` | Tools: move/copy/rotate/scale/stretch | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.move, execute:sketch.rotate, execute:sketch.scale | move/copy/rotate/scale done at sketch level; stretch NOT IMPLEMENTED |
-| `7.1/tools/split-entities` | Tools: split entities | in progress | ForgeSketch | Tests/ForgeSketchTests/SolverTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.split | lines, arcs, circles, ellipses, partial ellipses; splines NOT IMPLEMENTED; not yet a feature-tree item (M2) |
+| `7.1/tools/split-entities` | Tools: split entities | in progress | ForgeSketch / ForgeUI | Tests/ForgeUITests/SketchSplitWorkflowTests.swift, Tests/ForgeCommandsTests/SketchCommandTests.swift | execute:sketch.split | Desktop click splitting with circle/ellipse two-point workflow, preview, cancellation and undo; lines, arcs, circles, ellipses and partial ellipses. Splines remain pending. |
 | `7.1/tools/jog-line` | Tools: jog line | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-picture` | Tools: sketch picture | not started | ForgeSketch | — | — |  |
 | `7.1/tools/sketch-picture/with-scale-calibration` | ↳ with scale calibration | not started | ForgeSketch | — | — |  |
@@ -148,7 +148,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.1/tools/3d-sketch` | Tools: 3D sketch | not started | ForgeSketch | — | — |  |
 | `7.1/tools/3d-sketch/with-plane-switching` | ↳ with plane switching | not started | ForgeSketch | — | — |  |
 | `7.1/tools/3d-sketch/3d-sketch-on-plane` | ↳ 3D sketch on plane | not started | ForgeSketch | — | — |  |
-| `7.1/tools/sketch-on-face-surface` | Tools: sketch on face/surface | not started | ForgeSketch | — | — |  |
+| `7.1/tools/sketch-on-face-surface` | Tools: sketch on face/surface | in progress | ForgeCommands / ForgeUI | Tests/ForgeUITests/SketchPlacementWorkflowTests.swift, Tests/ForgeCommandsTests/ReferencePlaneTests.swift | execute:sketch.create, repair_reference | Planar faces with persistent attachment, guided desktop entry and camera alignment; supports upstream regeneration and attachment repair. Missing support blocks dependent features; curved-face and 3D surface sketches remain pending. |
 | `7.1/tools/spline-tools` | Tools: spline tools | not started | ForgeSketch | — | — |  |
 | `7.1/tools/spline-tools/tangency-curvature-handles` | ↳ tangency/curvature handles | not started | ForgeSketch | — | — |  |
 | `7.1/tools/spline-tools/simplify` | ↳ simplify | not started | ForgeSketch | — | — |  |
@@ -325,7 +325,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `7.2/multibody/combine` | Multibody: combine | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.boolean | kernel-level; Combine feature in M2/M3 |
 | `7.2/multibody/combine/add-subtract-common` | ↳ add/subtract/common | in progress | ForgeKernel | Tests/ForgeKernelTests/KernelTests.swift, Tests/GoldenModelTests | execute:body.boolean |  |
 | `7.2/multibody/split` | Multibody: split | not started | ForgeModel | — | — |  |
-| `7.2/multibody/move-copy-body` | Multibody: move/copy body | in progress | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift, Tests/GoldenModelTests/005 | execute:body.transform |  |
+| `7.2/multibody/move-copy-body` | Multibody: move/copy body | in progress | ForgeCommands / ForgeUI | Tests/ForgeUITests/BodyPlacementWorkflowTests.swift | execute:body.transform | Desktop translation, optional rotation about origin/XYZ or stored custom axis, copy, preview and feature editing. Multiple-body transforms and mate constraints remain pending. |
 | `7.2/multibody/delete-keep-body` | Multibody: delete/keep body | in progress | ForgeCommands | Tests/ForgeCommandsTests/EngineTests.swift | execute:body.delete | delete only |
 | `7.2/multibody/insert-part` | Multibody: insert part | not started | ForgeModel | — | — |  |
 | `7.2/multibody/insert-into-new-part` | Multibody: insert into new part | not started | ForgeModel | — | — |  |

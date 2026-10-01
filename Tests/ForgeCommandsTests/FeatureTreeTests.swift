@@ -267,7 +267,8 @@ struct ReferencePlaneTests {
         #expect(names == ["Plane1", "Sketch1", "Boss-Extrude1"])
         // Deleting the plane leaves the sketch with a lost reference.
         let states = try await e.execute("feature.delete", ["feature": "Plane1"]).result["features"]!.arrayValue!.map { $0["state"]!.stringValue! }
-        #expect(states == ["error", "ok"])
+        #expect(states == ["error", "error"])
+        #expect(await e.activeDocument!.bodies.isEmpty)
     }
 }
 

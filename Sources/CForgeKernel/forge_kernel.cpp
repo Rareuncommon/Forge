@@ -1393,6 +1393,12 @@ int32_t fk_edge_info(const FKShape *shape, int32_t edgeIndex, FKEdgeInfo *out, F
         BRepAdaptor_Curve curve(edge);
         out->curveType = curveType(curve.GetType());
         out->length = GCPnts_AbscissaPoint::Length(curve);
+        if (curve.GetType() == GeomAbs_Circle) {
+            const gp_Circ circle = curve.Circle();
+            put3(out->circleCenter, circle.Location().XYZ());
+            put3(out->circleAxis, circle.Axis().Direction().XYZ());
+            out->circleRadius = circle.Radius();
+        }
         put3(out->midpoint, curve.Value(0.5 * (curve.FirstParameter() + curve.LastParameter())).XYZ());
     } else {
         out->curveType = FK_CURVE_OTHER;

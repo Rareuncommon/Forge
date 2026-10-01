@@ -305,6 +305,14 @@ public enum SelectionSet: Command {
         var doc = try ctx.requireDocument()
         var refs: [String] = []
         for s in p.entities {
+            if s.hasPrefix("plane-"), StandardPlane(rawValue: String(s.dropFirst(6))) != nil {
+                refs.append(s)
+                continue
+            }
+            if let plane = doc.refPlanes[s] ?? doc.orderedRefPlanes.first(where: { $0.name == s }) {
+                refs.append(plane.id)
+                continue
+            }
             if s.hasPrefix("sketch-") || doc.sketches[String(s.split(separator: "/").first ?? "")] != nil {
                 guard doc.referenceExists(s) else {
                     throw ForgeError(.unknownEntity, "no sketch entity '\(s)'", entities: [s],

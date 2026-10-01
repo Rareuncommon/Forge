@@ -58,6 +58,24 @@ class MCPWorkflowTests(unittest.TestCase):
             self.assertFalse(responses[2]["result"]["isError"])
             self.assertEqual(responses[2]["result"]["structuredContent"]["bodies"], [])
 
+    def test_face_sketch_conversion_builds_an_analytic_boss(self):
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        responses = self.run_calls(executable, [
+            ("new_document", {}),
+            ("execute", {"command": "body.create_box", "params": {"width": 10, "height": 20, "depth": 30}}),
+            ("execute", {"command": "sketch.create", "params": {"face": "body-1/face-5"}}),
+            ("convert_entities", {"entities": ["body-1/face-5"]}),
+            ("execute", {"command": "sketch.exit", "params": {}}),
+            ("execute", {"command": "body.extrude", "params": {"sketch": "sketch-1", "depth": 2}}),
+            ("compare_to_spec", {"spec": {"body_count": 2, "bodies": [
+                {"body": "body-1", "volume_mm3": {"value": 6000, "tol": 1e-6}},
+                {"body": "body-2", "volume_mm3": {"value": 400, "tol": 1e-6}},
+            ]}}),
+        ])
+        for response in responses:
+            self.assertFalse(response["result"]["isError"], response)
+        self.assertTrue(responses[-1]["result"]["structuredContent"]["passed"])
+
     def run_calls(self, executable, calls):
         messages = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}]
         messages.extend({"jsonrpc": "2.0", "id": index + 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}

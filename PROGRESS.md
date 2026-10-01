@@ -1,5 +1,35 @@
 # Progress
 
+## Session 10 — 2026-09-30 — Face sketches and everyday modeling workflows
+
+- Added explicit Features-tab Sketch on Face entry on all desktops, selection-aware
+  sketch shortcuts and rejection of unsuitable selections instead of silent Front-plane
+  fallback. Tests use actual face ray picking, rectangle drawing and a 125 mm³ cut.
+- Added exact model-edge/face-boundary conversion into detached sketch lines, circles
+  and arcs; fixed/editable and construction options, undo/dry-run/save/rebuild, desktop
+  model picking and a direct MCP alias. Associative links, oblique circles, ellipses
+  and splines remain pending.
+- Added desktop Split Entities, including two-point closed-curve splitting, pending
+  guidance, cancellation, cross-sketch guards and undo/redo.
+- Added Move/Copy Bodies translation/rotation/copy pages, live preview and feature
+  editing, preserving stored custom axes. Exposed Up To Vertex in both extrusion
+  directions so an inspector roundtrip cannot change the end condition to Blind.
+- Added Normal To selected faces and standard/reference planes, and plane selection.
+- Added shared Unicode Rename dialogs and body/feature/sketch tree actions.
+- Fixed sketch attachment repair and rejection of dependent modeling from lost,
+  suppressed or rolled-back sketch supports, preventing stale geometry regeneration.
+- The source-linked audit inventories all 1,000 matrix IDs and distinguishes hidden,
+  partial and absent workflows. Assemblies, drawings and hundreds of other declared
+  capabilities still remain. See docs/research/modeling-workflow-gaps.md.
+
+Validation: official Swift 6.4 build with tests and all **320 Swift tests** pass.
+All **31 golden models**, **3 MCP subprocess workflows** (debug and optimized CLI),
+three packaging regressions and native GTK menu/name-dialog regressions pass.
+Windows frontend cross-platform build and optimized Linux desktop/CLI builds pass.
+The Linux screenshot smoke check renders the new ribbon entry points. Native checks
+must now use Xvfb: the GTK runner refuses to fall back to the user's live desktop.
+Matrix synchronization and whitespace checks pass. Native macOS/Windows checks run in CI.
+
 ## Session 9 — 2026-09-29 — PR #3 review fixes
 
 - Imported faces now receive distinct persistent base names at intake. Kernel history

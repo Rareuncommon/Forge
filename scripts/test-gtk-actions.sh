@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Native GTK action regression; does not require Swift or OCCT.
+# Native GTK action/dialog regression; does not require Swift or OCCT.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 forge_test_dir=$(mktemp -d)
@@ -11,8 +11,8 @@ read -r -a forge_gtk_flags <<< "$(pkg-config --cflags --libs gtk4 epoxy)"
     Sources/CForgeWin/gtk/gtk_shell.c Sources/CForgeWin/gtk/gtk_icons.c Sources/CForgeWin/gtk/gtk_render.c \
     "${forge_gtk_flags[@]}" -lm -o "$forge_test_dir/menu-actions"
 if command -v xvfb-run >/dev/null 2>&1; then
-    xvfb-run -a env GDK_BACKEND=x11 "$forge_test_dir/menu-actions"
+    timeout 30s xvfb-run -a env GDK_BACKEND=x11 "$forge_test_dir/menu-actions"
 else
-    # A local desktop can run this without showing a window; CI supplies Xvfb.
-    "$forge_test_dir/menu-actions"
+    echo "GTK tests require xvfb-run; refusing to open test dialogs on the desktop." >&2
+    exit 1
 fi

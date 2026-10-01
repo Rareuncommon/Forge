@@ -68,3 +68,5 @@ uint8_t *fw_capture(fw_app *p0, int *width, int *height) { return NULL; }
 void fw_app_quit(fw_app *p0) {  }
 
 char *fw_import_step_dialog(fw_app *a) { (void)a; return NULL; }
+
+char *fw_name_dialog(fw_app *a, const char *title, const char *current_name) { (void)a; (void)title; (void)current_name; return NULL; }

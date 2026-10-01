@@ -161,6 +161,8 @@ void fw_edit_hide(fw_app *);
 // MARK: dialogs (returned strings are freed with fw_free)
 
 int fw_confirm(fw_app *, const char *title, const char *message, const char *yes, const char *no);
+// UTF-8 name, allocated with malloc; caller uses fw_free. NULL on cancel.
+char *fw_name_dialog(fw_app *, const char *title, const char *current_name);
 char *fw_save_dialog(fw_app *, const char *suggested_name);
 /// A .forgepart document (a folder).
 char *fw_open_dialog(fw_app *);

@@ -8,6 +8,8 @@ package protocol PlatformServices: AnyObject {
     /// A document to open (nil: cancelled).
     func chooseOpenPath() -> String?
     func chooseImportSTEPPath() -> String?
+    /// A replacement name, or nil when the user cancels. Empty input is validated by the command.
+    func requestName(_ title: String, currentName: String) -> String?
     func showMessage(_ title: String, _ message: String)
 }
 
@@ -22,6 +24,7 @@ package final class HeadlessPlatform: PlatformServices {
 
 // Existing headless/platform implementations can opt into these optional dialogs.
 extension PlatformServices {
+    package func requestName(_ title: String, currentName: String) -> String? { nil }
     package func chooseImportSTEPPath() -> String? { nil }
     package func showMessage(_ title: String, _ message: String) {}
 }

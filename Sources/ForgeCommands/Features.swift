@@ -255,6 +255,14 @@ extension Document {
                 (try? bodies[id]?.shape.topology()).map { (id, usesFaces ? $0.faces : $0.edges) }
             })
             do {
+                // A lost or suppressed sketch attachment must not leave a usable stale profile.
+                for ref in f.usedSketches {
+                    let sid = try sketch(ref).id
+                    if let source = features[..<i].first(where: { $0.sketchID == sid }),
+                        source.status.state == .error || source.status.state == .suppressed || source.status.state == .rolledBack {
+                        throw ForgeError(.referenceLost, "\(f.name) depends on unavailable sketch \(source.name)", entities: [f.id, sid, source.id])
+                    }
+                }
                 guard let d = try? registry.descriptor(f.command) else {
                     throw ForgeError(.unknownCommand, "unknown command '\(f.command)'")
                 }

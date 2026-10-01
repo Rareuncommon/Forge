@@ -74,7 +74,7 @@ struct OperationPage: View {
                     .help("Reverse Direction")
                     .disabled(model.form.endCondition == .midPlane || model.form.endCondition == .throughAllBoth)
                     Picker("End condition", selection: $model.form.endCondition) {
-                        ForEach(EndConditionUI.allCases.filter { op == .cutExtrude || !model.bodies.isEmpty || $0.needsDepth }, id: \.self) {
+                        ForEach(EndConditionUI.allCases.filter { op == .cutExtrude || !model.bodies.isEmpty || $0.needsDepth || $0 == .upToVertex }, id: \.self) {
                             Text($0.rawValue).tag($0)
                         }
                     }
@@ -83,6 +83,11 @@ struct OperationPage: View {
                 }
                 if model.form.endCondition.needsDepth {
                     PMField(label: "Depth", text: $model.form.depth, unit: "mm", icon: .smartDimension, help: "mm, or with units: 0.5 in")
+                }
+                if model.form.endCondition == .upToVertex {
+                    PMField(label: "Vertex X", text: $model.form.vertexX, unit: "mm")
+                    PMField(label: "Vertex Y", text: $model.form.vertexY, unit: "mm")
+                    PMField(label: "Vertex Z", text: $model.form.vertexZ, unit: "mm")
                 }
                 if op == .extrude && !model.bodies.isEmpty && model.editingFeatureCreatesBody != true {
                     PMCheckbox(label: "Merge result", isOn: $model.form.merge)
@@ -101,10 +106,15 @@ struct OperationPage: View {
             if model.form.endCondition != .midPlane && model.form.endCondition != .throughAllBoth {
                 PMCheckGroup(title: "Direction 2", isOn: $model.form.direction2) {
                     Picker("End condition", selection: $model.form.endCondition2) {
-                        ForEach([EndConditionUI.blind, .throughAll].filter { $0 == .blind || !model.bodies.isEmpty }, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach([EndConditionUI.blind, .throughAll, .upToVertex].filter { $0 != .throughAll || !model.bodies.isEmpty }, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    if model.form.endCondition2 == .upToVertex {
+                        PMField(label: "Vertex X", text: $model.form.vertex2X, unit: "mm")
+                        PMField(label: "Vertex Y", text: $model.form.vertex2Y, unit: "mm")
+                        PMField(label: "Vertex Z", text: $model.form.vertex2Z, unit: "mm")
+                    }
                     if model.form.endCondition2 == .blind {
                         PMField(label: "Depth", text: $model.form.depth2, unit: "mm", icon: .smartDimension)
                     }
@@ -397,6 +407,26 @@ struct OperationPage: View {
                     model.form.draftFaces = faces.filter { $0 != model.form.draftNeutral }
                 }
             }
+        case .moveBody:
+            PMSection("Body") {
+                PMPicker(label: "Body", selection: $model.form.target, icon: .part) { ForEach(model.bodies, id: \.id) { Text($0.name).tag($0.id) } }
+                PMCheckbox(label: "Create copy", isOn: $model.form.bodyCopy)
+            }
+            PMSection("Translation") {
+                PMField(label: "X", text: $model.form.bodyDX, unit: "mm")
+                PMField(label: "Y", text: $model.form.bodyDY, unit: "mm")
+                PMField(label: "Z", text: $model.form.bodyDZ, unit: "mm")
+            }
+            PMCheckGroup(title: "Rotation", isOn: $model.form.bodyRotation) {
+                PMPicker(label: "Axis", selection: $model.form.bodyAxis) {
+                    Text("X").tag("x"); Text("Y").tag("y"); Text("Z").tag("z")
+                    if model.form.bodyAxis == "custom" { Text("Stored custom axis").tag("custom") }
+                }
+                PMField(label: "Angle", text: $model.form.bodyAngle, unit: "°")
+                PMField(label: "Origin X", text: $model.form.bodyOriginX, unit: "mm")
+                PMField(label: "Origin Y", text: $model.form.bodyOriginY, unit: "mm")
+                PMField(label: "Origin Z", text: $model.form.bodyOriginZ, unit: "mm")
+            }
         case .combine:
             PMSection("Operation Type") {
                 PMTypeList(options: [(value: "fuse", icon: .combine, title: "Add"), (value: "cut", icon: .cutExtrude, title: "Subtract"),
@@ -635,7 +665,7 @@ struct SketchToolPage: View {
                 PMTypeList(options: [(value: TrimMode.power, icon: .trim, title: "Power trim"), (value: .closest, icon: .trim, title: "Trim to closest")],
                            selection: $model.sketchState.trimMode)
             }
-        case .point, .extend, .dimension:
+        case .point, .extend, .split, .dimension:
             EmptyView()
         }
     }

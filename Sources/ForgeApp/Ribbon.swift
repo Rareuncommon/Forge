@@ -40,6 +40,13 @@ private struct FeaturesTab: View {
     var body: some View {
         let hasSketch = !model.sketches.isEmpty
         let hasBody = !model.bodies.isEmpty
+        RibbonGroup("Sketch") {
+            RibbonLarge(.sketch, model.sketchStartTitle, enabled: model.activeSketch == nil,
+                        help: "Start a sketch on the selected planar face; use the Sketch tab to choose another plane") {
+                Task { await model.startSketchFromSelection() }
+            }
+        }
+        RibbonSeparator()
         RibbonGroup("Boss / Base") {
             RibbonLarge(.extrude, "Extruded\nBoss/Base", active: model.operation == .extrude, enabled: hasSketch,
                         help: "Extrude a closed sketch profile into a new body") { model.begin(.extrude) }
@@ -77,6 +84,7 @@ private struct FeaturesTab: View {
             }
             RibbonStack {
                 RibbonSmall(.combine, "Combine", active: model.operation == .combine, enabled: model.bodies.count >= 2) { model.begin(.combine) }
+                RibbonSmall(.move, "Move/Copy Bodies", active: model.operation == .moveBody, enabled: hasBody) { model.begin(.moveBody) }
                 RibbonSmall(.trash, "Delete Body", enabled: !model.selectedBodies.isEmpty) {
                     let bodies = model.selectedBodies
                     Task { for b in bodies { await model.run("body.delete", ["body": .string(b)]) } }
@@ -195,6 +203,15 @@ private struct SketchTab: View {
         }
         RibbonSeparator()
         RibbonGroup("Tools") {
+            RibbonStack {
+                RibbonSmall(.sketch, "Select Model Geometry", enabled: editing, help: "Stop drawing to select body edges or faces for Convert Entities") { model.selectModelGeometry() }
+                RibbonSmall(.trim, "Split Entities", active: st.tool == .split, enabled: editing,
+                            help: "Split lines and arcs with one click; circles and ellipses with two") { tool(.split) }
+                RibbonSmall(.sketch, "Convert Entities", enabled: editing && !model.selectedModelGeometry.isEmpty,
+                            help: "Project selected edges or face boundaries as fixed copies; copies do not follow later model edits") {
+                    Task { await model.convertSelectedModelGeometry() }
+                }
+            }
             RibbonFlyout(icon: st.tool == .chamfer ? .sketchChamfer : .sketchFillet, title: "Sketch\nFillet", active: st.tool == .fillet || st.tool == .chamfer,
                          enabled: editing, action: { tool(.fillet) }) {
                 Button("Sketch Fillet") { model.chooseTool(.fillet) }

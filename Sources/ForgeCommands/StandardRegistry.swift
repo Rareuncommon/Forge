@@ -58,6 +58,7 @@ extension CommandRegistry {
         r.register(SketchRotate.self)
         r.register(SketchScale.self)
         r.register(SketchSplit.self)
+        r.register(SketchConvertEntities.self)
         // bodies
         r.register(BodyCreateBox.self)
         r.register(BodyCreateCylinder.self)

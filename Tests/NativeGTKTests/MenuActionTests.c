@@ -1,6 +1,7 @@
-// Exercise the real native menu model and action group, without opening file dialogs.
+// Exercise the real native menu/action group and name-entry dialog without Swift.
 #include "gtk_internal.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -57,6 +58,81 @@ static void checkWidgets(fw_app *app, GtkWidget *widget, TestState *state) {
     }
 }
 
+typedef struct {
+    TestState *state;
+    const char *title;
+    const char *initial;
+    const char *replacement;
+    int response;
+    int responded;
+    gint64 deadline;
+} NameResponse;
+
+static GtkWidget *findEntry(GtkWidget *widget) {
+    if (GTK_IS_ENTRY(widget)) return widget;
+    for (GtkWidget *child = gtk_widget_get_first_child(widget); child; child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *entry = findEntry(child);
+        if (entry) return entry;
+    }
+    return NULL;
+}
+
+// fw_name_dialog runs GTK's nested main loop. Drive its actual widgets from that loop,
+// rather than replacing the dialog function with a mock. Both this deadline and the
+// shell timeout prevent a broken response connection from hanging CI indefinitely.
+static gboolean respondToName(gpointer data) {
+    NameResponse *response = data;
+    if (g_get_monotonic_time() >= response->deadline) {
+        fprintf(stderr, "Timed out waiting for name dialog: %s\n", response->title);
+        exit(1);
+    }
+    GListModel *windows = gtk_window_get_toplevels();
+    for (guint i = 0; i < g_list_model_get_n_items(windows); ++i) {
+        GtkWindow *window = g_list_model_get_item(windows, i);
+        if (GTK_IS_DIALOG(window) && g_strcmp0(gtk_window_get_title(window), response->title) == 0) {
+            GtkWidget *entry = findEntry(GTK_WIDGET(window));
+            if (!entry) {
+                fprintf(stderr, "Name dialog has no editable entry\n");
+                ++response->state->failures;
+            } else {
+                if (strcmp(gtk_editable_get_text(GTK_EDITABLE(entry)), response->initial) != 0) {
+                    fprintf(stderr, "Name dialog did not preserve initial UTF-8 text\n");
+                    ++response->state->failures;
+                }
+                gtk_editable_set_text(GTK_EDITABLE(entry), response->replacement);
+            }
+            response->responded = 1;
+            gtk_dialog_response(GTK_DIALOG(window), response->response);
+            g_object_unref(window);
+            return G_SOURCE_REMOVE;
+        }
+        g_object_unref(window);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+static void checkNameDialog(fw_app *app, TestState *state, int action, const char *text) {
+    NameResponse response = {state, "Rename regression", "Original — 部品", text, action, 0,
+                             g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND};
+    guint source = g_timeout_add(10, respondToName, &response);
+    char *name = fw_name_dialog(app, response.title, response.initial);
+    if (!response.responded) {
+        g_source_remove(source);
+        fprintf(stderr, "Name dialog returned before a response\n");
+        ++state->failures;
+    }
+    if (action == GTK_RESPONSE_ACCEPT) {
+        if (!name || strcmp(name, text) != 0) {
+            fprintf(stderr, "Name dialog did not return exact accepted UTF-8 text\n");
+            ++state->failures;
+        }
+    } else if (name != NULL) {
+        fprintf(stderr, "Cancelled name dialog returned a value\n");
+        ++state->failures;
+    }
+    fw_free(name); // Includes the cancellation path: freeing NULL must be harmless.
+}
+
 int main(void) {
     TestState state = {0};
     fw_app *app = fw_app_create("Menu action regression", receive, &state);
@@ -70,8 +146,12 @@ int main(void) {
                 state.actions, state.importItems, state.importEvents);
         ++state.failures;
     }
+    checkNameDialog(app, &state, GTK_RESPONSE_ACCEPT, "机架 — café 🚀");
+    checkNameDialog(app, &state, GTK_RESPONSE_CANCEL, "discarded replacement");
+    checkNameDialog(app, &state, GTK_RESPONSE_ACCEPT, "");
     fw_app_destroy(app);
     if (state.failures) return 1;
     printf("GTK menu actions: %d registered entries; Import STEP dispatch passed\n", state.actions);
+    printf("GTK name dialog: UTF-8 accept, cancellation and empty input passed\n");
     return 0;
 }

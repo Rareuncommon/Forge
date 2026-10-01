@@ -192,6 +192,16 @@ public struct Document: Sendable {
             suggestions: [SuggestedFix(description: "List document state", command: "document.state")])
     }
 
+    /// Profiles with unavailable attachments must never generate solids from stale geometry.
+    func modelingSketch(_ reference: String?) throws -> Sketch {
+        let s = try sketch(reference)
+        if let source = features.first(where: { $0.sketchID == s.id }),
+            source.status.state == .error || source.status.state == .suppressed || source.status.state == .rolledBack {
+            throw ForgeError(.referenceLost, "sketch \(s.name) is unavailable; repair or restore its feature before modeling", entities: [s.id, source.id])
+        }
+        return s
+    }
+
     public mutating func updateSketch(_ s: Sketch) {
         precondition(sketches[s.id] != nil)
         sketches[s.id] = s

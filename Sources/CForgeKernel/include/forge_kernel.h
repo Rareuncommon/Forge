@@ -124,6 +124,10 @@ typedef struct FKEdgeInfo {
     double midpoint[3];
     int32_t isDegenerate;
     int32_t adjacentFaces;
+    /* Analytic circle data, valid only for FK_CURVE_CIRCLE. */
+    double circleCenter[3];
+    double circleAxis[3];
+    double circleRadius;
 } FKEdgeInfo;
 
 /* ---- library ---------------------------------------------------------- */

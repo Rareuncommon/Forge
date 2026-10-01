@@ -11,7 +11,7 @@ import Observation
 
 /// SolidWorks' end conditions as shown in the Extrude page (the engine's body.extrude names).
 package enum EndConditionUI: String, CaseIterable {
-    case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane"
+    case blind = "Blind", throughAll = "Through All", throughAllBoth = "Through All - Both", midPlane = "Mid Plane", upToVertex = "Up To Vertex"
 
     package var param: String {
         switch self {
@@ -19,6 +19,7 @@ package enum EndConditionUI: String, CaseIterable {
         case .throughAll: "through_all"
         case .throughAllBoth: "through_all_both"
         case .midPlane: "mid_plane"
+        case .upToVertex: "up_to_vertex"
         }
     }
 
@@ -32,6 +33,12 @@ package enum EndConditionUI: String, CaseIterable {
 
 /// Values being edited in the PropertyManager. Lengths are text so units work ("0.5 in").
 package struct OperationForm {
+    package var bodyDX = "0", bodyDY = "0", bodyDZ = "0", bodyCopy = false
+    package var bodyCustomAxis: [JSONValue] = [0, 0, 1]
+    package var bodyRotation = false, bodyAngle = "90", bodyAxis = "z"
+    package var bodyOriginX = "0", bodyOriginY = "0", bodyOriginZ = "0"
+    package var vertexX = "0", vertexY = "0", vertexZ = "10"
+    package var vertex2X = "0", vertex2Y = "0", vertex2Z = "-10"
     package var depth = "10"
     package var endCondition = EndConditionUI.blind
     package var reverse = false
@@ -91,6 +98,8 @@ extension AppModel {
     package func begin(_ op: Operation) {
         form.result = nil
         switch op {
+        case .moveBody:
+            form.target = selectedBodies.first ?? bodies.first?.id ?? ""
         case .plane:
             form.planeReference = selectedFace ?? "top"
         case .linearPattern, .circularPattern, .mirror:
@@ -220,11 +229,17 @@ extension AppModel {
             let ec = p["end_condition"]?.stringValue ?? (p["direction"]?.stringValue == "mid_plane" ? "mid_plane" : "blind")
             form.endCondition = EndConditionUI(param: ec) ?? .blind
             form.depth = t(p["depth"]) ?? form.depth
+            if let v = p["vertex"]?.arrayValue, v.count == 3 {
+                form.vertexX = t(v[0]) ?? "0"; form.vertexY = t(v[1]) ?? "0"; form.vertexZ = t(v[2]) ?? "0"
+            }
             form.reverse = p["reverse"]?.boolValue ?? (p["direction"]?.stringValue == "reverse")
             if let d2 = p["direction2"], !d2.isNull {
                 form.direction2 = true
                 form.endCondition2 = EndConditionUI(param: d2["end_condition"]?.stringValue ?? "blind") ?? .blind
                 form.depth2 = t(d2["depth"]) ?? form.depth2
+                if let v = d2["vertex"]?.arrayValue, v.count == 3 {
+                    form.vertex2X = t(v[0]) ?? "0"; form.vertex2Y = t(v[1]) ?? "0"; form.vertex2Z = t(v[2]) ?? "0"
+                }
             } else {
                 form.direction2 = false
             }
@@ -298,6 +313,24 @@ extension AppModel {
             form.draftReverse = p["reverse"]?.boolValue ?? false
         case .sweep, .cutSweep, .loft, .cutLoft, .rib:
             fillSweepLoftRib(op, p)
+        case .moveBody:
+            form.target = p["body"]?.stringValue ?? ""
+            form.bodyCopy = p["copy"]?.boolValue ?? false
+            let translation = p["translate"]?.arrayValue ?? [0, 0, 0]
+            if translation.count == 3 { form.bodyDX = t(translation[0]) ?? "0"; form.bodyDY = t(translation[1]) ?? "0"; form.bodyDZ = t(translation[2]) ?? "0" }
+            form.bodyRotation = p["rotate"] != nil && p["rotate"]?.isNull != true
+            form.bodyAngle = "90"
+            form.bodyAxis = "z"
+            form.bodyCustomAxis = [0, 0, 1]
+            form.bodyOriginX = "0"; form.bodyOriginY = "0"; form.bodyOriginZ = "0"
+            if let rotation = p["rotate"], !rotation.isNull {
+                form.bodyAngle = t(rotation["angle"]) ?? "0"
+                let axis = rotation["axis"]?.arrayValue ?? [0, 0, 1]
+                form.bodyAxis = axis == [1, 0, 0] ? "x" : axis == [0, 1, 0] ? "y" : axis == [0, 0, 1] ? "z" : "custom"
+                form.bodyCustomAxis = axis
+                if let origin = rotation["origin"]?.arrayValue, origin.count == 3 { form.bodyOriginX = t(origin[0]) ?? "0"; form.bodyOriginY = t(origin[1]) ?? "0"; form.bodyOriginZ = t(origin[2]) ?? "0" }
+                else { form.bodyOriginX = "0"; form.bodyOriginY = "0"; form.bodyOriginZ = "0" }
+            }
         case .combine:
             form.combine = p["operation"]?.stringValue ?? "fuse"
             form.target = p["target"]?.stringValue ?? ""
@@ -332,7 +365,7 @@ extension AppModel {
         var params: JSONValue?
         switch op {
         case .extrude, .cutExtrude, .revolve, .cutRevolve, .hole, .plane, .primitive, .fillet, .chamfer, .shell, .draft, .linearPattern,
-             .circularPattern, .mirror, .combine, .sweep, .cutSweep, .loft, .cutLoft, .rib:
+             .circularPattern, .mirror, .combine, .moveBody, .sweep, .cutSweep, .loft, .cutLoft, .rib:
             params = featureEditParams(id, op)
         default:
             params = nil
@@ -401,6 +434,7 @@ extension AppModel {
             guard let sk = operationSketch else { return nil }
             var p: [String: JSONValue] = ["sketch": .string(sk), "end_condition": .string(form.endCondition.param)]
             if form.endCondition.needsDepth { p["depth"] = quantity(form.depth) }
+            if form.endCondition == .upToVertex { p["vertex"] = [quantity(form.vertexX), quantity(form.vertexY), quantity(form.vertexZ)] }
             if form.reverse && form.endCondition != .midPlane && form.endCondition != .throughAllBoth { p["reverse"] = true }
             if form.draftOn && !form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
                 var d: [String: JSONValue] = ["angle": angleQuantity(form.draftAngle)]
@@ -416,6 +450,7 @@ extension AppModel {
             if form.direction2 && form.endCondition != .midPlane && form.endCondition != .throughAllBoth {
                 var d2: [String: JSONValue] = ["end_condition": .string(form.endCondition2.param)]
                 if form.endCondition2 == .blind { d2["depth"] = quantity(form.depth2) }
+                if form.endCondition2 == .upToVertex { d2["vertex"] = [quantity(form.vertex2X), quantity(form.vertex2Y), quantity(form.vertex2Z)] }
                 p["direction2"] = .object(d2)
             }
             if op == .cutExtrude {
@@ -496,6 +531,14 @@ extension AppModel {
                 "body": .string(String(body)), "neutral_plane": .string(form.draftNeutral), "faces": .array(form.draftFaces.map { .string($0) }),
                 "angle": angleQuantity(form.draftFeatureAngle), "reverse": .bool(form.draftReverse),
             ])]
+        case .moveBody:
+            guard !form.target.isEmpty else { return nil }
+            var params: [String: JSONValue] = ["body": .string(form.target), "translate": [quantity(form.bodyDX), quantity(form.bodyDY), quantity(form.bodyDZ)], "copy": .bool(form.bodyCopy)]
+            if form.bodyRotation {
+                let axis: [JSONValue] = form.bodyAxis == "x" ? [1, 0, 0] : form.bodyAxis == "y" ? [0, 1, 0] : form.bodyAxis == "custom" ? form.bodyCustomAxis : [0, 0, 1]
+                params["rotate"] = ["axis": .array(axis), "angle": angleQuantity(form.bodyAngle), "origin": [quantity(form.bodyOriginX), quantity(form.bodyOriginY), quantity(form.bodyOriginZ)]]
+            }
+            return [Invocation("body.transform", .object(params))]
         case .combine:
             guard !form.target.isEmpty, !form.tool.isEmpty, form.target != form.tool else { return nil }
             return [Invocation("body.boolean", ["operation": .string(form.combine), "target": .string(form.target), "tool": .string(form.tool)])]
@@ -679,7 +722,10 @@ extension AppModel {
     package var previewKey: String {
         guard let op = operation else { return "" }
         let f = form
-        return [op.title, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
+        let placement = [f.bodyDX, f.bodyDY, f.bodyDZ, String(f.bodyCopy), String(f.bodyRotation), f.bodyAngle, f.bodyAxis,
+                         JSONCoding.string(.array(f.bodyCustomAxis)), f.bodyOriginX, f.bodyOriginY, f.bodyOriginZ,
+                         f.vertexX, f.vertexY, f.vertexZ, f.vertex2X, f.vertex2Y, f.vertex2Z].joined(separator: "|")
+        return [op.title, placement, operationSketch ?? "", f.depth, f.endCondition.rawValue, String(f.reverse), String(f.direction2), f.endCondition2.rawValue, f.depth2,
                 String(f.merge), f.scope.joined(separator: ","), f.seeds.joined(separator: ","), f.linDirection, f.linSpacing, f.linCount, String(f.linReverse),
                 String(f.linDirection2On), f.linDirection2, f.linSpacing2, f.linCount2, f.cirAxis, f.cirAngle, f.cirCount, String(f.cirEqual),
                 String(f.cirReverse), f.mirrorPlane, f.holeType, f.holeSize, f.holeFit, f.holeEnd, f.holeDepth, String(f.holeReverse), String(f.draftOn), f.draftAngle, String(f.draftOutward), String(f.thinOn), f.thinType,

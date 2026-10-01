@@ -58,6 +58,7 @@ extension AppModel {
                     id: b.id, icon: .part, title: b.name, tooltip: "\(b.name): \(b.topology.faces) faces, \(String(format: "%.1f", b.volumeMM3)) mm³",
                     selected: selection.contains(b.id), select: { [unowned self] extend in Task { await select(b.id, extend: extend) } },
                     menu: [
+                        ("Rename…", { [unowned self] in Task { await renameBody(b.id) } }),
                         ("Mass Properties", { [unowned self] in Task { await select(b.id, extend: false); begin(.massProperties) } }),
                         ("Export STEP…", { [unowned self] in Task { await select(b.id, extend: false); export("step") } }),
                         ("Export STL…", { [unowned self] in Task { await select(b.id, extend: false); export("stl") } }),
@@ -104,6 +105,7 @@ extension AppModel {
     private func sketchNode(_ s: SketchRow, feature: FeatureRow?) -> TreeNode {
         let prefix = s.status == .underDefined ? "(-) " : s.status == .redundant || s.status == .conflicting ? "(+) " : s.status == .failed ? "(?) " : ""
         var menu: [(title: String, action: () -> Void)] = [("Edit Sketch", { [unowned self] in Task { await editSketch(s.id) } })]
+        if let feature { menu.append(("Rename…", { [unowned self] in Task { await renameFeature(feature.id) } })) }
         if let feature { menu.append(("Delete", { [unowned self] in Task { await run("feature.delete", ["feature": .string(feature.id)]) } })) }
         return TreeNode(
             id: s.id, icon: .sketch, title: prefix + s.name, selected: selection.contains(s.id) || activeSketch == s.id,
@@ -126,6 +128,7 @@ extension AppModel {
         menu.append((f.suppressed ? "Unsuppress" : "Suppress", { [unowned self] in
             Task { await run("feature.suppress", ["feature": .string(f.id), "suppressed": .bool(!f.suppressed)]) }
         }))
+        menu.append(("Rename…", { [unowned self] in Task { await renameFeature(f.id) } }))
         menu.append(("Parent/Child…", { [unowned self] in Task { await showFeatureDependencies(f.id) } }))
         if rollback == nil, let index = features.firstIndex(where: { $0.id == f.id }) {
             if index > 0 { menu.append(("Move Up", { [unowned self] in Task { await moveFeature(f.id, by: -1) } })) }

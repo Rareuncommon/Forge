@@ -13,7 +13,7 @@ import Foundation
 /// SketchUIState and show it in their PropertyManager page, as SolidWorks does.
 package enum SketchTool: String, CaseIterable, Identifiable {
     case line, rectangle, circle, arc, slot, polygon, spline, ellipse, point
-    case fillet, chamfer, trim, extend, dimension
+    case fillet, chamfer, trim, extend, split, dimension
     package var id: String { rawValue }
 
     package var title: String {
@@ -31,6 +31,7 @@ package enum SketchTool: String, CaseIterable, Identifiable {
         case .chamfer: "Sketch Chamfer"
         case .trim: "Trim Entities"
         case .extend: "Extend Entities"
+        case .split: "Split Entities"
         case .dimension: "Smart Dimension"
         }
     }
@@ -50,6 +51,7 @@ package enum SketchTool: String, CaseIterable, Identifiable {
         case .chamfer: .sketchChamfer
         case .trim: .trim
         case .extend: .extend
+        case .split: .trim
         case .dimension: .smartDimension
         }
     }
@@ -99,6 +101,8 @@ package struct SketchUIState {
     package var pending: [Point2] = []
     /// Ids of existing points the pending clicks landed on (for relations such as midpoint).
     package var pendingTargets: [String?] = []
+    /// Closed curve awaiting the second split point; Escape cancels this pending split.
+    package var splitEntity: String?
     /// First point of the current line chain: clicking it again closes the chain.
     package var chainStart: Point2?
     package var preview: SketchPreview?
@@ -232,6 +236,7 @@ extension AppModel {
 
     package func chooseTool(_ tool: SketchTool?) {
         sketchState.tool = tool
+        sketchState.splitEntity = nil
         sketchState.pending = []
         sketchState.pendingTargets = []
         sketchState.chainStart = nil
@@ -401,6 +406,11 @@ extension AppModel {
                 let b = pending.count == 2 ? Self.distanceToLine(p, c, m) : Self.distanceToLine(pending[2], c, m)
                 pv.polylines = [Self.ellipsePolyline(c, a, b, rot)]
                 lines = pending.count == 2 ? ["a  \(fmt(a))", "b  \(fmt(b))"] : ["Click the end of the arc"]
+            }
+        case .split:
+            if let first = pending.first {
+                pv.marker = first
+                lines = ["Click a second point on the same closed curve"]
             }
         case .point, .fillet, .chamfer, .trim, .extend, .dimension:
             break
@@ -825,6 +835,27 @@ extension AppModel {
             } else {
                 await run("sketch.extend", ["entity": .string(local), "near": pt(raw)])
             }
+        case .split:
+            guard let local, let sketch = sketchState.sketch, let entity = sketch.entities[local],
+                  curve?.contains("/") != true || curve?.hasPrefix(sketch.id + "/") == true else {
+                lastError = ForgeError(.invalidParams, "Click a curve in the active sketch to split it.")
+                return
+            }
+            if let pendingEntity = sketchState.splitEntity, pendingEntity != local {
+                lastError = ForgeError(.invalidParams, "Click the second point on the same closed curve, or press Esc to cancel.", entities: [pendingEntity])
+                return
+            }
+            if entity.kind == .circle || entity.kind == .ellipse {
+                if let first = sketchState.pending.first {
+                    if await run("sketch.split", ["entity": .string(local), "at": [pt(first), pt(raw)]]) != nil { resetPending() }
+                } else {
+                    sketchState.splitEntity = local
+                    sketchState.pending = [raw]
+                    lastError = nil
+                }
+            } else {
+                await run("sketch.split", ["entity": .string(local), "at": [pt(raw)]])
+            }
         case .dimension:
             await dimensionClick(snap.kind == .point ? snap.target : local, at: raw, viewPoint: viewPoint)
             return
@@ -843,6 +874,7 @@ extension AppModel {
     }
 
     private func resetPending() {
+        sketchState.splitEntity = nil
         sketchState.pending = []
         sketchState.pendingTargets = []
         sketchState.chainStart = nil
@@ -911,6 +943,10 @@ extension AppModel {
         case .chamfer: return "Click a corner where two lines meet."
         case .trim: return st.trimMode == .power ? "Drag across the pieces to remove, or click them." : "Click the piece of a curve to remove."
         case .extend: return "Click a curve near the end to extend it to the next curve."
+        case .split:
+            return st.splitEntity == nil
+                ? "Click inside a line or arc to split it. On a circle or ellipse, click two different points."
+                : "Click a second point on the same closed curve, or press Esc to cancel."
         case .dimension:
             if let e = dimensionEdit, !e.placed {
                 return e.measurement == nil ? "Click a second entity to dimension to." : "Move the pointer to where the dimension goes and click to place it (or click a second entity)."
