@@ -1,5 +1,35 @@
 # Progress
 
+## Session 13 — 2026-10-02 — Planar face and straight edge measurement angles
+
+- `query.measure` and MCP `measure` accept `mode: "angle"` for two planar faces or
+  straight edges, including mixed pairs, and return `angle_degrees`. Default single
+  entity properties and minimum distance behavior remain unchanged.
+- Angles use unoriented supporting planes/lines in 0–90°: parallel or antiparallel
+  geometry gives 0°, perpendicular planes/lines give 90°, and a line normal to a plane
+  gives 90°. Stable atan2 formulas cover near-parallel/perpendicular cases. Curved
+  faces/edges, degenerate edges, bodies and vertices fail with structured errors.
+- macOS and shared Windows/Linux PropertyManagers offer a mode picker with scope and
+  degree labels. Mode changes clear old results; async results check both selection and
+  requested mode before display. Persistent names keep the existing single-entity rules.
+- Added analytic cardinal/oblique/near-boundary angles, reversed directions, mixed-pair
+  symmetry, persistent face/edge references after rebuild, explicit unsupported-geometry
+  errors (including spherical degenerate edges), read-only/default-distance checks,
+  desktop mode switching and a real MCP angle/error subprocess workflow.
+
+Validation: isolated Apple Silicon checkout with Xcode/Swift **6.4** and locally built
+pinned **OCCT 8.0.1**, limited to three build jobs. Native app + test build and all
+**384 Swift tests** pass; all **33 golden models** and **six MCP subprocess workflows**
+pass. CI validates Linux headless (including **three packaging regressions** and shared
+Windows frontend type checking), CachyOS, native macOS and Windows builds/runtime
+checks. Matrix synchronization and whitespace checks pass. No app windows were opened
+on the live desktop. Local macOS packaging checks pass 2/3: the existing Windows fetch
+script's GNU `find -printf` requirement prevents its DLL-path fixture from passing with
+BSD find; those unrelated files are unchanged and all three pass in Linux CI.
+
+Remaining scope: curved/tangent/directed/reflex angle measurements, maximum/normal
+and projected distances, sketch-entity measurements and broader SolidWorks parity.
+
 ## Session 12 — 2026-09-30 — Selected contours, planar limits and selection filters
 
 - Added `sketch.regions` with stable complete-curve selectors, holes, nested islands,
