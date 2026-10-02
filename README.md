@@ -118,7 +118,13 @@ accounts for all 1,000 matrix entries and documents remaining work.
 
 **Measure** accepts one face, edge, vertex or body for its size/coordinates, or two
 for minimum distance and closest points. The MCP `measure` tool uses `from` and an
-optional `to`; results use millimeters. Angle and maximum-distance modes remain pending.
+optional `to`; sizes and distances use millimeters. Choose **Angle (0–90°)** for two
+planar faces or straight edges, including mixed pairs. MCP `measure` and `query.measure`
+accept `mode: "angle"` and return `angle_degrees`. Angles use unoriented supporting
+planes/lines: parallel or antiparallel geometry gives 0°, perpendicular geometry gives
+90°; a line normal to a plane gives 90°. Curved faces/edges, degenerate edges, bodies
+and vertices produce explicit unsupported-geometry errors in angle mode. Omit `mode`
+or use `"distance"` for the existing behavior. Maximum/normal-distance modes remain pending.
 
 Use the body tree or **Features → Visibility** to hide/show bodies, isolate a selection,
 exit isolation or show all bodies. Hidden bodies are excluded from drawing and picking;

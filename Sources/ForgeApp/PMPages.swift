@@ -506,11 +506,24 @@ struct OperationPage: View {
                 }
             }
         case .massProperties, .measure, .check:
+            if op == .measure {
+                PMSection("Mode") {
+                    PMPicker(label: "Mode", selection: $model.form.measureMode) {
+                        Text("Size / Minimum Distance").tag("distance")
+                        Text("Angle (0–90°)").tag("angle")
+                    }
+                    PMNote(text: "Angles require two planar faces or straight edges; supporting planes/lines are unoriented.")
+                }
+                .onChange(of: model.form.measureMode) { _, _ in
+                    model.form.result = nil
+                    Task { await model.computeMeasure() }
+                }
+            }
             PMSection(op == .measure ? "Measure" : "Results") {
                 if let r = model.form.result {
                     KeyValueList(value: r)
                 } else {
-                    Text(op == .measure ? "Select one entity for its size, or two for their minimum distance." : "Select a body.")
+                    Text(op == .measure ? (model.form.measureMode == "angle" ? "Select two planar faces or straight edges for their angle." : "Select one entity for its size, or two for their minimum distance.") : "Select a body.")
                         .font(.system(size: 12)).foregroundStyle(Theme.text2)
                 }
             }
