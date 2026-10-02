@@ -33,6 +33,7 @@ struct ViewportView: NSViewRepresentable {
             view.delegate = renderer
         }
         view.layer?.isOpaque = false
+        view.onCameraInput = { model.viewportCameraInput() }
         view.onCamera = { camera, width, height in
             let p = ViewProjection(camera: camera, width: width, height: height)
             if model.projection != p { model.projection = p }
@@ -82,10 +83,11 @@ struct ViewportView: NSViewRepresentable {
         view.sketchPlane = model.viewportSketchPlane
         if context.coordinator.appliedCommands < commands.count {
             for c in commands[context.coordinator.appliedCommands...] {
+                guard model.acceptsViewportCommand(c) else { continue }
                 switch c {
                 case .orient(let o): view.orient(o)
                 case .fit: view.fit()
-                case .fitSelection(let bounds): view.fitSelection(bounds)
+                case .fitSelection(let bounds, _): view.fitSelection(bounds)
                 case .previous: view.previousView()
                 case .style(let st):
                     view.renderer?.style = st
@@ -123,6 +125,8 @@ final class ForgeMTKView: MTKView {
     /// A sketch tool press in progress (for click-drag drawing).
     private var toolPress: NSPoint?
     var onCancel: (() -> Void)?
+    /// Synchronous intent notification before direct native camera mutations.
+    var onCameraInput: (() -> Void)?
     /// Called (asynchronously) whenever the camera or the view size changes.
     var onCamera: ((Camera, Double, Double) -> Void)?
     private var history: [Camera] = []
@@ -269,10 +273,11 @@ final class ForgeMTKView: MTKView {
     /// SolidWorks middle button: drag rotates, Ctrl+drag pans, Shift+drag zooms; a double
     /// click zooms to fit. Works while a sketch tool is active.
     override func otherMouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { fit() }
+        if event.clickCount == 2 { onCameraInput?(); fit() }
     }
 
     override func otherMouseDragged(with event: NSEvent) {
+        onCameraInput?()
         if event.modifierFlags.contains(.control) {
             pan(event)
         } else if event.modifierFlags.contains(.shift) {
@@ -291,6 +296,7 @@ final class ForgeMTKView: MTKView {
             return
         }
         dragged = true
+        onCameraInput?()
         if event.modifierFlags.contains(.option) {
             pan(event)
         } else {
@@ -332,6 +338,7 @@ final class ForgeMTKView: MTKView {
     }
 
     override func rightMouseDragged(with event: NSEvent) {
+        onCameraInput?()
         pan(event)
         cameraChanged()
     }
@@ -342,6 +349,7 @@ final class ForgeMTKView: MTKView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let r = renderer else { return }
+        onCameraInput?()
         if event.hasPreciseScrollingDeltas && event.phase != [] {
             // Trackpad two-finger scroll: pan.
             r.camera.pan(dxPixels: -Double(event.scrollingDeltaX), dyPixels: -Double(event.scrollingDeltaY), viewportHeight: Double(bounds.height))
@@ -354,12 +362,14 @@ final class ForgeMTKView: MTKView {
     }
 
     override func magnify(with event: NSEvent) {
+        onCameraInput?()
         renderer?.camera.zoom(factor: 1 + Double(event.magnification), anchor: anchor(for: event))
         cameraChanged()
     }
 
     override func rotate(with event: NSEvent) {
         guard let r = renderer else { return }
+        onCameraInput?()
         let q = Quat(axis: r.camera.back, angle: Double(event.rotation) * .pi / 180)
         r.camera.orientation = (q * r.camera.orientation).normalized
         cameraChanged()

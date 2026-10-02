@@ -499,6 +499,16 @@ package final class AppModel {
 
     package func setOrientation(_ o: ViewOrientation) { selectionZoomRequest += 1; viewportCommands.send(.orient(o)) }
     package func zoomToFit() { selectionZoomRequest += 1; viewportCommands.send(.fit) }
+    /// Native gestures must call this synchronously before mutating their camera.
+    /// Camera publication may be deferred until a later main-loop turn.
+    package func viewportCameraInput() { selectionZoomRequest += 1 }
+
+    /// Recheck intent when the viewport consumes an already queued framing result.
+    package func acceptsViewportCommand(_ command: ViewportCommandQueue.Command) -> Bool {
+        if case .fitSelection(_, let request) = command { return request == selectionZoomRequest }
+        return true
+    }
+
     package func zoomToSelection() async {
         selectionZoomRequest += 1
         let request = selectionZoomRequest, selected = selection, version = sceneVersion, view = projection
@@ -510,7 +520,7 @@ package final class AppModel {
             let result = try await engine.execute("view.zoom_to_selection", .object(params)).result
             guard request == selectionZoomRequest, selected == selection, version == sceneVersion, view == projection else { return }
             let output = try JSONCoding.fromJSON(ViewZoomToSelection.Output.self, result)
-            if let bounds = output.bounds { viewportCommands.send(.fitSelection(bounds)) }
+            if let bounds = output.bounds { viewportCommands.send(.fitSelection(bounds, request: request)) }
             lastError = nil
         } catch let error as ForgeError {
             guard request == selectionZoomRequest, selected == selection, version == sceneVersion, view == projection else { return }
@@ -659,7 +669,7 @@ package struct DocumentSceneBox {
 /// Commands from menus to the viewport, consumed in order by the viewport coordinator
 /// (which remembers how many it has applied, so SwiftUI updates never mutate model state).
 package struct ViewportCommandQueue {
-    package enum Command { case orient(ViewOrientation), fit, fitSelection(BoundingBox), previous, style(RenderStyle), projection(ProjectionKind), zoom(Double), normalTo(SketchPlane) }
+    package enum Command { case orient(ViewOrientation), fit, fitSelection(BoundingBox, request: Int), previous, style(RenderStyle), projection(ProjectionKind), zoom(Double), normalTo(SketchPlane) }
     package private(set) var log: [Command] = []
     package mutating func send(_ c: Command) { log.append(c) }
 }

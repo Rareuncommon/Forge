@@ -43,6 +43,21 @@ and projected distances, sketch-entity measurements and broader SolidWorks parit
 Validation: shell syntax and all **three packaging regressions** pass locally on
 macOS using BSD find; whitespace checks pass. No Swift product code changed.
 
+## PR #8 review follow-up — 2026-10-02 — Native camera intent ordering
+
+- Native orbit, pan, wheel, magnify, rotate and double-click fit invalidate pending
+  selection framing synchronously before camera mutation on macOS and the shared
+  Windows/Linux viewport. Deferred camera publication cannot admit an old result.
+- Queued selection fits carry their request generation; both viewport consumers skip
+  fits invalidated by newer input before queue consumption. Deterministic regressions
+  cover an engine request held across input/deferred publication and input after enqueue.
+- Merged the current default branch, preserving the user-merged angle measurement and
+  packaging fixes, all progress entries and both MCP workflows.
+
+Validation: native build, all four focused selection-framing workflow tests, seven MCP
+workflows, three packaging regressions and shared frontend type-check pass. Matrix and
+whitespace checks pass; full platform suites run in exact-head CI.
+
 ## Navigation follow-on — 2026-10-02 — Zoom to Selection
 
 - Added read-only `view.zoom_to_selection` and MCP `zoom_to_selection`, with explicit

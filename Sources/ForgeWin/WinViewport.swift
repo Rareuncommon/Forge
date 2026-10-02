@@ -125,13 +125,14 @@ final class WinViewport {
     }
 
     private func apply(_ c: ViewportCommandQueue.Command) {
+        guard model.acceptsViewportCommand(c) else { return }
         switch c {
         case .orient(let o):
             remember()
             camera.setOrientation(o)
             fit()
         case .fit: fit()
-        case .fitSelection(let bounds):
+        case .fitSelection(let bounds, _):
             remember()
             camera.fitSelection(bounds, aspect: Double(max(width, 1)) / Double(max(height, 1)))
         case .previous:
@@ -420,6 +421,7 @@ final class WinViewport {
         case FW_EV_MOUSE_UP:
             mouseUp(x, y, button: Int(e.button), mods: mods)
         case FW_EV_MOUSE_WHEEL:
+            model.viewportCameraInput()
             camera.zoom(factor: pow(1.1, Double(e.wheel)), anchor: anchor(x, y))
             cameraChanged()
         case FW_EV_MOUSE_LEAVE:
@@ -444,6 +446,7 @@ final class WinViewport {
         dragged = false
         pressAt = (x, y)
         if button == 2 && clicks == 2 {
+            model.viewportCameraInput()
             fit()
             return
         }
@@ -480,16 +483,20 @@ final class WinViewport {
                     Task { await model.sketchDrag(q, curve: under) }
                 }
             } else if mods & FW_MOD_ALT != 0 {
+                model.viewportCameraInput()
                 camera.pan(dxPixels: dx, dyPixels: dy, viewportHeight: Double(height))
                 cameraChanged()
             } else if dragged {
+                model.viewportCameraInput()
                 camera.orbit(dx: dx * 0.01, dy: dy * 0.01)
                 cameraChanged()
             }
         case 1:
+            model.viewportCameraInput()
             camera.pan(dxPixels: dx, dyPixels: dy, viewportHeight: Double(height))
             cameraChanged()
         case 2:
+            model.viewportCameraInput()
             if mods & FW_MOD_CTRL != 0 {
                 camera.pan(dxPixels: dx, dyPixels: dy, viewportHeight: Double(height))
             } else if mods & FW_MOD_SHIFT != 0 {
