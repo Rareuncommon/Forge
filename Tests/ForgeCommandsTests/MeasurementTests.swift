@@ -98,6 +98,107 @@ struct MeasurementTests {
         #expect(abs(result["from_entity"]!["length_mm"]!.doubleValue! - 10 * .pi) < 1e-8)
     }
 
+    func edge(_ engine: Engine, body id: String = "body-1", direction: Vec3) async throws -> String {
+        let body = try #require(await engine.activeDocument?.bodies[id])
+        for i in 0..<(try body.shape.topology().edges) {
+            let edge = try body.shape.edge(i)
+            if abs((edge.end - edge.start).normalized.dot(direction)) > 1 - 1e-10 { return "\(id)/edge-\(i)" }
+        }
+        throw ForgeError(.internalError, "test edge missing")
+    }
+
+    @Test func angleMathRemainsFiniteNearParallelAndPerpendicularDirections() {
+        for degrees in [0.0, 1e-10, 30, 89.9999999999, 90, 120, 180] {
+            let radians = degrees * .pi / 180
+            let b = Vec3(cos(radians), sin(radians), 0)
+            let expected = min(degrees, 180 - degrees)
+            let angle = QueryMeasure.angleDegrees(.unitX, b, mixed: false)
+            #expect(angle.isFinite)
+            #expect(abs(angle - expected) < 1e-9)
+            #expect(abs(QueryMeasure.angleDegrees(-.unitX, b, mixed: false) - expected) < 1e-9)
+            #expect(abs(QueryMeasure.angleDegrees(.unitX, b, mixed: true) - (90 - expected)) < 1e-9)
+        }
+    }
+
+    @Test func planarAndStraightAnglesAreUnorientedAndSymmetric() async throws {
+        let e = try await engine()
+        let top = try await face(e, normal: .unitZ)
+        let bottom = try await face(e, normal: -.unitZ)
+        let side = try await face(e, normal: .unitX)
+        let x = try await edge(e, direction: .unitX)
+        let z = try await edge(e, direction: .unitZ)
+        let before = try await e.execute("document.state").result
+        for (a, b, expected) in [(top, bottom, 0.0), (top, side, 90.0), (x, x, 0.0), (x, z, 90.0), (top, x, 0.0), (top, z, 90.0)] {
+            for (from, to) in [(a, b), (b, a)] {
+                let r = try await e.execute("query.measure", ["from": .string(from), "to": .string(to), "mode": "angle"]).result
+                #expect(abs(r["angle_degrees"]!.doubleValue! - expected) < 1e-9)
+                #expect(r["distance_mm"] == nil)
+                #expect(r["point_from"] == nil)
+                #expect(r["from_entity"]?["reference"]?.stringValue == from)
+            }
+        }
+        #expect(try await e.execute("document.state").result == before)
+        let implicit = try await e.execute("query.measure", ["from": .string(top), "to": .string(bottom)]).result
+        let explicit = try await e.execute("query.measure", ["from": .string(top), "to": .string(bottom), "mode": "distance"]).result
+        #expect(implicit == explicit)
+    }
+
+    @Test func obliqueAndPersistentAnglesSurviveRebuild() async throws {
+        let e = try await engine()
+        let top = try await face(e, normal: .unitZ)
+        let x = try await edge(e, direction: .unitX)
+        try await e.execute("body.create_box", ["width": 10, "height": 20, "depth": 30])
+        try await e.execute("body.transform", ["body": "body-2", "rotate": ["axis": [0, 1, 0], "angle": "30 deg"], "translate": [100, 0, 0]])
+        let tilted = Vec3(cos(.pi / 6), 0, -sin(.pi / 6))
+        let otherEdge = try await edge(e, body: "body-2", direction: tilted)
+        let doc = try #require(await e.activeDocument)
+        let b = try doc.body("body-2")
+        let ref = try EntityRef.parse(otherEdge)
+        let index = try #require(ref.index)
+        let name = try #require(b.naming?.edges[index])
+        let namedEdge = "body-2/edge@\(name)"
+        var tiltedFace = ""
+        for i in 0..<(try b.shape.topology().faces) {
+            if (try b.shape.face(i).normal - Vec3(sin(.pi / 6), 0, cos(.pi / 6))).length < 1e-9 {
+                tiltedFace = "body-2/face@\(try #require(b.naming?.faces[i]))"
+            }
+        }
+        #expect(!tiltedFace.isEmpty)
+        for rebuild in [false, true] {
+            if rebuild { try await e.execute("document.regenerate") }
+            for (a, b) in [(x, namedEdge), (top, namedEdge), (top, tiltedFace)] {
+                let r = try await e.execute("query.measure", ["from": .string(a), "to": .string(b), "mode": "angle"]).result
+                #expect(abs(r["angle_degrees"]!.doubleValue! - 30) < 1e-8)
+            }
+        }
+    }
+
+    @Test func rejectsUnsupportedAngleGeometryAndInvalidModes() async throws {
+        let e = try await engine()
+        let top = try await face(e, normal: .unitZ)
+        try await e.execute("body.create_cylinder", ["radius": 5, "height": 10])
+        let b = try #require(await e.activeDocument?.bodies["body-2"])
+        let curvedFace = try #require((0..<(try b.shape.topology().faces)).first { (try? b.shape.face($0).surfaceType) == .cylinder })
+        let curvedEdge = try #require((0..<(try b.shape.topology().edges)).first { (try? b.shape.edge($0).curveType) == .circle })
+        try await e.execute("body.create_sphere", ["radius": 5])
+        let sphere = try #require(await e.activeDocument?.bodies["body-3"])
+        let degenerate = try #require((0..<(try sphere.shape.topology().edges)).first { (try? sphere.shape.edge($0).isDegenerate) == true })
+        let before = try await e.execute("document.state").result
+        for unsupported in ["body-1", "body-1/vertex-0", "body-2/face-\(curvedFace)", "body-2/edge-\(curvedEdge)", "body-3/edge-\(degenerate)"] {
+            do {
+                try await e.execute("query.measure", ["from": .string(top), "to": .string(unsupported), "mode": "angle"])
+                Issue.record("unsupported angle geometry accepted")
+            } catch let error as ForgeError {
+                #expect(error.code == .notImplemented)
+                #expect(error.entities.contains(unsupported))
+            }
+        }
+        for params: JSONValue in [["from": .string(top), "mode": "angle"], ["from": .string(top), "to": .string(top), "mode": "maximum"], ["from": .string(top), "to": "body-1/edge@missing", "mode": "angle"]] {
+            await #expect(throws: ForgeError.self) { try await e.execute("query.measure", params) }
+        }
+        #expect(try await e.execute("document.state").result == before)
+    }
+
     @Test func rejectsMissingAndOutOfRangeSelectionsWithoutMutatingDocument() async throws {
         let engine = try await engine()
         let before = try await engine.execute("document.state").result

@@ -736,7 +736,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
 | ID | Feature | Status | Module | Test | MCP tool | Notes |
 |---|---|---|---|---|---|---|
-| `7.12/measure` | Measure | in progress | ForgeKernel | Tests/ForgeCommandsTests/MeasurementTests.swift, Tests/ForgeUITests/MeasureWorkflowTests.swift | measure | bodies/faces/edges/vertices: size, radius, coordinates, minimum distance, closest points and XYZ deltas; angles/max/normal-distance modes pending |
+| `7.12/measure` | Measure | in progress | ForgeCommands / ForgeUI | Tests/ForgeCommandsTests/MeasurementTests.swift, Tests/ForgeUITests/MeasureWorkflowTests.swift | measure | bodies/faces/edges/vertices: size, radius, coordinates, minimum distance, closest points and XYZ deltas; explicit angle mode for planar faces/straight edges (mixed pairs, unoriented 0–90°); curved angles/max/normal-distance modes pending |
 | `7.12/measure/all-modes` | ↳ all modes | not started | ForgeModel | — | — |  |
 | `7.12/measure/point-to-point` | ↳ point-to-point | not started | ForgeModel | — | — |  |
 | `7.12/measure/min-max-normal` | ↳ min/max/normal | not started | ForgeModel | — | — |  |

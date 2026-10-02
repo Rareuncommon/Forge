@@ -36,6 +36,7 @@ package enum EndConditionUI: String, CaseIterable {
 
 /// Values being edited in the PropertyManager. Lengths are text so units work ("0.5 in").
 package struct OperationForm {
+    package var measureMode = "distance"
     package var bodyDX = "0", bodyDY = "0", bodyDZ = "0", bodyCopy = false
     package var bodyCustomAxis: [JSONValue] = [0, 0, 1]
     package var bodyRotation = false, bodyAngle = "90", bodyAxis = "z"
@@ -821,19 +822,20 @@ extension AppModel {
             return
         }
         let requestedSelection = selection
-        var params: [String: JSONValue] = ["from": .string(refs[0])]
+        let requestedMode = form.measureMode
+        var params: [String: JSONValue] = ["from": .string(refs[0]), "mode": .string(requestedMode)]
         if refs.count == 2 { params["to"] = .string(refs[1]) }
         do {
             let result = try await engine.execute("query.measure", .object(params)).result
-            guard selection == requestedSelection, operation == .measure else { return }
+            guard selection == requestedSelection, form.measureMode == requestedMode, operation == .measure else { return }
             form.result = result
             lastError = nil
         } catch let error as ForgeError {
-            guard selection == requestedSelection, operation == .measure else { return }
+            guard selection == requestedSelection, form.measureMode == requestedMode, operation == .measure else { return }
             form.result = nil
             lastError = error
         } catch {
-            guard selection == requestedSelection, operation == .measure else { return }
+            guard selection == requestedSelection, form.measureMode == requestedMode, operation == .measure else { return }
             form.result = nil
             lastError = ForgeError(.internalError, error.localizedDescription)
         }

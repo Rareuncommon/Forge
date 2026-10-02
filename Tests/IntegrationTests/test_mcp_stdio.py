@@ -45,6 +45,25 @@ class MCPWorkflowTests(unittest.TestCase):
             ])
             self.assertTrue(reopened[-1]["result"]["structuredContent"]["passed"])
 
+    def test_angle_measurement_and_structured_errors(self):
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        responses = self.run_calls(executable, [
+            ("new_document", {}),
+            ("execute", {"command": "body.create_box", "params": {"width": 10, "height": 20, "depth": 30}}),
+            ("measure", {"from": "body-1/face@feature-1:+x", "to": "body-1/face@feature-1:+z", "mode": "angle"}),
+            ("measure", {"from": "body-1/face@feature-1:+x", "to": "body-1/face@feature-1:+z"}),
+            ("measure", {"from": "body-1", "to": "body-1/face@feature-1:+z", "mode": "angle"}),
+            ("measure", {"from": "body-1/face@feature-1:+x", "mode": "angle"}),
+        ])
+        for response in responses[:4]:
+            self.assertFalse(response["result"]["isError"], response)
+        angle = responses[2]["result"]["structuredContent"]
+        self.assertAlmostEqual(angle["angle_degrees"], 90)
+        self.assertNotIn("distance_mm", angle)
+        self.assertIn("distance_mm", responses[3]["result"]["structuredContent"])
+        for response in responses[4:]:
+            self.assertTrue(response["result"]["isError"], response)
+
     def test_selection_framing_is_read_only_and_respects_visibility(self):
         executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
         responses = self.run_calls(executable, [
