@@ -31,6 +31,9 @@ with zipfile.ZipFile(out, 'w') as z:
     if not os.environ.get('NO_LIBRARY'):
         z.writestr('install/lib/TKernel.lib', 'fixture')
     z.writestr('install/bin/TKernel.dll', 'fixture')
+    for excluded in ['qt-6/bin/QtCore.dll', 'debug/Debug.dll',
+                     'plugins/plugin.dll', 'msvc-vc14-64/bin/msvcp140.dll']:
+        z.writestr('install/' + excluded, 'excluded fixture')
 ''')
 
     def stub(self, name, body):
@@ -70,6 +73,8 @@ with zipfile.ZipFile(out, 'w') as z:
         prefix, path = result.stdout.split('\n', 1)
         self.assertEqual(prefix, str(self.dest / 'occt/install'))
         self.assertEqual(path.split(':')[0], str(self.dest / 'occt/install/bin'))
+        # Excluded DLL directories must not alter PATH; preserve every original entry.
+        self.assertEqual(path.split(':')[1:], self.env['PATH'].split(':'))
         self.env['FAIL_DOWNLOAD'] = '1'
         self.assertEqual(self.fetch().returncode, 0)
 

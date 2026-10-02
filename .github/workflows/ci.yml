@@ -140,6 +140,8 @@ jobs:
         run: .build/debug/forge-cli run Tests/GoldenModelTests/Models/*.json --quiet
       - name: MCP modeling workflows over stdio
         run: python3 -m unittest discover -s Tests/IntegrationTests -v
+      - name: Packaging script regressions (BSD find)
+        run: python3 -m unittest discover -s Tests/PackagingTests -v
       - name: Build app (Metal + SwiftUI)
         if: always()
         run: swift build --product ForgeApp

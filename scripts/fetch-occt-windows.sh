@@ -60,7 +60,9 @@ prefix="$(cd "$prefix" && pwd)"
 # exchange through XCAF) imports: FreeImage, FreeType, FFmpeg, OpenVR. Not the bundled MSVC
 # runtime (msvc-vc14-64: older than the system's, it shadows it) nor the viewers' Qt, VTK or
 # Tcl/Tk.
-dlldirs="$(find "$dest" -name '*.dll' -printf '%h\n' | sort -u | grep -Ev '/(qt|vtk|tcltk|glfw|angle|gl2ps|msvc)[^/]*(/|$)|/debug/|/plugins/' || true)"
+# Batch directory extraction in POSIX sh: BSD find has no GNU -printf, while
+# passing filenames as arguments preserves spaces and quotes on every host.
+dlldirs="$(find "$dest" -name '*.dll' -exec sh -c 'for dll do printf "%s\n" "${dll%/*}"; done' sh {} + | sort -u | grep -Ev '/(qt|vtk|tcltk|glfw|angle|gl2ps|msvc)[^/]*(/|$)|/(debug|plugins)(/|$)' || true)"
 
 {
     printf 'export FORGE_OCCT_PREFIX=%q\n' "$(cygpath -m "$prefix")"
