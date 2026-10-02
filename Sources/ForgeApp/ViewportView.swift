@@ -85,6 +85,7 @@ struct ViewportView: NSViewRepresentable {
                 switch c {
                 case .orient(let o): view.orient(o)
                 case .fit: view.fit()
+                case .fitSelection(let bounds): view.fitSelection(bounds)
                 case .previous: view.previousView()
                 case .style(let st):
                     view.renderer?.style = st
@@ -136,6 +137,13 @@ final class ForgeMTKView: MTKView {
         guard let r = renderer, let b = documentScene?.fitBounds ?? documentScene?.scene.bounds else { return }
         remember()
         r.camera.fit(b, aspect: Double(bounds.width / max(bounds.height, 1)))
+        cameraChanged()
+    }
+
+    func fitSelection(_ box: BoundingBox) {
+        guard let r = renderer else { return }
+        remember()
+        r.camera.fitSelection(box, aspect: Double(max(bounds.width, 1) / max(bounds.height, 1)))
         cameraChanged()
     }
 

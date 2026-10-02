@@ -131,6 +131,9 @@ final class WinViewport {
             camera.setOrientation(o)
             fit()
         case .fit: fit()
+        case .fitSelection(let bounds):
+            remember()
+            camera.fitSelection(bounds, aspect: Double(max(width, 1)) / Double(max(height, 1)))
         case .previous:
             if let prev = history.popLast() { camera = prev }
         case .style(let s):

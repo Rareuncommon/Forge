@@ -421,6 +421,7 @@ final class WinShell {
         case FW_MENU_TRIMETRIC: model.setOrientation(.trimetric)
         case FW_MENU_NORMAL_TO: model.normalToSketch()
         case FW_MENU_FIT: model.zoomToFit()
+        case FW_MENU_ZOOM_SELECTION: Task { await model.zoomToSelection() }
         case FW_MENU_PREVIOUS: model.previousView()
         case FW_MENU_PERSPECTIVE: model.setPerspective(!model.display.perspective)
         case FW_MENU_PLANES:

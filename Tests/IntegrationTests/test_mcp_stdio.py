@@ -45,6 +45,28 @@ class MCPWorkflowTests(unittest.TestCase):
             ])
             self.assertTrue(reopened[-1]["result"]["structuredContent"]["passed"])
 
+    def test_selection_framing_is_read_only_and_respects_visibility(self):
+        executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
+        responses = self.run_calls(executable, [
+            ("new_document", {}),
+            ("execute", {"command": "body.create_box", "params": {"width": 10, "height": 20, "depth": 30}}),
+            ("execute", {"command": "body.create_box", "params": {"width": 10, "height": 20, "depth": 30, "origin": [1000, 0, 0]}}),
+            ("execute", {"command": "selection.set", "params": {"entities": ["body-1"]}}),
+            ("get_document_state", {}),
+            ("zoom_to_selection", {}),
+            ("get_document_state", {}),
+            ("execute", {"command": "view.set_visibility", "params": {"bodies": ["body-1"], "visible": False}}),
+            ("zoom_to_selection", {"entities": ["body-1", "plane-front"]}),
+        ])
+        for response in responses:
+            self.assertFalse(response["result"]["isError"], response)
+        state = lambda i: responses[i]["result"]["structuredContent"]
+        self.assertEqual(state(4), state(6))
+        self.assertEqual(state(5)["framed"], ["body-1"])
+        self.assertAlmostEqual(state(5)["bounds"]["max"][0], 10, places=6)
+        self.assertEqual(state(8)["framed"], [])
+        self.assertNotIn("bounds", state(8))
+
     def test_invalid_step_keeps_stdout_valid_json(self):
         executable = os.environ.get("FORGE_CLI", ".build/debug/forge-cli")
         with tempfile.TemporaryDirectory() as temporary:

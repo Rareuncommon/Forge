@@ -283,6 +283,7 @@ static GMenuModel *appMenu(void) {
     g_menu_append_submenu(view, "Display Style", d);
     g_menu_append_submenu(view, "Show", sh);
     item(view, "Zoom to Fit", FW_MENU_FIT);
+    item(view, "Zoom to Selection", FW_MENU_ZOOM_SELECTION);
     item(view, "Previous View", FW_MENU_PREVIOUS);
     item(view, "Perspective", FW_MENU_PERSPECTIVE);
     item(help, "About Forge", FW_MENU_ABOUT);
@@ -303,7 +304,7 @@ static void buildActions(fw_app *a) {
     addAction(a, FW_MENU_IMPORT_STEP, 0);
     addAction(a, FW_MENU_UNDO, 0);
     addAction(a, FW_MENU_REDO, 0);
-    for (int id = FW_MENU_FRONT; id <= FW_MENU_PREVIOUS; ++id) addAction(a, id, 0);
+    for (int id = FW_MENU_FRONT; id <= FW_MENU_ZOOM_SELECTION; ++id) addAction(a, id, 0);
     for (int id = FW_MENU_PERSPECTIVE; id <= FW_MENU_DIMENSIONS; ++id) addAction(a, id, 1);
     for (int id = FW_MENU_SHADED_EDGES; id <= FW_MENU_HIDDEN_LINES; ++id) addAction(a, id, 1);
     addAction(a, FW_MENU_ABOUT, 0);
@@ -1182,6 +1183,7 @@ static GtkWidget *buildHeadsUp(fw_app *a) {
     gtk_widget_set_valign(bar, GTK_ALIGN_START);
     gtk_widget_set_margin_top(bar, 12);
     gtk_box_append(GTK_BOX(bar), actionButton(a, "zoomFit", "Zoom to Fit (F)", FW_MENU_FIT));
+    gtk_box_append(GTK_BOX(bar), actionButton(a, "zoomFit", "Zoom to Selection", FW_MENU_ZOOM_SELECTION));
     gtk_box_append(GTK_BOX(bar), actionButton(a, "prevView", "Previous View", FW_MENU_PREVIOUS));
     GtkWidget *sep = hbox(0);
     gtk_widget_add_css_class(sep, "forge-sep");

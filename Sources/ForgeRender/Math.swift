@@ -85,7 +85,7 @@ public struct Mat4: Sendable, Hashable {
 }
 
 /// Unit quaternion for camera orientation.
-public struct Quat: Sendable, Hashable {
+public struct Quat: Codable, Sendable, Hashable {
     public var w, x, y, z: Double
 
     public init(w: Double, x: Double, y: Double, z: Double) {

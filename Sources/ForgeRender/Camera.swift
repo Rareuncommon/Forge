@@ -28,7 +28,7 @@ public enum ProjectionKind: String, Codable, Sendable, CaseIterable, SchemaEnum 
 
 /// A CAD camera: orbit about a target, pan in the view plane, zoom toward a point.
 /// Orientation is a quaternion so free (SolidWorks-style) rotation never gimbal-locks.
-public struct Camera: Sendable, Hashable {
+public struct Camera: Codable, Sendable, Hashable {
     public var target: Vec3
     /// Distance from eye to target.
     public var distance: Double
@@ -48,6 +48,23 @@ public struct Camera: Sendable, Hashable {
         self.projection = projection
         self.fovY = fovY
         self.orthoHalfHeight = orthoHalfHeight
+    }
+
+    /// Validate externally supplied camera snapshots before rendering or fitting.
+    public func validate() throws {
+        let norm = orientation.w * orientation.w + orientation.x * orientation.x + orientation.y * orientation.y + orientation.z * orientation.z
+        guard target.array.allSatisfy(\.isFinite), distance.isFinite, distance > 0,
+              orthoHalfHeight.isFinite, orthoHalfHeight > 0, fovY.isFinite, fovY > 0, fovY < .pi,
+              norm.isFinite, abs(norm - 1) < 1e-6 else {
+            throw ForgeError(.invalidParams, "camera requires finite coordinates, positive distance/scale, a field of view in (0, pi), and a unit orientation quaternion")
+        }
+    }
+
+    /// Preserve orientation/projection and avoid an unusable microscopic view of a point.
+    public mutating func fitSelection(_ bounds: BoundingBox, aspect: Double = 1) {
+        let box = bounds.diagonal < 1e-6
+            ? BoundingBox(min: bounds.center - Vec3(0.5, 0.5, 0.5), max: bounds.center + Vec3(0.5, 0.5, 0.5)) : bounds
+        fit(box, aspect: aspect)
     }
 
     public var right: Vec3 { orientation.rotate(.unitX) }
@@ -131,7 +148,8 @@ public struct Camera: Sendable, Hashable {
             let near = distance - r * 1.5, far = distance + r * 1.5
             return .orthographic(halfWidth: orthoHalfHeight * aspect, halfHeight: orthoHalfHeight, near: near, far: far)
         case .perspective:
-            let near = max(distance - r * 1.5, r * 0.01), far = distance + r * 1.5
+            // A selection can be much closer than unrelated, distant scene geometry.
+            let near = max(distance - r * 1.5, min(r * 0.01, distance * 0.01)), far = distance + r * 1.5
             return .perspective(fovY: fovY, aspect: aspect, near: near, far: far)
         }
     }
