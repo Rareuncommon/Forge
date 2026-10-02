@@ -42,8 +42,10 @@ independent all-tests-passed claim.
 The next implementation adds `query.measure` for bodies and individual faces, edges
 and vertices, including persistent face/edge names. One selection reports its physical
 size or coordinates; two report B-rep minimum distance, closest points and XYZ deltas.
-The desktop accepts either selection count and displays command errors. Angles,
-maximum/normal distances and sketch-entity measurement remain pending.
+The desktop accepts either selection count and displays command errors. Angle mode now
+supports two planar faces/straight edges, including mixed pairs, using unoriented
+supporting geometry in 0–90°. Curved angle geometry, maximum/normal distances and
+sketch-entity measurement remain pending.
 
 Body visibility now has registered show/hide/isolate/exit/show-all commands. Hidden
 bodies remain in modeling and export, but are excluded from rendering, picking and
