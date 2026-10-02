@@ -154,7 +154,8 @@ struct MeasurementTests {
         let doc = try #require(await e.activeDocument)
         let b = try doc.body("body-2")
         let ref = try EntityRef.parse(otherEdge)
-        let name = try #require(b.naming?.edges[try #require(ref.index)])
+        let index = try #require(ref.index)
+        let name = try #require(b.naming?.edges[index])
         let namedEdge = "body-2/edge@\(name)"
         var tiltedFace = ""
         for i in 0..<(try b.shape.topology().faces) {
