@@ -208,7 +208,7 @@ public enum QueryMeasure: Command {
         public static let fieldDocs: [String: FieldDoc] = [
             "from": "Body, face, edge or vertex reference (including persistent face/edge names)",
             "to": "Optional second reference for distance; required for angle",
-            "mode": FieldDoc("distance or angle; angle accepts planar faces and straight edges", default: "distance"),
+            "mode": FieldDoc("distance or angle; angle requires two planar faces/straight edges (mixed pairs allowed), returning angle_degrees in [0, 90] between unoriented supporting planes/lines", default: "distance"),
         ]
     }
     public struct EntityMeasurement: Codable, Sendable {

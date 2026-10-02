@@ -179,8 +179,11 @@ struct MeasurementTests {
         let b = try #require(await e.activeDocument?.bodies["body-2"])
         let curvedFace = try #require((0..<(try b.shape.topology().faces)).first { (try? b.shape.face($0).surfaceType) == .cylinder })
         let curvedEdge = try #require((0..<(try b.shape.topology().edges)).first { (try? b.shape.edge($0).curveType) == .circle })
+        try await e.execute("body.create_sphere", ["radius": 5])
+        let sphere = try #require(await e.activeDocument?.bodies["body-3"])
+        let degenerate = try #require((0..<(try sphere.shape.topology().edges)).first { (try? sphere.shape.edge($0).isDegenerate) == true })
         let before = try await e.execute("document.state").result
-        for unsupported in ["body-1", "body-1/vertex-0", "body-2/face-\(curvedFace)", "body-2/edge-\(curvedEdge)"] {
+        for unsupported in ["body-1", "body-1/vertex-0", "body-2/face-\(curvedFace)", "body-2/edge-\(curvedEdge)", "body-3/edge-\(degenerate)"] {
             do {
                 try await e.execute("query.measure", ["from": .string(top), "to": .string(unsupported), "mode": "angle"])
                 Issue.record("unsupported angle geometry accepted")
