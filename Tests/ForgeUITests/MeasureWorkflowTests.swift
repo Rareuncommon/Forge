@@ -1,4 +1,5 @@
 import ForgeCore
+import ForgeCommands
 import Testing
 @testable import ForgeUI
 
@@ -39,6 +40,35 @@ struct MeasureWorkflowTests {
         await m.computeMeasure()
         #expect(m.form.result == nil)
         #expect(m.lastError != nil)
+    }
+
+    @Test func angleModeSwitchesResultsAndReportsUnsupportedSelections() async throws {
+        let m = AppModel()
+        await m.bootstrap()
+        await m.run("body.create_box", ["width": 10, "height": 20, "depth": 30])
+        let faces = try await m.engine.execute("query.faces", ["body": "body-1"]).result["faces"]!.arrayValue!
+        let side = try #require(faces.first { $0["normal"] == [1, 0, 0] }?["persistent_id"]?.stringValue)
+        let top = try #require(faces.first { $0["normal"] == [0, 0, 1] }?["persistent_id"]?.stringValue)
+        m.selection = [side, top]
+        m.begin(.measure)
+        m.form.measureMode = "angle"
+        await m.computeMeasure()
+        #expect(abs((m.form.result?["angle_degrees"]?.doubleValue ?? -1) - 90) < 1e-9)
+        #expect(m.form.result?["distance_mm"] == nil)
+        #expect(m.lastError == nil)
+        m.form.measureMode = "distance"
+        await m.computeMeasure()
+        #expect(m.form.result?["distance_mm"] != nil)
+        #expect(m.form.result?["angle_degrees"] == nil)
+        m.form.measureMode = "angle"
+        m.selection = ["body-1"]
+        await m.computeMeasure()
+        #expect(m.form.result == nil)
+        #expect(m.lastError?.code == .invalidParams)
+        m.selection = ["body-1", top]
+        await m.computeMeasure()
+        #expect(m.form.result == nil)
+        #expect(m.lastError?.code == .notImplemented)
     }
 
     @Test func invalidReferenceReportsErrorInsteadOfBlankResults() async throws {

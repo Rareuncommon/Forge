@@ -198,12 +198,17 @@ public enum QueryMassProperties: Command {
 }
 
 public enum QueryMeasure: Command {
+    public enum Mode: String, Codable, Sendable, CaseIterable, SchemaEnum {
+        case distance, angle
+    }
     public struct Params: Codable, Sendable, SchemaDocumented {
         public var from: String
         public var to: String?
+        public var mode: Mode?
         public static let fieldDocs: [String: FieldDoc] = [
             "from": "Body, face, edge or vertex reference (including persistent face/edge names)",
-            "to": "Optional second reference; return minimum distance and closest points when supplied",
+            "to": "Optional second reference for distance; required for angle",
+            "mode": FieldDoc("distance or angle; angle accepts planar faces and straight edges", default: "distance"),
         ]
     }
     public struct EntityMeasurement: Codable, Sendable {
@@ -222,6 +227,7 @@ public enum QueryMeasure: Command {
         }
     }
     public struct Output: Codable, Sendable {
+        public var angleDegrees: Double?
         public var distanceMM: Double?
         public var pointFrom: [Double]?
         public var pointTo: [Double]?
@@ -229,20 +235,22 @@ public enum QueryMeasure: Command {
         public var fromEntity: EntityMeasurement
         public var toEntity: EntityMeasurement?
         enum CodingKeys: String, CodingKey {
+            case angleDegrees = "angle_degrees"
             case distanceMM = "distance_mm", pointFrom = "point_from", pointTo = "point_to", deltaMM = "delta_mm"
             case fromEntity = "from_entity", toEntity = "to_entity"
         }
     }
 
     public static let name = "query.measure"
-    public static let summary = "Measure bodies, faces, edges or vertices, with minimum distance between two selections"
-    public static let discussion = "One selection returns its length, area, volume, circular radius or vertex position as applicable. Two selections also return exact B-rep minimum distance, closest points and their signed XYZ displacement, all in millimeters. Named references must identify a single face or edge. Angles, maximum distances and normal-distance modes are not implemented."
+    public static let summary = "Measure entity sizes, minimum distances, or angles between planar faces and straight edges"
+    public static let discussion = "One selection returns its length, area, volume, circular radius or vertex position as applicable. In distance mode, two selections also return exact B-rep minimum distance, closest points and their signed XYZ displacement, all in millimeters. Named references must identify a single face or edge. mode=angle requires two planar faces or straight edges (including mixed pairs), returning angle_degrees in [0, 90] between their unoriented supporting planes/lines. Parallel or antiparallel planes/lines measure 0; a line normal to a plane measures 90. Curved, degenerate and body/vertex angle selections are rejected. Maximum distances and normal-distance modes are not implemented."
     public static let category = CommandCategory.query
     public static let undo = UndoBehavior.none
-    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .referenceLost, .kernelFailure]
+    public static let errors: [ErrorCode] = [.unknownEntity, .invalidParams, .referenceLost, .kernelFailure, .notImplemented]
     public static let examples: [JSONValue] = [
         ["from": "body-1", "to": "body-2"], ["from": "body-1/edge-0"],
         ["from": "body-1/face-0", "to": "body-1/vertex-2"],
+        ["from": "body-1/face-0", "to": "body-1/edge-0", "mode": "angle"],
     ]
 
     static func resolve(_ reference: String, in doc: Document) throws -> (Shape, EntityMeasurement) {
@@ -280,11 +288,61 @@ public enum QueryMeasure: Command {
         }
     }
 
+    /// Resolve through the same single-entity/persistent-name rules used by distance.
+    static func angleDirection(_ reference: String, in doc: Document) throws -> (Vec3, Bool) {
+        let ref = try EntityRef.parse(reference)
+        let body = try doc.body(ref.body)
+        let direction: Vec3
+        let isPlane: Bool
+        switch ref.kind {
+        case .face:
+            let face = try body.shape.face(doc.faceIndices([reference], of: body, sets: false)[0])
+            guard face.surfaceType == .plane else {
+                throw ForgeError(.notImplemented, "angle measurement requires a planar face", entities: [reference])
+            }
+            direction = face.normal
+            isPlane = true
+        case .edge:
+            let indices = try doc.edgeIndices([reference], of: body)
+            guard indices.count == 1 else {
+                throw ForgeError(.invalidParams, "angle measurement requires one edge", entities: [reference])
+            }
+            let edge = try body.shape.edge(indices[0])
+            guard edge.curveType == .line, !edge.isDegenerate else {
+                throw ForgeError(.notImplemented, "angle measurement requires a nondegenerate straight edge", entities: [reference])
+            }
+            direction = edge.end - edge.start
+            isPlane = false
+        case .body, .vertex:
+            throw ForgeError(.notImplemented, "angle measurement supports planar faces and straight edges", entities: [reference])
+        }
+        guard direction.length.isFinite, direction.length > 0 else {
+            throw ForgeError(.invalidParams, "angle measurement has no defined direction", entities: [reference])
+        }
+        return (direction.normalized, isPlane)
+    }
+
+    static func angleDegrees(_ a: Vec3, _ b: Vec3, mixed: Bool) -> Double {
+        // atan2 avoids acos/asin domain errors and cancellation near 0 and 90 degrees.
+        let dot = abs(a.dot(b))
+        let cross = a.cross(b).length
+        return (mixed ? atan2(dot, cross) : atan2(cross, dot)) * 180 / .pi
+    }
+
     public static func run(_ p: Params, _ ctx: inout CommandContext) throws -> Output {
+        if p.mode == .angle && p.to == nil {
+            throw ForgeError(.invalidParams, "angle measurement requires two selections")
+        }
         let doc = try ctx.requireDocument()
         let (a, first) = try resolve(p.from, in: doc)
         guard let to = p.to else { return Output(fromEntity: first) }
         let (b, second) = try resolve(to, in: doc)
+        if p.mode == .angle {
+            let (u, firstPlane) = try angleDirection(p.from, in: doc)
+            let (v, secondPlane) = try angleDirection(to, in: doc)
+            return Output(angleDegrees: angleDegrees(u, v, mixed: firstPlane != secondPlane),
+                          fromEntity: first, toEntity: second)
+        }
         let distance = try Kernel.distance(a, b)
         return Output(distanceMM: distance.distance, pointFrom: distance.pointA.array, pointTo: distance.pointB.array,
                       deltaMM: (distance.pointB - distance.pointA).array, fromEntity: first, toEntity: second)

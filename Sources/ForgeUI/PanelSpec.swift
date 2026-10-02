@@ -374,9 +374,19 @@ extension AppModel {
             }
             s.append(PanelSection("Results", controls: controls))
         case .massProperties, .measure, .check:
+            if op == .measure {
+                s.append(PanelSection("Mode", controls: [
+                    PanelControl(id: "measureMode", kind: .choice(label: "Mode", options: [("distance", "Size / Minimum Distance"), ("angle", "Angle (0–90°)")], get: { [unowned self] in form.measureMode }, set: { [unowned self] in
+                        form.measureMode = $0
+                        form.result = nil
+                        Task { await computeMeasure() }
+                    })),
+                    note("angleScope", "Angles require two planar faces or straight edges; supporting planes/lines are unoriented."),
+                ]))
+            }
             let rows = form.result.map(Self.keyValues) ?? []
             s.append(PanelSection(op == .measure ? "Measure" : "Results", controls: rows.isEmpty
-                ? [note("empty", op == .measure ? "Select one entity for its size, or two for their minimum distance." : "Select a body.")]
+                ? [note("empty", op == .measure ? (f.measureMode == "angle" ? "Select two planar faces or straight edges for their angle." : "Select one entity for its size, or two for their minimum distance.") : "Select a body.")]
                 : rows.enumerated().map { i, kv in PanelControl(id: "r\(i)", kind: .value(label: kv.0, value: kv.1)) }))
         case .addRelation:
             s += [selectedEntitiesSection, relationsSection(all: false), relationButtonsSection].compactMap { $0 }
