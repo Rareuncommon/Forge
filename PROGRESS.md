@@ -1,5 +1,18 @@
 # Progress
 
+## 2026-10-02 — Portable Windows dependency packaging checks
+
+- Replaced GNU `find -printf` in OCCT DLL-directory discovery with batched portable
+  shell extraction, preserving spaces/quotes without installing GNU find on macOS.
+- Corrected debug/plugin directory exclusions at the end of a path. The offline archive
+  fixture now includes excluded DLLs and asserts that the original PATH is preserved
+  exactly after the one permitted toolkit directory is prepended. Existing download,
+  incomplete-cache, quoting and cache-reuse assertions remain intact.
+- Added the three offline packaging regressions to native Mac CI as well as Linux CI.
+
+Validation: shell syntax and all **three packaging regressions** pass locally on
+macOS using BSD find; whitespace checks pass. No Swift product code changed.
+
 ## Session 12 — 2026-09-30 — Selected contours, planar limits and selection filters
 
 - Added `sketch.regions` with stable complete-curve selectors, holes, nested islands,
