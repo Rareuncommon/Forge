@@ -5,6 +5,8 @@
 #include <string.h>
 
 typedef struct {
+    int zoomItems;
+    int zoomEvents;
     int importItems;
     int actions;
     int failures;
@@ -13,6 +15,7 @@ typedef struct {
 
 static void receive(void *context, const fw_event *event) {
     TestState *state = context;
+    if (event->kind == FW_EV_MENU && event->id == FW_MENU_ZOOM_SELECTION) ++state->zoomEvents;
     if (event->kind == FW_EV_MENU && event->id == FW_MENU_IMPORT_STEP) ++state->importEvents;
 }
 
@@ -32,6 +35,14 @@ static void checkMenu(fw_app *app, GMenuModel *menu, TestState *state) {
                 // Resolve through the widget's installed action group, like a menu click.
                 if (!gtk_widget_activate_action(app->window, action, NULL)) {
                     fprintf(stderr, "Import STEP menu action could not be activated\n");
+                    ++state->failures;
+                }
+            }
+            snprintf(expected, sizeof expected, "win.m%d", FW_MENU_ZOOM_SELECTION);
+            if (strcmp(action, expected) == 0) {
+                ++state->zoomItems;
+                if (!gtk_widget_activate_action(app->window, action, NULL)) {
+                    fprintf(stderr, "Zoom to Selection menu action could not be activated\n");
                     ++state->failures;
                 }
             }
@@ -144,6 +155,10 @@ int main(void) {
     if (state.actions == 0 || state.importItems != 1 || state.importEvents != 1) {
         fprintf(stderr, "Expected one Import STEP item/event; found %d actions, %d items, %d events\n",
                 state.actions, state.importItems, state.importEvents);
+        ++state.failures;
+    }
+    if (state.zoomItems != 1 || state.zoomEvents != 1) {
+        fprintf(stderr, "Expected one Zoom to Selection item/event; found %d items, %d events\n", state.zoomItems, state.zoomEvents);
         ++state.failures;
     }
     checkNameDialog(app, &state, GTK_RESPONSE_ACCEPT, "机架 — café 🚀");

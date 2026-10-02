@@ -190,8 +190,11 @@ The whole edit pipeline should preserve unknown/unexposed stored parameters or
 explicitly refuse editing; reconstructing only visible controls is a corruption risk.
 
 Navigation has fit, previous view, standard orientations, styles, projection,
-orbit/pan/zoom, sketch normal and a mac orientation palette. Remaining workflows:
-zoom-to-selection/area, custom named views, selected-face normal including reverse,
+orbit/pan/zoom, sketch normal and a mac orientation palette. The 2026-10-02 follow-on
+adds Zoom to Selection across desktop shells and the typed/MCP command bus, including
+explicit subshape bounds and previous-view history. Sketch outlines remain sampled.
+The baseline appendix below is historical; FEATURES.md tracks current delivery.
+Remaining workflows: rectangle zoom-to-area, custom named views, selected-face normal including reverse,
 section clipping/caps, per-entity transparency/display states, selection sets,
 3Dconnexion and configurable shortcuts. Reference planes are rendered under a shared
 non-document object ID and picks ignore them; use tree selection until meaningful

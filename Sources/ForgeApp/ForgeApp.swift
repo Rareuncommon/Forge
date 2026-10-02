@@ -80,6 +80,7 @@ struct ForgeApp: App {
                 Button("Select Other (Tab)") { Task { await model.selectOther() } }.disabled(!model.canSelectOther)
                 Divider()
                 Button("Zoom to Fit (F)") { model.zoomToFit() }
+                Button("Zoom to Selection") { Task { await model.zoomToSelection() } }.disabled(model.selection.isEmpty)
                 Button("Previous View") { model.previousView() }
                 Divider()
                 Button("Hide Selected Bodies") { Task { await model.setBodiesVisible(model.selectedBodies, false) } }.disabled(model.selectedBodies.isEmpty)

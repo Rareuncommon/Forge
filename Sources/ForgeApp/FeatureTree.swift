@@ -65,6 +65,7 @@ struct FeatureTreeView: View {
                         Button(model.hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body") { Task { await model.setBodiesVisible([b.id], model.hiddenBodyIDs.contains(b.id)) } }
                         Button("Isolate Body") { Task { await model.isolateBodies([b.id]) } }
                         Button("Rename…") { Task { await model.renameBody(b.id) } }
+                        Button("Zoom to Selection") { Task { await model.select(b.id, extend: false); await model.zoomToSelection() } }
                         Button("Mass Properties") {
                             Task {
                                 await model.select(b.id, extend: false)

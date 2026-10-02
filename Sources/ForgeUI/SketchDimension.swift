@@ -184,7 +184,7 @@ extension AppModel {
             dimensionEdit = nil
             // The first dimension scaled the sketch: fit the view to it, so it neither shrinks
             // to a speck nor overflows the window.
-            if o.result["scaled_by"]?.doubleValue != nil { viewportCommands.send(.fit) }
+            if o.result["scaled_by"]?.doubleValue != nil { zoomToFit() }
             await select(nil, extend: false)
         }
     }

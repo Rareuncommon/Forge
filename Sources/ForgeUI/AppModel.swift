@@ -209,6 +209,7 @@ package struct DisplayOptions {
 @MainActor @Observable
 package final class AppModel {
     package let engine = Engine()
+    @ObservationIgnored package var selectionZoomRequest = 0
     /// Native dialogs of the front end.
     package var platform: any PlatformServices = HeadlessPlatform()
     package var documentName = "Part1"
@@ -329,6 +330,7 @@ package final class AppModel {
 
     @discardableResult
     package func run(_ command: String, _ params: JSONValue = [:]) async -> CommandOutcome? {
+        selectionZoomRequest += 1
         do {
             let o = try await engine.execute(command, params)
             interferenceRequest += 1
@@ -495,11 +497,44 @@ package final class AppModel {
         }
     }
 
-    package func setOrientation(_ o: ViewOrientation) { viewportCommands.send(.orient(o)) }
-    package func zoomToFit() { viewportCommands.send(.fit) }
-    package func previousView() { viewportCommands.send(.previous) }
+    package func setOrientation(_ o: ViewOrientation) { selectionZoomRequest += 1; viewportCommands.send(.orient(o)) }
+    package func zoomToFit() { selectionZoomRequest += 1; viewportCommands.send(.fit) }
+    /// Native gestures must call this synchronously before mutating their camera.
+    /// Camera publication may be deferred until a later main-loop turn.
+    package func viewportCameraInput() { selectionZoomRequest += 1 }
+
+    /// Recheck intent when the viewport consumes an already queued framing result.
+    package func acceptsViewportCommand(_ command: ViewportCommandQueue.Command) -> Bool {
+        if case .fitSelection(_, let request) = command { return request == selectionZoomRequest }
+        return true
+    }
+
+    package func zoomToSelection() async {
+        selectionZoomRequest += 1
+        let request = selectionZoomRequest, selected = selection, version = sceneVersion, view = projection
+        guard !selected.isEmpty else { return }
+        do {
+            let aspect = view.map { max($0.width, 1) / max($0.height, 1) } ?? 1
+            var params: [String: JSONValue] = ["entities": .array(selected.map(JSONValue.string)), "aspect": .number(aspect)]
+            if let view { params["camera"] = try JSONCoding.toJSON(view.camera) }
+            let result = try await engine.execute("view.zoom_to_selection", .object(params)).result
+            guard request == selectionZoomRequest, selected == selection, version == sceneVersion, view == projection else { return }
+            let output = try JSONCoding.fromJSON(ViewZoomToSelection.Output.self, result)
+            if let bounds = output.bounds { viewportCommands.send(.fitSelection(bounds, request: request)) }
+            lastError = nil
+        } catch let error as ForgeError {
+            guard request == selectionZoomRequest, selected == selection, version == sceneVersion, view == projection else { return }
+            lastError = error
+        } catch {
+            guard request == selectionZoomRequest, selected == selection, version == sceneVersion, view == projection else { return }
+            lastError = ForgeError(.internalError, error.localizedDescription)
+        }
+    }
+
+    package func previousView() { selectionZoomRequest += 1; viewportCommands.send(.previous) }
     package func setStyle(_ s: RenderStyle) { viewportPickContext = nil; viewportCommands.send(.style(s)) }
     package func setPerspective(_ on: Bool) {
+        selectionZoomRequest += 1
         display.perspective = on
         viewportCommands.send(.projection(on ? .perspective : .orthographic))
     }
@@ -510,8 +545,8 @@ package final class AppModel {
     package func viewportKey(_ key: String, at p: CGPoint) -> Bool {
         switch key {
         case "f": zoomToFit()
-        case "z": viewportCommands.send(.zoom(1 / 1.25))
-        case "Z": viewportCommands.send(.zoom(1.25))
+        case "z": selectionZoomRequest += 1; viewportCommands.send(.zoom(1 / 1.25))
+        case "Z": selectionZoomRequest += 1; viewportCommands.send(.zoom(1.25))
         case "s", "S": shortcutBarAt = p
         case "space": orientationPaletteShown.toggle()
         case "tab", "\t":
@@ -537,16 +572,20 @@ package final class AppModel {
     package var canNormalTo: Bool { sketchState.plane != nil || selectedFace != nil || selection.contains { $0.hasPrefix("plane-") } }
 
     package func normalToSketch() {
+        selectionZoomRequest += 1
         if let plane = sketchState.plane { viewportCommands.send(.normalTo(plane)) }
         else { Task { await normalToSelection() } }
     }
 
     package func normalToSelection() async {
+        selectionZoomRequest += 1
+        let request = selectionZoomRequest
         if let plane = sketchState.plane { viewportCommands.send(.normalTo(plane)); return }
         guard let ref = selectedFace ?? selection.last(where: { $0.hasPrefix("plane-") }) else { return }
         do {
             guard let doc = await engine.activeDocument else { return }
             let placement = ref.hasPrefix("plane-") && StandardPlane(rawValue: String(ref.dropFirst(6))) != nil ? String(ref.dropFirst(6)) : ref
+            guard request == selectionZoomRequest else { return }
             viewportCommands.send(.normalTo(try doc.resolvePlacement(placement)))
             lastError = nil
         } catch { lastError = ForgeError.wrap(error) }
@@ -630,7 +669,7 @@ package struct DocumentSceneBox {
 /// Commands from menus to the viewport, consumed in order by the viewport coordinator
 /// (which remembers how many it has applied, so SwiftUI updates never mutate model state).
 package struct ViewportCommandQueue {
-    package enum Command { case orient(ViewOrientation), fit, previous, style(RenderStyle), projection(ProjectionKind), zoom(Double), normalTo(SketchPlane) }
+    package enum Command { case orient(ViewOrientation), fit, fitSelection(BoundingBox, request: Int), previous, style(RenderStyle), projection(ProjectionKind), zoom(Double), normalTo(SketchPlane) }
     package private(set) var log: [Command] = []
     package mutating func send(_ c: Command) { log.append(c) }
 }

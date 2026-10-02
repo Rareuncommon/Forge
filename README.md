@@ -12,6 +12,14 @@ bus, reachable from the UI, scripts, `forge-cli` and MCP alike.
 
 ![Headless render of a golden model](docs/images/m0-multiview.png)
 
+Zoom to Selection is available in the desktop View menu, viewport controls and body
+context menu. It frames selected visible bodies, faces, edges, vertices and sketch
+geometry while preserving orientation and projection, with Previous View restoring
+the old camera. Empty or fully hidden selections leave the view unchanged.
+`view.zoom_to_selection` (MCP `zoom_to_selection`) returns bounds and a camera that
+can be supplied as `view.camera` to rendering and picking commands. Sketch bounds
+use sampled display outlines; rectangle zoom-to-area remains pending.
+
 ## Layout
 
 ```

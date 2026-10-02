@@ -119,6 +119,7 @@ extension CommandRegistry {
         r.register(ViewIsolate.self)
         r.register(ViewExitIsolation.self)
         r.register(ViewShowAll.self)
+        r.register(ViewZoomToSelection.self)
         r.register(ViewRender.self)
         r.register(ViewRenderMultiview.self)
         r.register(ViewPick.self)

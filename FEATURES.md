@@ -8,7 +8,7 @@ edit those columns by hand, then re-run the script.
 the feature-tree level) · `done` (regenerates, round-trips save/load, undo/redo, command +
 MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 
-**Totals:** 1000 rows — not started: 834 · in progress: 138 · done: 28 · verified: 0
+**Totals:** 1000 rows — not started: 833 · in progress: 139 · done: 28 · verified: 0
 
 ## Platform (SPEC §2–§6, §8–§9)
 
@@ -1120,7 +1120,7 @@ MCP, tests) · `verified` (done + golden/e2e coverage + reviewed on macOS).
 | `D/transparency` | Per-body/component transparency | not started | ForgeModel | — | — |  |
 | `D/section-view-part` | Section view (dynamic display section in parts/assemblies) | not started | ForgeModel | — | — |  |
 | `D/view-selector` | View selector cube, named/saved views, previous view | not started | ForgeModel | — | — |  |
-| `D/zoom-to-selection` | Zoom to selection / zoom to area | not started | ForgeModel | — | — |  |
+| `D/zoom-to-selection` | Zoom to selection / zoom to area | in progress | ForgeCommands / ForgeUI | SelectionFramingTests, SelectionFramingWorkflowTests, MCP framing workflow | `zoom_to_selection` | Selected visible body/subshape/sketch bounds, orientation/projection preserved, empty/hidden no-op and previous-view history on all desktop shells. Sketch outlines are sampled; rectangle zoom-to-area pending. |
 | `D/display-states-part` | Display states in parts | not started | ForgeModel | — | — |  |
 | `D/feature-comments` | Comments/notes on features | not started | ForgeModel | — | — |  |
 | `D/selection-sets` | Selection sets (saved selections) | not started | ForgeModel | — | — |  |

@@ -30,6 +30,56 @@ BSD find; those unrelated files are unchanged and all three pass in Linux CI.
 Remaining scope: curved/tangent/directed/reflex angle measurements, maximum/normal
 and projected distances, sketch-entity measurements and broader SolidWorks parity.
 
+## 2026-10-02 — Portable Windows dependency packaging checks
+
+- Replaced GNU `find -printf` in OCCT DLL-directory discovery with batched portable
+  shell extraction, preserving spaces/quotes without installing GNU find on macOS.
+- Corrected debug/plugin directory exclusions at the end of a path. The offline archive
+  fixture now includes excluded DLLs and asserts that the original PATH is preserved
+  exactly after the one permitted toolkit directory is prepended. Existing download,
+  incomplete-cache, quoting and cache-reuse assertions remain intact.
+- Added the three offline packaging regressions to native Mac CI as well as Linux CI.
+
+Validation: shell syntax and all **three packaging regressions** pass locally on
+macOS using BSD find; whitespace checks pass. No Swift product code changed.
+
+## PR #8 review follow-up — 2026-10-02 — Native camera intent ordering
+
+- Native orbit, pan, wheel, magnify, rotate and double-click fit invalidate pending
+  selection framing synchronously before camera mutation on macOS and the shared
+  Windows/Linux viewport. Deferred camera publication cannot admit an old result.
+- Queued selection fits carry their request generation; both viewport consumers skip
+  fits invalidated by newer input before queue consumption. Deterministic regressions
+  cover an engine request held across input/deferred publication and input after enqueue.
+- Merged the current default branch, preserving the user-merged angle measurement and
+  packaging fixes, all progress entries and both MCP workflows.
+
+Validation: native build, all four focused selection-framing workflow tests, seven MCP
+workflows, three packaging regressions and shared frontend type-check pass. Matrix and
+whitespace checks pass; full platform suites run in exact-head CI.
+
+## Navigation follow-on — 2026-10-02 — Zoom to Selection
+
+- Added read-only `view.zoom_to_selection` and MCP `zoom_to_selection`, with explicit
+  or current selection, tight body/subshape union bounds, placed sketch display bounds,
+  point framing and validated camera/aspect inputs. Hidden/isolation-excluded bodies,
+  planes and constraints are skipped; malformed or stale geometry references fail.
+- Added macOS, Windows and GTK View/menu/viewport/body-context actions using shared
+  selection framing and existing Previous View history. Async results cannot replace
+  a newer document, selection or camera action. Orientation and projection are preserved.
+- Returned cameras feed render/pick/candidate views directly. Perspective clipping also
+  accounts for a close selection when unrelated geometry is far from the camera.
+
+Validation: private macOS 27 / Swift 6.4 / OCCT 8.0.1 build and **386 Swift tests**,
+**33 golden models** and **six MCP subprocess workflows** pass. A clean `/tmp` Swift
+scratch directory avoids Finder metadata on generated test bundles. Native GTK menu
+action assertions run in CI; no live desktop app windows were launched. The separate
+packaging portability change is independent of this branch. Matrix and whitespace
+checks pass.
+
+Remaining boundaries: sketch extents use sampled viewport polylines. Whole sketches
+exclude the fixed origin and owned definition points. Rectangle zoom-to-area is pending.
+
 ## Session 12 — 2026-09-30 — Selected contours, planar limits and selection filters
 
 - Added `sketch.regions` with stable complete-curve selectors, holes, nested islands,

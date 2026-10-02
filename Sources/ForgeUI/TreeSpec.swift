@@ -61,6 +61,7 @@ extension AppModel {
                         (hiddenBodyIDs.contains(b.id) ? "Show Body" : "Hide Body", { [unowned self] in Task { await setBodiesVisible([b.id], hiddenBodyIDs.contains(b.id)) } }),
                         ("Isolate Body", { [unowned self] in Task { await isolateBodies([b.id]) } }),
                         ("Rename…", { [unowned self] in Task { await renameBody(b.id) } }),
+                        ("Zoom to Selection", { [unowned self] in Task { await select(b.id, extend: false); await zoomToSelection() } }),
                         ("Mass Properties", { [unowned self] in Task { await select(b.id, extend: false); begin(.massProperties) } }),
                         ("Export STEP…", { [unowned self] in Task { await select(b.id, extend: false); export("step") } }),
                         ("Export STL…", { [unowned self] in Task { await select(b.id, extend: false); export("stl") } }),

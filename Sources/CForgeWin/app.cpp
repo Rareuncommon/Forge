@@ -1010,6 +1010,7 @@ static void buildMenu(fw_app *a) {
     for (int i = 0; i < 10; ++i) AppendMenuW(orient, MF_STRING, FW_MENU_FRONT + i, names[i]);
     AppendMenuW(view, MF_POPUP, (UINT_PTR)orient, L"&Orientation");
     AppendMenuW(view, MF_STRING, FW_MENU_FIT, L"Zoom to &Fit\tF");
+    AppendMenuW(view, MF_STRING, FW_MENU_ZOOM_SELECTION, L"Zoom to Selection");
     AppendMenuW(view, MF_STRING, FW_MENU_PREVIOUS, L"&Previous View");
     AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(display, MF_STRING, FW_MENU_SHADED_EDGES, L"Shaded With &Edges");

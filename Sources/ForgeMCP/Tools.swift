@@ -120,6 +120,7 @@ public enum ToolCatalog {
             alias("query_entity", "Query entity", "query.entity"),
             alias("get_mass_properties", "Mass properties", "query.mass_properties"),
             alias("measure", "Measure", "query.measure"),
+            alias("zoom_to_selection", "Zoom to selection", "view.zoom_to_selection"),
             // ---- mutate
             Tool(
                 name: "execute", title: "Execute command",

@@ -104,6 +104,7 @@ public struct DocumentScene: Sendable {
 
 /// Shared view parameters for render/pick so an agent can pick on exactly the image it saw.
 public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
+    public var camera: Camera?
     public var orientation: ViewOrientation?
     public var style: RenderStyle?
     public var projection: ProjectionKind?
@@ -117,6 +118,7 @@ public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
     public var sketches: Bool?
 
     public static let fieldDocs: [String: FieldDoc] = [
+        "camera": "Exact camera snapshot from view.zoom_to_selection; overrides orientation, projection, yaw/pitch and automatic fit",
         "orientation": FieldDoc("Standard view", default: "isometric"),
         "style": FieldDoc("Display style", default: "shaded_with_edges"),
         "projection": FieldDoc("Projection", default: "orthographic"),
@@ -130,6 +132,7 @@ public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
     ]
 
     public func validate() throws {
+        try camera?.validate()
         for (n, v) in [("width", width), ("height", height)] {
             if let v, !(16...4096).contains(v) { throw ForgeError(.invalidParams, "\(n) must be between 16 and 4096") }
         }
@@ -138,6 +141,7 @@ public struct ViewSpec: Codable, Sendable, SchemaDocumented, ValidatableParams {
     var size: (Int, Int) { (width ?? 800, height ?? 600) }
 
     func camera(for scene: RenderScene) -> Camera {
+        if let camera { return camera }
         var cam = Camera(projection: projection ?? .orthographic)
         cam.setOrientation(orientation ?? .isometric)
         if yaw != nil || pitch != nil { cam.turntable(dx: (yaw ?? 0) * .pi / 180, dy: (pitch ?? 0) * .pi / 180) }

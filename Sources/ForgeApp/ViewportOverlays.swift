@@ -60,6 +60,7 @@ struct HeadsUpToolbar: View {
     var body: some View {
         HStack(spacing: 1) {
             HUDButton(icon: .zoomFit, help: "Zoom to fit (F)") { model.zoomToFit() }
+            HUDButton(icon: .zoomFit, help: "Zoom to selection") { Task { await model.zoomToSelection() } }
             HUDButton(icon: .prevView, help: "Previous view") { model.previousView() }
             HUDDivider()
             Menu {
@@ -438,6 +439,7 @@ struct ContextToolbar: View {
                 item(.massProps, "Mass Properties") { model.begin(.massProperties) }
             }
             if model.isIsolatingBodies { item(.part, "Exit Isolation") { Task { await model.exitBodyIsolation() } } }
+            item(.zoomFit, "Zoom to Selection") { Task { await model.zoomToSelection() } }
             item(.zoomFit, "Zoom to Fit") { model.zoomToFit() }
         }
     }
